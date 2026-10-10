@@ -111,7 +111,7 @@ export default function Referrals() {
         </div>
       )}
 
-      {dashboard?.referrals.map((ref) => (
+      {dashboard?.referrals.map((ref: any) => (
         <div key={ref.id} className="bg-white p-3 rounded-xl shadow-sm mb-2 flex justify-between items-center">
           <div>
             <p className="text-navy font-medium text-sm">
