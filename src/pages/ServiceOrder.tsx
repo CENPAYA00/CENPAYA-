@@ -70,4 +70,4 @@ export default function ServiceOrder() {
   return (
     <div> className="px-3 py-3 pb-24">
       <div> className="flex items-center gap-2 mb-3">
-        </button> onClick={() => navigate(-1)} className="text-brand"><Arrow
+        </button> onClick={() => navigate(-1)} className="text-brand"><Arrow>
