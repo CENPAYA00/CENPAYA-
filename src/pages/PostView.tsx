@@ -175,7 +175,9 @@ export default function PostView() {
             {images.length === 1 && <img src={images[0]} alt="" className="w-full" />}
             {images.length > 1 && (
               <div className={`grid gap-0.5 ${images.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                {images.map((u, i) => <img key={i} src={u} alt="" className="w-full aspect-square object-cover" />)}
+                {images.map((u: string, i: number) => (
+  <img key={i} src={u} alt="" className="w-full aspect-square object-cover" />
+))}
               </div>
             )}
           </>
