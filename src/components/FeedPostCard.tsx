@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getCachedUser } from '../lib/cache';
+import { getBackground, backgroundStyle } from '../lib/postBackgrounds';
 
 type Background = {
   id: string;
