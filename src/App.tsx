@@ -10,6 +10,7 @@ import Legal from './pages/Legal';
 import Home from './pages/Home';
 import Market from './pages/Market';
 import Wallet from './pages/Wallet';
+import WalletTopup from './pages/WalletTopup';
 import Withdraw from './pages/Withdraw';
 import Subscribe from './pages/Subscribe';
 import Referrals from './pages/Referrals';
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/home" element={<Home />} />
           <Route path="/market" element={<Market />} />
           <Route path="/wallet" element={<Wallet />} />
+          <Route path="/wallet/topup" element={<WalletTopup />} />
           <Route path="/withdraw" element={<Withdraw />} />
           <Route path="/subscribe" element={<Subscribe />} />
           <Route path="/referrals" element={<Referrals />} />
