@@ -124,7 +124,11 @@ export default function PostView() {
       await navigator.clipboard.writeText(url);
       alert('Link copied');
     }
-    await supabase.rpc('track_post_share', { p_post_id: post.id, p_channel: 'external' }).catch(() => {});
+    try {
+  await supabase.rpc('track_post_share', { p_post_id: postId, p_channel: 'external' });
+} catch {
+  // ignore
+    }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">{t('loading')}</div>;
