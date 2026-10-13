@@ -64,6 +64,8 @@ import AdminVault from './pages/admin/AdminVault';
 import AdminFinance from './pages/admin/AdminFinance';
 import AdminFeatures from './pages/admin/AdminFeatures';
 import AdminUsers from './pages/admin/AdminUsers';
+import AdminReports from './pages/admin/AdminReports';
+import AdminSecurity from './pages/admin/AdminSecurity';
 import AdminAuditLogViewer from './pages/admin/AdminAuditLog';
 import AdminPermissions from './pages/admin/AdminPermissions';
 import AdminRegions from './pages/admin/AdminRegions';
@@ -148,6 +150,8 @@ export default function App() {
           <Route path="/admin/finance" element={<AdminFinance />} />
           <Route path="/admin/features" element={<AdminFeatures />} />
           <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/reports" element={<AdminReports />} />
+<Route path="/admin/security" element={<AdminSecurity />} />
           <Route path="/admin/audit" element={<AdminAuditLogViewer />} />
           <Route path="/admin/permissions" element={<AdminPermissions />} />
           <Route path="/admin/regions" element={<AdminRegions />} />
