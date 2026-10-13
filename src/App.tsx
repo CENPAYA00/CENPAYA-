@@ -23,6 +23,7 @@ import ProfileFollowing from './pages/ProfileFollowing';
 import SellerProfile from './pages/SellerProfile';
 import CreatePost from './pages/CreatePost';
 import Groups from './pages/Groups';
+import GroupDetail from './pages/GroupDetail';
 import CreateListing from './pages/CreateListing';
 import ListingDetail from './pages/ListingDetail';
 import OrderDetail from './pages/OrderDetail';
@@ -93,6 +94,7 @@ export default function App() {
           <Route path="/profile/:id/following" element={<ProfileFollowing />} />
           <Route path="/seller/:id" element={<SellerProfile />} />
           <Route path="/groups" element={<Groups />} />
+          <Route path="/groups/:id" element={<GroupDetail />} />
           <Route path="/create-post" element={<CreatePost />} />
           <Route path="/create-listing" element={<CreateListing />} />
           <Route path="/listing/:id" element={<ListingDetail />} />
