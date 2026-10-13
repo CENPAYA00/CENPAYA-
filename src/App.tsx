@@ -16,6 +16,9 @@ import WalletTopup from './pages/WalletTopup';
 import Withdraw from './pages/Withdraw';
 import Subscribe from './pages/Subscribe';
 import Referrals from './pages/Referrals';
+import Follow from './pages/Follow';
+import ProfileFollowers from './pages/ProfileFollowers';
+import ProfileFollowing from './pages/ProfileFollowing';
 import Profile from './pages/Profile';
 import SellerProfile from './pages/SellerProfile';
 import CreatePost from './pages/CreatePost';
@@ -36,7 +39,6 @@ import ServiceDetail from './pages/ServiceDetail';
 import ServiceOrder from './pages/ServiceOrder';
 import Boosted from './pages/Boosted';
 import Coupons from './pages/Coupons';
-import Pages from './pages/Pages';
 import Groups from './pages/Groups';
 import Reels from './pages/Reels';
 import Saved from './pages/Saved';
@@ -91,7 +93,9 @@ export default function App() {
           <Route path="/service-order/:id" element={<ServiceOrder />} />
           <Route path="/boosted" element={<Boosted />} />
           <Route path="/coupons" element={<Coupons />} />
-          <Route path="/pages" element={<Pages />} />
+          <Route path="/follow" element={<Follow />} />
+<Route path="/profile/:id/followers" element={<ProfileFollowers />} />
+<Route path="/profile/:id/following" element={<ProfileFollowing />} />
           <Route path="/groups" element={<Groups />} />
           <Route path="/reels" element={<Reels />} />
           <Route path="/saved" element={<Saved />} />
