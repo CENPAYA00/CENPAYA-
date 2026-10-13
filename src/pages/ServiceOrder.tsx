@@ -294,7 +294,7 @@ export default function ServiceOrder() {
   // ---------- EXISTING ORDER ----------
   if (!order) return <div className="p-4 text-center text-xs">Order not found.</div>;
 
-  const me = await getCachedUser();
+  const me = getCachedUser();
   const isSeller = me?.id === order.seller_id;
   const isBuyer = me?.id === order.buyer_id;
 
