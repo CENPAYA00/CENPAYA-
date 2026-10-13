@@ -55,6 +55,8 @@ import Follow from './pages/Follow';
 
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import AdminVault from './pages/admin/AdminVault';
+import AdminLedger from './pages/admin/AdminLedger';
+import AdminPaymentMethods from './pages/admin/AdminPaymentMethods';
 import AdminFinance from './pages/admin/AdminFinance';
 import AdminFeatures from './pages/admin/AdminFeatures';
 import AdminUsers from './pages/admin/AdminUsers';
@@ -130,6 +132,8 @@ export default function App() {
           <Route path="/admin/inbox" element={<AdminInbox />} />
           <Route path="/admin/inbox/:id" element={<AdminTicketThread />} />
           <Route path="/admin/vault" element={<AdminVault />} />
+          <Route path="/admin/ledger" element={<AdminLedger />} />
+<Route path="/admin/payment-methods" element={<AdminPaymentMethods />} />
           <Route path="/admin/finance" element={<AdminFinance />} />
           <Route path="/admin/features" element={<AdminFeatures />} />
           <Route path="/admin/users" element={<AdminUsers />} />
