@@ -95,6 +95,7 @@ export default function CreateListing() {
     setErrorMsg('');
     if (!title.trim() || title.trim().length < 3) return setErrorMsg('Title must be at least 3 characters.');
     if (!selectedCategory) return setErrorMsg('Please select a category.');
+    if (!location.trim()) return setErrorMsg('Please enter the location for this listing.');
 
     const finalPrice = usePriceRange ? null : Number(priceSingle);
     if (!usePriceRange && (!finalPrice || finalPrice <= 0)) {
