@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
+import AdminEscrow from './pages/admin/AdminEscrow';
 
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -135,6 +136,7 @@ export default function App() {
           <Route path="/admin/ledger" element={<AdminLedger />} />
 <Route path="/admin/payment-methods" element={<AdminPaymentMethods />} />
           <Route path="/admin/finance" element={<AdminFinance />} />
+          <Route path="/admin/escrow" element={<AdminEscrow />} />
           <Route path="/admin/features" element={<AdminFeatures />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/audit" element={<AdminAuditLogViewer />} />
