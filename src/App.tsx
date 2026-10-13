@@ -28,6 +28,9 @@ import CreateListing from './pages/CreateListing';
 import ListingDetail from './pages/ListingDetail';
 import OrderDetail from './pages/OrderDetail';
 import PostView from './pages/PostView';
+import Communities from './pages/Communities';
+import CommunityDetail from './pages/CommunityDetail';
+import JoinGroupByLink from './pages/JoinGroupByLink';
 import Chat from './pages/Chat';
 import ChatThread from './pages/ChatThread';
 import SupportDashboard from './pages/SupportDashboard';
@@ -100,6 +103,9 @@ export default function App() {
           <Route path="/listing/:id" element={<ListingDetail />} />
           <Route path="/order/:id" element={<OrderDetail />} />
           <Route path="/post/:id" element={<PostView />} />
+          <Route path="/communities" element={<Communities />} />
+<Route path="/communities/:id" element={<CommunityDetail />} />
+<Route path="/groups/join/:code" element={<JoinGroupByLink />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/chat/:id" element={<ChatThread />} />
           <Route path="/support" element={<SupportDashboard />} />
