@@ -123,6 +123,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           <Section label="Social">
             <Item icon={<Users size={15} />} label="Follow" onClick={() => go('/follow')} />
             <Item icon={<Users2 size={15} />} label="Groups" onClick={() => go('/groups')} />
+            <Item icon={<Network size={15} />} label="Communities" onClick={() => go('/communities')} />
             <Item icon={<Video size={15} />} label="Reels" onClick={() => go('/reels')} />
             <Item icon={<Bookmark size={15} />} label="Saved" onClick={() => go('/saved')} />
           </Section>
