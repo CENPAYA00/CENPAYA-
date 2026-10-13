@@ -29,6 +29,7 @@ import Chat from './pages/Chat';
 import ChatThread from './pages/ChatThread';
 import SupportDashboard from './pages/SupportDashboard';
 import Settings from './pages/Settings';
+import SettingsReport from './pages/SettingsReport';
 import SettingsPersonal from './pages/SettingsPersonal';
 import SettingsSecurity from './pages/SettingsSecurity';
 import SettingsVerification from './pages/SettingsVerification';
@@ -105,6 +106,7 @@ export default function App() {
           <Route path="/support" element={<SupportDashboard />} />
           <Route path="/staff/accept/:token" element={<StaffAccept />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/settings/report" element={<SettingsReport />} />
           <Route path="/settings/personal" element={<SettingsPersonal />} />
           <Route path="/settings/security" element={<SettingsSecurity />} />
           <Route path="/settings/verification" element={<SettingsVerification />} />
