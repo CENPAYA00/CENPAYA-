@@ -437,3 +437,108 @@ export default function GroupDetail() {
             <div key={m.user_id} className="bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-accent/15 flex items-center justify-center text-accent font-bold overflow-hidden">
                 {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-10 h-10 o
+                  import { useEffect, useRef, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import {
+  ArrowLeft, Crown, Megaphone, Copy, Check, Share2,
+  UserMinus, Shield, X, LogOut, Send, Mic, Play, Pause, Image as ImageIcon,
+  FileText, Trash2, Reply, AtSign, Bell, BellOff, Clock, BarChart3, Flag, Plus
+} from 'lucide-react';
+import { getCachedUser } from '../lib/cache';
+import { compressImage } from '../utils/compressImage';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import DocumentCard from '../components/DocumentCard';
+
+type Tab = 'chat' | 'members' | 'info';
+
+export default function GroupDetail() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>('chat');
+  const [copied, setCopied] = useState(false);
+  const [memberAction, setMemberAction] = useState<any>(null);
+  const [showMenu, setShowMenu] = useState(false);
+
+  const [messages, setMessages] = useState<any[]>([]);
+  const [polls, setPolls] = useState<Record<string, any>>({});
+  const [input, setInput] = useState('');
+  const [me, setMe] = useState<any>(null);
+  const [sending, setSending] = useState(false);
+  const [replyTo, setReplyTo] = useState<any>(null);
+  const [mentions, setMentions] = useState<any[]>([]);
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionResults, setMentionResults] = useState<any[]>([]);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [actionMessage, setActionMessage] = useState<any>(null);
+  const [showPoll, setShowPoll] = useState(false);
+  const [reportMessage, setReportMessage] = useState<any>(null);
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const recordStartRef = useRef<number>(0);
+  const recorder = useVoiceRecorder();
+
+  const loadGroup = async () => {
+    if (!id) return;
+    const { data: res } = await supabase.rpc('get_group', { p_group_id: id });
+    if (res?.ok) setData(res);
+    setLoading(false);
+  };
+
+  const loadMessages = async () => {
+    if (!id) return;
+    await supabase.rpc('purge_expired_group_messages');
+    const { data: res } = await supabase.rpc('list_group_messages', { p_group_id: id, p_limit: 100 });
+    if (res?.ok) setMessages(res.messages || []);
+  };
+
+  const loadPoll = async (messageId: string) => {
+    const { data: res } = await supabase.rpc('get_group_poll', { p_message_id: messageId });
+    if (res?.ok) setPolls((prev) => ({ ...prev, [messageId]: res }));
+  };
+
+  useEffect(() => {
+    const init = async () => {
+      const u = await getCachedUser();
+      setMe(u);
+      await loadGroup();
+      await loadMessages();
+    };
+    init();
+  }, [id]);
+
+  useEffect(() => {
+    messages.forEach((m) => {
+      if (m.message_type === 'poll' && !polls[m.id]) loadPoll(m.id);
+    });
+  }, [messages]);
+
+  useEffect(() => {
+    if (!id) return;
+    const sub = supabase
+      .channel(`group_${id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `group_id=eq.${id}` },
+        async (payload: any) => {
+          const m = payload.new;
+          const { data: user } = await supabase
+            .from('public_profiles')
+            .select('username, avatar_url')
+            .eq('id', m.sender_id)
+            .maybeSingle();
+          setMessages((prev) => [...prev, { ...m, sender_username: user?.username, sender_avatar: user?.avatar_url }]);
+          if (m.message_type === 'poll') loadPoll(m.id);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(sub); };
+  }, [id]);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length]);
