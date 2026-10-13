@@ -57,6 +57,8 @@ import CommunityDetail from './pages/CommunityDetail';
 import JoinGroupByLink from './pages/JoinGroupByLink';
 
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import AdminStaff from './pages/admin/AdminStaff';
+import StaffAccept from './pages/StaffAccept';
 import AdminVault from './pages/admin/AdminVault';
 import AdminFinance from './pages/admin/AdminFinance';
 import AdminFeatures from './pages/admin/AdminFeatures';
@@ -101,6 +103,7 @@ export default function App() {
           <Route path="/chat" element={<Chat />} />
           <Route path="/chat/:id" element={<ChatThread />} />
           <Route path="/support" element={<SupportDashboard />} />
+          <Route path="/staff/accept/:token" element={<StaffAccept />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/personal" element={<SettingsPersonal />} />
           <Route path="/settings/security" element={<SettingsSecurity />} />
@@ -133,6 +136,7 @@ export default function App() {
 
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<SuperAdminDashboard />} />
+          <Route path="/admin/staff" element={<AdminStaff />} />
           <Route path="/admin/inbox" element={<AdminInbox />} />
           <Route path="/admin/inbox/:id" element={<AdminTicketThread />} />
           <Route path="/admin/ledger" element={<AdminLedger />} />
