@@ -64,7 +64,7 @@ import AdminVault from './pages/admin/AdminVault';
 import AdminFinance from './pages/admin/AdminFinance';
 import AdminFeatures from './pages/admin/AdminFeatures';
 import AdminUsers from './pages/admin/AdminUsers';
-import AdminReports from './components/AdminReports';
+import AdminReports from './pages/admin/AdminReports';
 import AdminSecurity from './pages/admin/AdminSecurity';
 import AdminAuditLogViewer from './pages/admin/AdminAuditLog';
 import AdminPermissions from './pages/admin/AdminPermissions';
