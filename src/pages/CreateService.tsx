@@ -48,6 +48,7 @@ export default function CreateService() {
     setErrorMsg('');
     if (!title.trim() || title.trim().length < 3) return setErrorMsg('Title must be at least 3 characters.');
     if (!description.trim()) return setErrorMsg('Description is required.');
+    if (!location.trim()) return setErrorMsg('Please enter the location for this service.');
 
     if (!usePriceRange && (!price || Number(price) <= 0)) {
       return setErrorMsg('Enter a valid starting price.');
