@@ -8,6 +8,11 @@ import ForgotPassword from './pages/ForgotPassword';
 import Legal from './pages/Legal';
 import SettingsPrivacy from './pages/SettingsPrivacy';
 import SettingsBlocking from './pages/SettingsBlocking';
+import Onboarding from './pages/Onboarding';
+import SettingsPersonal from './pages/SettingsPersonal';
+import SettingsSecurity from './pages/SettingsSecurity';
+import SettingsVerification from './pages/SettingsVerification';
+import SettingsNotifications from './pages/SettingsNotifications';
 
 import Home from './pages/Home';
 import Market from './pages/Market';
@@ -64,6 +69,10 @@ export default function App() {
         <Route path="/legal/:slug" element={<Legal />} />
         <Route path="/settings/privacy" element={<SettingsPrivacy />} />
 <Route path="/settings/blocking" element={<SettingsBlocking />} />
+        <Route path="/settings/personal" element={<SettingsPersonal />} />
+<Route path="/settings/security" element={<SettingsSecurity />} />
+<Route path="/settings/verification" element={<SettingsVerification />} />
+<Route path="/settings/notifications" element={<SettingsNotifications />} />
 
         <Route element={<Layout />}>
           <Route path="/home" element={<Home />} />
@@ -102,6 +111,7 @@ export default function App() {
           <Route path="/saved" element={<Saved />} />
           <Route path="/contact-admin" element={<ContactAdmin />} />
           <Route path="/notifications" element={<Notifications />} />
+          <Route path="/onboarding" element={<Onboarding />} />
         </Route>
 
         <Route element={<AdminLayout />}>
