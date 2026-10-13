@@ -18,6 +18,8 @@ export default function CreatePost() {
 
   const [user, setUser] = useState<any>(null);
   const [content, setContent] = useState('');
+  const [userCity, setUserCity] = useState('');
+const [userCountry, setUserCountry] = useState('CM');
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [swatchId, setSwatchId] = useState<string>('default');
@@ -57,6 +59,15 @@ export default function CreatePost() {
     setImages(next);
     setPreviews(next.map(f => URL.createObjectURL(f)));
   };
+  if (u) {
+  const { data: profile } = await supabase
+    .from('users')
+    .select('location_city, country_iso')
+    .eq('id', u.id)
+    .maybeSingle();
+  if (profile?.location_city) setUserCity(profile.location_city);
+  if (profile?.country_iso) setUserCountry(profile.country_iso);
+  }
 
   const handlePost = async () => {
     setErrorMsg('');
