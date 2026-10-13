@@ -6,6 +6,8 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
 import Legal from './pages/Legal';
+import SettingsPrivacy from './pages/SettingsPrivacy';
+import SettingsBlocking from './pages/SettingsBlocking';
 
 import Home from './pages/Home';
 import Market from './pages/Market';
@@ -58,6 +60,8 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/legal/:slug" element={<Legal />} />
+        <Route path="/settings/privacy" element={<SettingsPrivacy />} />
+<Route path="/settings/blocking" element={<SettingsBlocking />} />
 
         <Route element={<Layout />}>
           <Route path="/home" element={<Home />} />
