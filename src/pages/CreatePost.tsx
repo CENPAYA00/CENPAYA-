@@ -90,6 +90,8 @@ export default function CreatePost() {
         image_url: urls.length > 0 ? urls.join(',') : null,
         post_type: postType,
         bg_color: postType === 'colored' ? bg.id : null,
+        location_city: userCity || null,
+location_country: userCountry || null,
         moderation_status: 'approved',
         likes_count: 0,
         comments_count: 0,
