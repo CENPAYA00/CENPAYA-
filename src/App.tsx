@@ -90,6 +90,7 @@ export default function App() {
           <Route path="/services" element={<Services />} />
           <Route path="/create-service" element={<CreateService />} />
           <Route path="/service/:id" element={<ServiceDetail />} />
+          <Route path="/service-order/new" element={<ServiceOrder />} />
           <Route path="/service-order/:id" element={<ServiceOrder />} />
           <Route path="/boosted" element={<Boosted />} />
           <Route path="/coupons" element={<Coupons />} />
