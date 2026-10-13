@@ -86,6 +86,7 @@ export default function AdminLayout() {
     { path: '/admin/features',        icon: <ToggleLeft size={15} />,      label: 'Features' },
     { path: '/admin/users',           icon: <Users size={15} />,           label: 'Users' },
     { path: '/admin/permissions',     icon: <Key size={15} />,             label: 'Permissions' },
+    { path: '/admin/staff', icon: <UserPlus size={15} />, label: 'Staff' },
     { path: '/admin/audit',           icon: <FileText size={15} />,        label: 'Audit' },
   ];
 
