@@ -23,6 +23,7 @@ import SellerProfile from './pages/SellerProfile';
 import CreatePost from './pages/CreatePost';
 import CreateListing from './pages/CreateListing';
 import ListingDetail from './pages/ListingDetail';
+import StaffPanel from './pages/StaffPanel';
 import OrderDetail from './pages/OrderDetail';
 import PostView from './pages/PostView';
 import Chat from './pages/Chat';
@@ -117,6 +118,7 @@ export default function App() {
           <Route path="/settings/blocking" element={<SettingsBlocking />} />
           <Route path="/my-posts" element={<MyPosts />} />
           <Route path="/my-listings" element={<MyListings />} />
+          <Route path="/staff" element={<StaffPanel />} />
           <Route path="/my-orders" element={<MyOrders />} />
           <Route path="/services" element={<Services />} />
           <Route path="/create-service" element={<CreateService />} />
