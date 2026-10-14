@@ -50,6 +50,9 @@ import Reels from './pages/Reels';
 import Saved from './pages/Saved';
 import ContactAdmin from './pages/ContactAdmin';
 import ContactThread from './pages/ContactThread';
+import StaffLayout from './components/StaffLayout';
+import StaffTicketThread from './pages/StaffTicketThread';
+import StaffReports from './pages/StaffReports';
 import Notifications from './pages/Notifications';
 import Follow from './pages/Follow';
 import Groups from './pages/Groups';
@@ -117,8 +120,7 @@ export default function App() {
           <Route path="/settings/privacy" element={<SettingsPrivacy />} />
           <Route path="/settings/blocking" element={<SettingsBlocking />} />
           <Route path="/my-posts" element={<MyPosts />} />
-          <Route path="/my-listings" element={<MyListings />} />
-          <Route path="/staff" element={<StaffPanel />} />
+          <Route path="/my-listings" element={<MyListings />}
           <Route path="/my-orders" element={<MyOrders />} />
           <Route path="/services" element={<Services />} />
           <Route path="/create-service" element={<CreateService />} />
@@ -139,6 +141,11 @@ export default function App() {
           <Route path="/communities" element={<Communities />} />
           <Route path="/communities/:id" element={<CommunityDetail />} />
         </Route>
+        <Route element={<StaffLayout />}>
+  <Route path="/staff" element={<StaffPanel />} />
+  <Route path="/staff/tickets/:id" element={<StaffTicketThread />} />
+  <Route path="/staff/reports" element={<StaffReports />} />
+</Route>
 
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<SuperAdminDashboard />} />
