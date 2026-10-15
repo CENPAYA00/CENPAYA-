@@ -158,3 +158,48 @@ html { scroll-behavior: smooth; }
 /* ---------- Hide scrollbars on horizontal rows ---------- */
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+/* ---------- Feature R: cursor fix + back-arrow hover ---------- */
+button:not(:disabled),
+a,
+[role="button"],
+.cursor-pointer {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Sidebar back row */
+.sidebar-back-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+html.dark .sidebar-back-row {
+  border-bottom-color: #3E4042;
+}
+
+/* Shared post card adjusts for light theme */
+.shared-post-card {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+html.dark .shared-post-card {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.14);
+}
+
+/* Chat theme bubbles */
+.chat-bubble-mine {
+  border-bottom-right-radius: 0.25rem;
+}
+.chat-bubble-theirs {
+  border-bottom-left-radius: 0.25rem;
+}
