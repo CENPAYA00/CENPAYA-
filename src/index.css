@@ -203,3 +203,15 @@ html.dark .shared-post-card {
 .chat-bubble-theirs {
   border-bottom-left-radius: 0.25rem;
 }
+/* ---------- Fix: preserve inline background colors in dark mode ---------- */
+html.dark [data-preserve-bg="true"] {
+  background-color: revert !important;
+}
+html.dark .swatch-circle {
+  /* Swatch circles must always show their true color, even in dark mode */
+  background-color: initial;
+}
+html.dark .post-bg-preview,
+html.dark .create-post-canvas {
+  background-color: var(--bg-color, #1F2937) !important;
+}
