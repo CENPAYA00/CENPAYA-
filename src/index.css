@@ -215,3 +215,18 @@ html.dark .post-bg-preview,
 html.dark .create-post-canvas {
   background-color: var(--bg-color, #1F2937) !important;
 }
+/* ---------- Bug 8 fix — preserve colored posts in dark mode ---------- */
+html.dark .post-colored-canvas {
+  /* Colored post backgrounds must render as authored, even in dark mode */
+  forced-color-adjust: none;
+}
+html.dark [data-preserve-bg="true"],
+html.dark [data-preserve-bg="true"] * {
+  background-color: revert !important;
+  background-image: revert !important;
+}
+
+/* Ensure swatches show true colors in dark mode */
+.swatch-true-color {
+  background-color: initial;
+}
