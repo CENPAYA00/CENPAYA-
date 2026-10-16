@@ -1,0 +1,182 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
+import { Search, Star, Plus, Briefcase, Eye, EyeOff } from 'lucide-react';
+import { getCachedUser } from '../lib/cache';
+import { useI18n } from '../contexts/i18n';
+import PullToRefresh from '../components/PullToRefresh';
+import DemoBadge from '../components/DemoBadge';
+
+const CATEGORIES = [
+  'All',
+  'Writing', 'Design', 'Business', 'Software', 'Translation',
+  'Freelance Design', 'Web Development', 'App Development',
+  'Graphic Design', 'Content Writing', 'Tutoring', 'Repairs',
+  'Event Planning', 'Photography', 'Ebooks', 'Poems',
+];
+
+export default function Services() {
+  const navigate = useNavigate();
+  const { t } = useI18n();
+  const [services, setServices] = useState<any[]>([]);
+  const [category, setCategory] = useState('All');
+  const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showDemo, setShowDemo] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      const u = await getCachedUser();
+      setIsLoggedIn(!!u);
+      await fetchServices();
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category]);
+
+  const fetchServices = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.rpc('list_services', {
+      p_category: category === 'All' ? null : category,
+      p_search: null,
+      p_limit: 60,
+    });
+    if (error) console.warn(error);
+    setServices(Array.isArray(data) ? data : []);
+    setLoading(false);
+  };
+
+  const filtered = services.filter(s => showDemo || !s.is_demo);
+
+  return (
+    <PullToRefresh onRefresh={fetchServices}>
+      <div className="px-3 py-3 pb-24">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h1 className="text-base font-bold text-navy dark:text-white">{t('freelance_services')}</h1>
+            <p className="text-[10px] text-gray-500">Available everywhere — no country limits</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowDemo(v => !v)}
+              className="text-[10px] font-bold text-gray-500 flex items-center gap-1 cursor-pointer"
+            >
+              {showDemo ? <><Eye size={12} /> Hide demo</> : <><EyeOff size={12} /> Show demo</>}
+            </button>
+            {isLoggedIn && (
+              <button
+                onClick={() => navigate('/create-service')}
+                className="bg-accent text-white text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 cursor-pointer"
+              >
+                <Plus size={12} /> {t('sell_service')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tap-to-open search bar */}
+        <button
+          onClick={() => navigate('/search?context=services')}
+          className="w-full flex items-center gap-2 pl-3 pr-3 py-2.5 mb-3 border border-gray-200 dark:border-darkline rounded-xl bg-white dark:bg-darkcard text-xs text-gray-400 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-darkbg"
+        >
+          <Search size={14} className="text-gray-400 shrink-0" />
+          <span className="flex-1">Search services, freelancers...</span>
+        </button>
+
+        <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3 -mx-3 px-3 scrollbar-hide">
+          {CATEGORIES.map(c => (
+            <button
+              key={c}
+              onClick={() => setCategory(c)}
+              className={`whitespace-nowrap text-[10px] font-bold px-3 py-1.5 rounded-full cursor-pointer ${
+                category === c
+                  ? 'bg-navy dark:bg-accent text-white'
+                  : 'bg-white dark:bg-darkcard text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-darkline'
+              }`}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+
+        {loading && (
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="bg-white dark:bg-darkcard rounded-xl overflow-hidden shadow-sm">
+                <div className="h-28 bg-gray-200 dark:bg-darkline animate-pulse" />
+                <div className="p-2">
+                  <div className="h-3 bg-gray-200 dark:bg-darkline rounded w-3/4 mb-2 animate-pulse" />
+                  <div className="h-3 bg-gray-200 dark:bg-darkline rounded w-1/2 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && filtered.length === 0 && (
+          <div className="bg-white dark:bg-darkcard p-6 rounded-2xl shadow-sm text-center">
+            <Briefcase size={28} className="mx-auto text-gray-400 mb-2" />
+            <p className="text-[11px] font-bold text-navy dark:text-white">{t('no_services')}</p>
+            <p className="text-[9px] text-gray-500 mt-1">{t('be_first_service')}</p>
+            {isLoggedIn && (
+              <button
+                onClick={() => navigate('/create-service')}
+                className="mt-3 bg-accent text-white text-[10px] font-bold px-4 py-2 rounded-lg cursor-pointer"
+              >
+                {t('create_service')}
+              </button>
+            )}
+          </div>
+        )}
+
+        {!loading && filtered.length > 0 && (
+          <div className="grid grid-cols-2 gap-3">
+            {filtered.map(s => {
+              const images: string[] = Array.isArray(s.images) ? s.images : [];
+              const cover = s.thumbnail_url || images[0];
+              const hasRange = s.price_is_range && s.price_min != null;
+              const priceLabel = hasRange
+                ? `${Number(s.price_min).toLocaleString()} – ${Number(s.price_max ?? s.price_min).toLocaleString()}`
+                : `${Number(s.starting_price || 0).toLocaleString()}`;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => navigate(`/service/${s.id}`)}
+                  className="bg-white dark:bg-darkcard rounded-xl overflow-hidden shadow-sm active:scale-[0.98] text-left cursor-pointer"
+                >
+                  <div className="relative h-28 bg-gray-100 dark:bg-darkline">
+                    {cover ? (
+                      <img src={cover} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">No image</div>
+                    )}
+                    {s.is_demo && (
+                      <span className="absolute top-1.5 left-1.5"><DemoBadge /></span>
+                    )}
+                    {images.length > 1 && (
+                      <span className="absolute bottom-1.5 right-1.5 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                        1/{images.length}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-2">
+                    <p className="text-[10px] font-bold text-navy dark:text-white line-clamp-2 leading-snug mb-1">
+                      {s.title}
+                    </p>
+                    <div className="flex items-center gap-1 text-[9px] text-gray-500">
+                      <Star size={9} className="text-gold" fill="currentColor" />
+                      <span>@{s.seller_username}</span>
+                    </div>
+                    <p className="text-[10px] font-black text-accent mt-1">
+                      From {priceLabel} XAF
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </PullToRefresh>
+  );
+            }
