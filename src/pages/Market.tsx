@@ -1,0 +1,161 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
+import { Search, Plus, MapPin, Zap, Eye, EyeOff } from 'lucide-react';
+import PullToRefresh from '../components/PullToRefresh';
+import DemoBadge from '../components/DemoBadge';
+
+export default function Market() {
+  const [listings, setListings] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userCountry, setUserCountry] = useState('CM');
+  const [userCity, setUserCity] = useState<string | null>(null);
+  const [showDemo, setShowDemo] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => { load(); }, []);
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.rpc('get_market_listings', {
+      p_search: null,
+      p_category: null,
+      p_limit: 60,
+      p_offset: 0,
+    });
+    if (error) console.error('Market error:', error.message);
+    if (data?.ok) {
+      setListings(data.listings || []);
+      setUserCountry(data.user_country);
+      setUserCity(data.user_city || null);
+    } else {
+      setListings([]);
+    }
+    setLoading(false);
+  };
+
+  const handleRefresh = () => load();
+
+  const visible = listings.filter(l => showDemo || !l.is_demo);
+
+  return (
+    <PullToRefresh onRefresh={handleRefresh}>
+      <div className="px-3 py-3 pb-24">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h1 className="text-base font-bold text-navy dark:text-white">Marketplace</h1>
+            <p className="text-[10px] text-gray-500">
+              Ranked: {userCity ? `📍 ${userCity} first` : `📍 ${userCountry} first`} · boosted on top
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowDemo(v => !v)}
+              className="text-[10px] font-bold text-gray-500 flex items-center gap-1 cursor-pointer"
+            >
+              {showDemo ? <><Eye size={12} /> Hide demo</> : <><EyeOff size={12} /> Show demo</>}
+            </button>
+            <button
+              onClick={() => navigate('/create-listing')}
+              className="bg-accent text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1 cursor-pointer"
+            >
+              <Plus size={14} /> Sell
+            </button>
+          </div>
+        </div>
+
+        {/* Tap-to-open search bar */}
+        <button
+          onClick={() => navigate('/search?context=market')}
+          className="w-full flex items-center gap-2 pl-3 pr-3 py-2.5 mb-3 border border-gray-200 dark:border-darkline rounded-xl bg-white dark:bg-darkcard text-xs text-gray-400 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-darkbg"
+        >
+          <Search size={14} className="text-gray-400 shrink-0" />
+          <span className="flex-1">Search products, sellers...</span>
+        </button>
+
+        {loading && (
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="bg-white dark:bg-darkcard rounded-xl overflow-hidden shadow-sm">
+                <div className="h-32 bg-gray-200 dark:bg-darkline animate-pulse" />
+                <div className="p-2">
+                  <div className="h-3 bg-gray-200 dark:bg-darkline rounded w-3/4 mb-2 animate-pulse" />
+                  <div className="h-3 bg-gray-200 dark:bg-darkline rounded w-1/2 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && visible.length === 0 && (
+          <div className="bg-white dark:bg-darkcard p-6 rounded-2xl shadow-sm text-center">
+            <p className="text-sm font-bold text-navy dark:text-white">No listings found</p>
+            <p className="text-[10px] text-gray-500 mt-1">Be the first to post something for sale.</p>
+          </div>
+        )}
+
+        {!loading && visible.length > 0 && (
+          <div className="grid grid-cols-2 gap-3">
+            {visible.map((item: any) => {
+              const isBoosted = item.boosted_until && new Date(item.boosted_until) > new Date();
+              const images: string[] = Array.isArray(item.images) ? item.images : [];
+              const first = images[0];
+              const hasRange = item.price_is_range && item.price_min != null;
+              const priceLabel = hasRange
+                ? `${Number(item.price_min).toLocaleString()} – ${Number(item.price_max ?? item.price_min).toLocaleString()}`
+                : `${Number(item.price || 0).toLocaleString()}`;
+              const crossBorder = item.location_country && item.location_country !== userCountry;
+
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => navigate(`/listing/${item.id}`)}
+                  className="bg-white dark:bg-darkcard rounded-xl overflow-hidden shadow-sm active:scale-[0.98] text-left transition-transform cursor-pointer"
+                >
+                  <div className="relative h-32 bg-gray-100 dark:bg-darkbg">
+                    {first ? (
+                      <img src={first} alt={item.title} className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-400">No photo</div>
+                    )}
+                    {isBoosted && (
+                      <span className="absolute top-1.5 left-1.5 bg-accent text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                        <Zap size={9} /> Boosted
+                      </span>
+                    )}
+                    {crossBorder && (
+                      <span className="absolute top-1.5 right-1.5 bg-blue-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                        {item.location_country}
+                      </span>
+                    )}
+                    {item.is_demo && (
+                      <span className="absolute bottom-1.5 left-1.5"><DemoBadge /></span>
+                    )}
+                    {images.length > 1 && (
+                      <span className="absolute bottom-1.5 right-1.5 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                        1/{images.length}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-2">
+                    <p className="text-xs font-bold text-navy dark:text-white line-clamp-2 leading-snug mb-1">
+                      {item.title}
+                    </p>
+                    <p className="text-sm font-black text-accent">
+                      {priceLabel} <span className="text-[10px]">XAF</span>
+                    </p>
+                    {item.location_city && (
+                      <p className="text-[10px] text-gray-400 flex items-center gap-0.5 mt-0.5">
+                        <MapPin size={9} /> {item.location_city}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </PullToRefresh>
+  );
+                }
