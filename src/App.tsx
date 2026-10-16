@@ -37,6 +37,8 @@ import SettingsVerification from './pages/SettingsVerification';
 import SettingsNotifications from './pages/SettingsNotifications';
 import SettingsPrivacy from './pages/SettingsPrivacy';
 import SettingsBlocking from './pages/SettingsBlocking';
+import SettingsAccount from './pages/SettingsAccount';
+import ContactSupport from './pages/ContactSupport';
 import MyPosts from './pages/MyPosts';
 import MyListings from './pages/MyListings';
 import MyOrders from './pages/MyOrders';
@@ -123,6 +125,9 @@ export default function App() {
           <Route path="/settings/notifications" element={<SettingsNotifications />} />
           <Route path="/settings/privacy" element={<SettingsPrivacy />} />
           <Route path="/settings/blocking" element={<SettingsBlocking />} />
+          <Route path="/settings/account" element={<SettingsAccount />} />
+<Route path="/contact-support" element={<ContactSupport />} />
+<Route path="/contact-support/:id" element={<ContactThread />} />
           <Route path="/my-posts" element={<MyPosts />} />
           <Route path="/my-listings" element={<MyListings />} />
           <Route path="/my-orders" element={<MyOrders />} />
