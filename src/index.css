@@ -54,6 +54,12 @@ html.dark select {
   background-color: #3A3B3C !important;
   color: #E4E6EB !important;
   border-color: #3E4042 !important;
+  /* Allow explicit transparent backgrounds on form controls (e.g. colored post canvas) */
+html.dark textarea.bg-transparent,
+html.dark input.bg-transparent {
+  background-color: transparent !important;
+  color: inherit !important;
+}
 }
 html.dark input::placeholder,
 html.dark textarea::placeholder {
