@@ -10,6 +10,7 @@ import Onboarding from './pages/Onboarding';
 
 import Home from './pages/Home';
 import Market from './pages/Market';
+import Checkout from './pages/Checkout';
 import Wallet from './pages/Wallet';
 import WalletTopup from './pages/WalletTopup';
 import Withdraw from './pages/Withdraw';
@@ -98,6 +99,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/home" element={<Home />} />
           <Route path="/market" element={<Market />} />
+          <Route path="/checkout" element={<Checkout />} />
           <Route path="/wallet" element={<Wallet />} />
           <Route path="/wallet/topup" element={<WalletTopup />} />
           <Route path="/withdraw" element={<Withdraw />} />
