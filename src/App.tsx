@@ -28,6 +28,7 @@ import StaffPanel from './pages/StaffPanel';
 import OrderDetail from './pages/OrderDetail';
 import PostView from './pages/PostView';
 import Chat from './pages/Chat';
+import Search from './pages/Search';
 import ChatThread from './pages/ChatThread';
 import SupportDashboard from './pages/SupportDashboard';
 import Settings from './pages/Settings';
@@ -117,6 +118,7 @@ export default function App() {
           <Route path="/order/:id" element={<OrderDetail />} />
           <Route path="/post/:id" element={<PostView />} />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/search" element={<Search />} />
           <Route path="/chat/:id" element={<ChatThread />} />
           <Route path="/support" element={<SupportDashboard />} />
           <Route path="/staff/accept/:token" element={<StaffAccept />} />
