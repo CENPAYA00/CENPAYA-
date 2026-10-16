@@ -230,3 +230,14 @@ html.dark [data-preserve-bg="true"] * {
 .swatch-true-color {
   background-color: initial;
 }
+/* ---------- Bug 8 fix — preserve colored backgrounds in dark mode ---------- */
+html.dark [data-preserve-bg="true"] {
+  background-color: revert !important;
+  background-image: revert !important;
+}
+html.dark [data-preserve-bg="true"] * {
+  background-color: revert !important;
+}
+html.dark .swatch-true-color {
+  background-color: initial;
+}
