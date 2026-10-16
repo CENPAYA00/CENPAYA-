@@ -37,6 +37,8 @@ import SettingsSecurity from './pages/SettingsSecurity';
 import SettingsVerification from './pages/SettingsVerification';
 import SettingsNotifications from './pages/SettingsNotifications';
 import SettingsPrivacy from './pages/SettingsPrivacy';
+import SettingsDetails from './pages/SettingsDetails';
+import SettingsTagging from './pages/SettingsTagging';
 import SettingsBlocking from './pages/SettingsBlocking';
 import SettingsAccount from './pages/SettingsAccount';
 import ContactSupport from './pages/ContactSupport';
@@ -126,6 +128,8 @@ export default function App() {
           <Route path="/settings/verification" element={<SettingsVerification />} />
           <Route path="/settings/notifications" element={<SettingsNotifications />} />
           <Route path="/settings/privacy" element={<SettingsPrivacy />} />
+          <Route path="/settings/details" element={<SettingsDetails />} />
+<Route path="/settings/tagging" element={<SettingsTagging />} />
           <Route path="/settings/blocking" element={<SettingsBlocking />} />
           <Route path="/settings/account" element={<SettingsAccount />} />
 <Route path="/contact-support" element={<ContactSupport />} />
