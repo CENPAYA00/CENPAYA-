@@ -140,15 +140,7 @@ export default function Home() {
 
   return (
     <PullToRefresh onRefresh={handleRefresh}>
-      <div className="px-3 py-3 pb-24">
-        <button
-          onClick={() => navigate('/search?context=home')}
-          className="w-full flex items-center gap-2 pl-3 pr-3 py-2.5 mb-3 border border-gray-200 dark:border-darkline rounded-xl bg-white dark:bg-darkcard text-xs text-gray-400 text-left cursor-pointer hover:bg-gray-50 dark:hover:bg-darkbg"
-        >
-          <Search size={14} className="text-gray-400 shrink-0" />
-          <span className="flex-1">Search posts, people...</span>
-        </button>
-
+      <div className="px-3 py-3 pb24
         <div className="flex justify-between items-center mb-3">
           <h1 className="text-base font-bold text-navy dark:text-white">Home Feed</h1>
           <button
