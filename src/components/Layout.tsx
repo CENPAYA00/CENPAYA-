@@ -27,7 +27,7 @@ export default function Layout() {
       if (!interactive) return;
       if ((interactive as HTMLButtonElement).disabled) return;
       // Skip elements marked as silent
-      if (interactive.hasAttribute('data-silent')) return;
+      if (interactive.hasAttribute('data-silent') || interactive.closest('[data-silent]')) return;
       play('tap');
     };
     document.addEventListener('click', handler);
