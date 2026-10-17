@@ -69,3 +69,22 @@ html.dark [data-inline-bg] {
 
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+/* ---------- Light Mode Contrast Fixes ---------- */
+html:not(.dark) .text-white {
+  /* If a button has text-white but no background color in light mode, make it dark */
+  color: #16221c !important; 
+}
+
+/* Exception: Keep text white if it's inside a button with a solid brand/dark background */
+html:not(.dark) .bg-brand .text-white,
+html:not(.dark) .bg-brand-deeper .text-white,
+html:not(.dark) .bg-black .text-white,
+html:not(.dark) button.bg-brand {
+  color: #ffffff !important;
+}
+
+/* Fix for the "Sell" and "Hide demo" buttons that use text-mute */
+html:not(.dark) .text-mute {
+  color: #16221c !important;
+  font-weight: 600;
+}
