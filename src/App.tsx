@@ -7,6 +7,7 @@ import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
 import Legal from './pages/Legal';
 import Onboarding from './pages/Onboarding';
+import VerifyOtp from './pages/VerifyOtp';
 
 import Home from './pages/Home';
 import Market from './pages/Market';
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/legal/:slug" element={<Legal />} />
         <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/verify-otp" element={<VerifyOtp />} />
 
         <Route element={<Layout />}>
           <Route path="/home" element={<Home />} />
