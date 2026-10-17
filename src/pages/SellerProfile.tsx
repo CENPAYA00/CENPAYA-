@@ -76,61 +76,51 @@ export default function SellerProfile() {
   };
 
   const handleChat = async () => {
-    if (!currentUserId || !id) return;
-    if (currentUserId === id) return alert("You can't chat with yourself.");
+  if (!currentUserId || !id) return;
+  if (currentUserId === id) return alert("You can't chat with yourself.");
 
-    setStartingChat(true);
-    try {
-      // 1. Check if a channel already exists between these two users
-      const { data: myParticipantRows } = await supabase
+  setStartingChat(true);
+  try {
+    // 1. Check if a channel already exists
+    const { data: myParticipantRows } = await supabase
+      .from('chat_participants')
+      .select('channel_id')
+      .eq('user_id', currentUserId);
+      
+    if (myParticipantRows && myParticipantRows.length > 0) {
+      const myChannelIds = myParticipantRows.map(r => r.channel_id);
+      
+      const { data: match } = await supabase
         .from('chat_participants')
         .select('channel_id')
-        .eq('user_id', currentUserId);
-        
-      if (myParticipantRows && myParticipantRows.length > 0) {
-        const myChannelIds = myParticipantRows.map(r => r.channel_id);
-        
-        const { data: match } = await supabase
-          .from('chat_participants')
-          .select('channel_id')
-          .in('channel_id', myChannelIds)
-          .eq('user_id', id)
-          .maybeSingle();
+        .in('channel_id', myChannelIds)
+        .eq('user_id', id)
+        .maybeSingle();
 
-        if (match?.channel_id) {
-          // Channel exists, redirect to it
-          navigate(`/chat/${match.channel_id}`);
-          setStartingChat(false);
-          return;
-        }
+      if (match?.channel_id) {
+        // Channel exists, go to it
+        navigate(`/chat/${match.channel_id}`);
+        setStartingChat(false);
+        return;
       }
-
-      // 2. If no channel exists, create a new one
-      const { data: newChannel, error: chErr } = await supabase
-        .from('chat_channels')
-        .insert({ channel_type: 'P2P_MARKETPLACE' })
-        .select()
-        .single();
-      
-      if (chErr || !newChannel) throw new Error(chErr?.message || 'Could not create channel');
-
-      // 3. Add both participants
-      const { error: partErr } = await supabase
-        .from('chat_participants')
-        .insert([
-          { channel_id: newChannel.id, user_id: currentUserId },
-          { channel_id: newChannel.id, user_id: id },
-        ]);
-
-      if (partErr) throw new Error(partErr.message);
-
-      navigate(`/chat/${newChannel.id}`);
-    } catch (e: any) {
-      alert(e.message || 'Could not start chat');
-    } finally {
-      setStartingChat(false);
     }
-  };
+
+    // 2. Call the new SQL function to create it safely
+    const { data: newChannelId, error: rpcErr } = await supabase.rpc('create_new_direct_chat', {
+      target_user_id: id
+    });
+
+    if (rpcErr) throw new Error(rpcErr.message);
+
+    // 3. Navigate to the new channel
+    navigate(`/chat/${newChannelId}`);
+
+  } catch (e: any) {
+    alert(e.message || 'Could not start chat');
+  } finally {
+    setStartingChat(false);
+  }
+};
 
   if (loading) return <div className="p-4 text-center text-xs">{t('loading')}</div>;
   if (!profile) return <div className="p-4 text-center text-xs">{t('no_results')}</div>;
