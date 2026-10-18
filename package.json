@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.0.0",
+"@tanstack/react-virtual": "^3.1.0",
     "@supabase/supabase-js": "^2.43.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
