@@ -1,0 +1,148 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html, body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  background-color: #eef2f0;
+  color: #16221c;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  margin: 0;
+}
+
+/* ========================================================= */
+/* DARK MODE BASE                                            */
+/* ========================================================= */
+html.dark body {
+  background-color: #0d1511;
+  color: #e8f0ec;
+}
+
+/* Backgrounds */
+html.dark .bg-white { background-color: #17211c !important; }
+html.dark .bg-offwhite { background-color: #0d1511 !important; }
+html.dark .bg-gray-50 { background-color: #17211c !important; }
+html.dark .bg-gray-100 { background-color: #26332c !important; }
+html.dark .bg-gray-200 { background-color: #26332c !important; }
+
+html.dark .dark\:bg-darkcard { background-color: #17211c !important; }
+html.dark .dark\:bg-darkbg { background-color: #0d1511 !important; }
+html.dark .dark\:bg-darkline { background-color: #26332c !important; }
+
+/* Text */
+html.dark .text-navy { color: #e8f0ec !important; }
+html.dark .text-gray-900 { color: #e8f0ec !important; }
+html.dark .text-gray-800 { color: #e8f0ec !important; }
+html.dark .text-gray-700,
+html.dark .text-gray-600,
+html.dark .text-gray-500 { color: #8fa399 !important; }
+
+/* Borders */
+html.dark .border-gray-100,
+html.dark .border-gray-200 { border-color: #26332c !important; }
+
+/* ========================================================= */
+/* FORM INPUTS (Light & Dark) - FIXED TO IGNORE TRANSPARENT   */
+/* ========================================================= */
+html.dark input:not(.bg-transparent),
+html.dark textarea:not(.bg-transparent),
+html.dark select {
+  background-color: #0d1511 !important;
+  color: #e8f0ec !important;
+  border-color: #26332c !important;
+}
+
+html:not(.dark) input:not(.bg-transparent),
+html:not(.dark) textarea:not(.bg-transparent),
+html:not(.dark) select {
+  background-color: #f8faf9 !important;
+  border: 1.5px solid #e1e8e4 !important;
+}
+
+input:focus:not(.bg-transparent),
+select:focus:not(.bg-transparent),
+textarea:focus:not(.bg-transparent) {
+  border-color: #12935a !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(18, 147, 90, 0.15) !important;
+}
+
+/* Colored Post Canvas (Overrides everything) */
+html.dark [data-inline-bg] {
+  background-color: var(--inline-bg, transparent) !important;
+  background-image: var(--inline-bg-image, none) !important;
+  color: var(--inline-fg, inherit) !important;
+}
+
+/* ========================================================= */
+/* LIGHT MODE FIXES                                          */
+/* ========================================================= */
+html:not(.dark) .text-mute {
+  color: #16221c !important;
+  font-weight: 600;
+}
+html:not(.dark) .text-gray-400,
+html:not(.dark) .text-gray-500 {
+  color: #4b5563 !important; 
+}
+html:not(.dark) input::placeholder,
+html:not(.dark) textarea::placeholder {
+  color: #6b7280 !important;
+}
+
+/* ========================================================= */
+/* GLOBAL DESIGN SYSTEM (Cards & Buttons)                    */
+/* ========================================================= */
+.bg-white.rounded-xl, 
+.bg-white.rounded-2xl,
+.bg-white.rounded-3xl {
+  border-radius: 22px !important;
+  box-shadow: 0 2px 12px rgba(10, 61, 43, 0.06) !important;
+  border: 1px solid rgba(10, 61, 43, 0.04) !important;
+}
+
+html.dark .bg-darkcard.rounded-xl,
+html.dark .bg-darkcard.rounded-2xl,
+html.dark .bg-darkcard.rounded-3xl {
+  border-radius: 22px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+button.bg-accent, 
+button.bg-brand,
+button.bg-navy {
+  border-radius: 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  transition: transform 0.1s ease, opacity 0.2s ease !important;
+}
+
+button.bg-accent:active, 
+button.bg-brand:active,
+button.bg-navy:active {
+  transform: scale(0.97) !important;
+}
+
+/* ========================================================= */
+/* ANIMATIONS & UTILITIES                                    */
+/* ========================================================= */
+@keyframes slideUp { 
+  from { transform: translateY(100%); } 
+  to { transform: translateY(0); } 
+}
+.animate-slide-up { 
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1); 
+}
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
