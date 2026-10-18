@@ -1,0 +1,139 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html, body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  background-color: #eef2f0;
+  color: #16221c;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  margin: 0;
+}
+
+/* ---------- Dark mode ---------- */
+html.dark body {
+  background-color: #0d1511;
+  color: #e8f0ec;
+}
+
+html.dark .bg-white { background-color: #17211c !important; }
+html.dark .bg-offwhite { background-color: #0d1511 !important; }
+html.dark .bg-gray-50 { background-color: #17211c !important; }
+html.dark .bg-gray-100 { background-color: #26332c !important; }
+
+html.dark .text-navy { color: #e8f0ec !important; }
+html.dark .text-gray-900 { color: #e8f0ec !important; }
+html.dark .text-gray-800 { color: #e8f0ec !important; }
+html.dark .text-gray-700,
+html.dark .text-gray-600,
+html.dark .text-gray-500 { color: #8fa399 !important; }
+
+html.dark .border-gray-100,
+html.dark .border-gray-200 { border-color: #26332c !important; }
+
+html.dark input,
+html.dark textarea {
+  background-color: #0d1511 !important;
+  color: #e8f0ec !important;
+  border-color: #26332c !important;
+}
+
+html.dark [data-inline-bg] {
+  background-color: var(--inline-bg, transparent) !important;
+  background-image: var(--inline-bg-image, none) !important;
+  color: var(--inline-fg, inherit) !important;
+}
+
+/* ---------- Light Mode Specific Fixes ---------- */
+html:not(.dark) .text-mute {
+  color: #16221c !important;
+  font-weight: 600;
+}
+html:not(.dark) .text-gray-400,
+html:not(.dark) .text-gray-500 {
+  color: #4b5563 !important; 
+}
+html:not(.dark) input::placeholder,
+html:not(.dark) textarea::placeholder {
+  color: #6b7280 !important;
+}
+
+/* Animations */
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.animate-slide-up { animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ========================================================= */
+/* GLOBAL DESIGN SYSTEM OVERRIDES (Upgrades untouched pages) */
+/* ========================================================= */
+
+/* 1. Upgrade all cards to the new 22px rounded look */
+.bg-white.rounded-xl, 
+.bg-white.rounded-2xl,
+.bg-white.rounded-3xl {
+  border-radius: 22px !important;
+  box-shadow: 0 2px 12px rgba(10, 61, 43, 0.06) !important;
+  border: 1px solid rgba(10, 61, 43, 0.04) !important;
+}
+
+html.dark .bg-darkcard.rounded-xl,
+html.dark .bg-darkcard.rounded-2xl,
+html.dark .bg-darkcard.rounded-3xl {
+  border-radius: 22px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* 2. Upgrade all primary buttons to the new pill shape */
+button.bg-accent, 
+button.bg-brand,
+button.bg-navy {
+  border-radius: 14px !important; /* Softer, modern button radius */
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  transition: transform 0.1s ease, opacity 0.2s ease !important;
+}
+
+button.bg-accent:active, 
+button.bg-brand:active,
+button.bg-navy:active {
+  transform: scale(0.97) !important;
+}
+
+/* 3. Upgrade all inputs to soft, pill-like fields */
+input[type="text"], 
+input[type="email"], 
+input[type="password"], 
+input[type="number"],
+select,
+textarea {
+  border-radius: 14px !important;
+  background-color: #f8faf9 !important;
+  border: 1.5px solid #e1e8e4 !important;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+html.dark input, 
+html.dark select, 
+html.dark textarea {
+  background-color: #0d1511 !important;
+  border-color: #26332c !important;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: #12935a !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(18, 147, 90, 0.15) !important;
+                         }
