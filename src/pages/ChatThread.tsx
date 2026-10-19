@@ -99,7 +99,7 @@ export default function ChatThread() {
       if (sharedIds.length > 0) {
         const { data: posts } = await supabase.from('posts').select('id, content, image_url, profiles:public_profiles(username, avatar_url)').in('id', sharedIds);
         const map: Record<string, any> = {};
-        (posts || []).forEach(p => { map[p.id] = { ...p, username: p.profiles?.username, avatar_url: p.profiles?.avatar_url }; });
+        (posts || []).forEach(p => { map[p.id] = { ...p, username: p.profiles?.[0]?.username, avatar_url: p.profiles?.[0]?.avatar_url }; });
         setPostPreviews(map);
       }
 
