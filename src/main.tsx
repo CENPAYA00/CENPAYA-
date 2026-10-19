@@ -22,16 +22,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <LightGuard>
-        <DesignSystem> {/* ADDED */}
-          <ThemeProvider>
-            <I18nProvider>
-              <SoundProvider>
-                <App />
-              </SoundProvider>
-            </I18nProvider>
-          </ThemeProvider>
-        </DesignSystem> {/* ADDED */}
-      </LightGuard>
-    </QueryClientProvider>
-  </React.StrictMode>,
-);
+  <ThemeProvider>
+    <I18nProvider>
+      <SoundProvider>
+        <App />
+      </SoundProvider>
+    </I18nProvider>
+  </ThemeProvider>
+</LightGuard>
