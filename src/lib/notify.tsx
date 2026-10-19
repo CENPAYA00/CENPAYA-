@@ -1,4 +1,4 @@
-// notify.ts — CenPaya's single notification system.
+// notify.tsx — CenPaya's single notification system.
 // 1) Put this file in src/lib/notify.tsx
 // 2) In main.tsx:  import { installNotify, NotifyHost } from './lib/notify';
 //                  installNotify();            // BEFORE render
