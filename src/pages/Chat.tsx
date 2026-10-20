@@ -58,10 +58,10 @@ export default function Chat() {
       const channelIds = myChannels.map(c => c.channel_id);
 
       const [othersRes, demoRes, lastMsgsRes, unreadRes] = await Promise.all([
-        supabase.from('chat_participants').select('channel_id, user_id, public_profiles(username, avatar_url)').in('channel_id', channelIds).neq('user_id', userId),
+        supabase.from('chat_participants').select('channel_id, user_id, users(username, avatar_url)').in('channel_id', channelIds).neq('user_id', userId),
         supabase.from('chat_channels').select('id, is_demo').in('id', channelIds),
-        supabase.from('chat_messages').select('channel_id, body, message_type, created_at, sender_id').in('channel_id', channelIds).order('created_at', { ascending: false }).limit(500),
-        supabase.from('chat_messages').select('channel_id').in('channel_id', channelIds).neq('sender_id', userId).is('read_at', null)
+        supabase.from('chat_messages_stream').select('channel_id, body_text, sender_id').in('channel_id', channelIds).order('delivered_at', { ascending: false }).limit(500),
+        supabase.from('chat_messages_stream').select('channel_id').in('channel_id', channelIds).neq('sender_id', userId)
       ]);
 
       const others = (othersRes.data || []) as any[];
@@ -76,14 +76,14 @@ export default function Chat() {
 
       const list: ChatRow[] = others.map((o) => {
         const ch = lastMap[o.channel_id];
-        const preview = ch?.message_type === 'voice_note' ? '🎤 Voice note' : ch?.message_type === 'shared_post' ? '📎 Shared a post' : ch?.body || 'No messages yet';
+        const preview = ch?.body_text ? '📝 ' + ch.body_text.slice(0, 50) + (ch.body_text.length > 50 ? '...' : '') : 'No messages yet';
         return {
           channel_id: o.channel_id,
           other_user_id: o.user_id,
-          other_username: o.public_profiles?.username || 'User',
-          other_avatar: o.public_profiles?.avatar_url || null,
+          other_username: o.users?.username || 'User',
+          other_avatar: o.users?.avatar_url || null,
           last_message: preview,
-          last_time: ch?.created_at || null,
+          last_time: ch?.delivered_at || null,
           last_sender: ch?.sender_id || null,
           unread: unreadMap[o.channel_id] || 0,
           is_demo: demoMap[o.channel_id] || false,

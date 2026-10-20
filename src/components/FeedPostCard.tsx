@@ -84,7 +84,7 @@ export default function FeedPostCard({
     showToast('Marked as interested');
     try {
       const me = await getCachedUser();
-      if (me) await supabase.from('interested_posts').upsert({ user_id: me.id, post_id: post.id });
+      if (me) await supabase.from('not_interested_posts').upsert({ user_id: me.id, post_id: post.id });
     } catch {}
   };
 

@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 export interface Toast { cid: string; title: string; text: string }
-interface Incoming { id: string; channel_id: string; sender_id: string; body: string | null; message_type?: string | null }
+interface Incoming { id: string; channel_id: string; sender_id: string; body_text: string | null }
 
 const preview = (m: Incoming): string => {
-  if (m.message_type === 'voice_note') return '🎤 Voice message';
-  if (m.message_type === 'image') return '📷 Photo';
-  if (m.message_type === 'shared_post') return '↗ Shared a post';
-  return m.body ?? '';
+  if (m.body_text?.includes('🎤') || m.body_text?.includes('Voice')) return '🎤 Voice message';
+  if (m.body_text?.includes('📷') || m.body_text?.includes('Photo')) return '📷 Photo';
+  if (m.body_text?.includes('Shared')) return '↗ Shared a post';
+  return m.body_text ?? '';
 };
 
 export function useMessageAlerts(me: string | null, activeChannelId: string | null, onOpen: (cid: string) => void) {
@@ -19,9 +19,8 @@ export function useMessageAlerts(me: string | null, activeChannelId: string | nu
   const refreshUnread = useCallback(async () => {
     if (!me) return;
     const { count } = await supabase
-      .from('chat_messages')
+      .from('chat_messages_stream')
       .select('id', { count: 'exact', head: true })
-      .is('read_at', null)
       .neq('sender_id', me);
     setUnread(count ?? 0);
   }, [me]);
@@ -32,10 +31,10 @@ export function useMessageAlerts(me: string | null, activeChannelId: string | nu
 
     const ch = supabase.channel(`alerts:${me}`)
       // 1. Listen for reads to update the badge
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, () => void refreshUnread())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages_stream' }, () => void refreshUnread())
       
       // 2. Listen for new messages
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, async (p) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages_stream' }, async (p) => {
         const m = p.new as Incoming;
         if (m.sender_id === me) return;
         
@@ -46,7 +45,7 @@ export function useMessageAlerts(me: string | null, activeChannelId: string | nu
 
         let name = names.current.get(m.sender_id);
         if (!name) {
-          const { data } = await supabase.from('public_profiles').select('username').eq('id', m.sender_id).single();
+          const { data } = await supabase.from('users').select('username').eq('id', m.sender_id).single();
           name = data?.username ? `@${data.username}` : 'New message'; 
           names.current.set(m.sender_id, name);
         }
