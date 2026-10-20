@@ -57,12 +57,19 @@ export default function Chat() {
       if (!myChannels || myChannels.length === 0) return [];
       const channelIds = myChannels.map(c => c.channel_id);
 
-      const [othersRes, demoRes, lastMsgsRes, unreadRes] = await Promise.all([
+      const [othersRes, demoRes, lastMsgsRes] = await Promise.all([
         supabase.from('chat_participants').select('channel_id, user_id, users(username, avatar_url)').in('channel_id', channelIds).neq('user_id', userId),
         supabase.from('chat_channels').select('id, is_demo').in('id', channelIds),
-        supabase.from('chat_messages_stream').select('channel_id, body_text, sender_id').in('channel_id', channelIds).order('delivered_at', { ascending: false }).limit(500),
-        supabase.from('chat_messages_stream').select('channel_id').in('channel_id', channelIds).neq('sender_id', userId)
+        supabase.from('chat_messages_stream').select('channel_id, body_text, sender_id').in('channel_id', channelIds).order('delivered_at', { ascending: false }).limit(500)
       ]);
+      // Derive unread counts from last messages: count messages where sender_id != userId
+      // Since chat_messages_stream has no read_at, we count all messages from other senders as unread candidates
+      const unreadCounts: Record<string, number> = {};
+      (lastMsgsRes.data || []).forEach((m: any) => {
+        if (m.sender_id && m.sender_id !== userId) {
+          unreadCounts[m.channel_id] = (unreadCounts[m.channel_id] || 0) + 1;
+        }
+      });
 
       const others = (othersRes.data || []) as any[];
       const demoMap: Record<string, boolean> = {};
@@ -72,7 +79,7 @@ export default function Chat() {
       (lastMsgsRes.data || []).forEach((m: any) => { if (!lastMap[m.channel_id]) lastMap[m.channel_id] = m; });
 
       const unreadMap: Record<string, number> = {};
-      (unreadRes.data || []).forEach((r: any) => { unreadMap[r.channel_id] = (unreadMap[r.channel_id] || 0) + 1; });
+      Object.keys(unreadCounts).forEach((k) => { unreadMap[k] = unreadCounts[k]; });
 
       const list: ChatRow[] = others.map((o) => {
         const ch = lastMap[o.channel_id];
