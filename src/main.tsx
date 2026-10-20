@@ -23,20 +23,29 @@ const queryClient = new QueryClient({
   },
 });
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <LightGuard>
-        <ThemeProvider>
-          <I18nProvider>
-            <SoundProvider>
-              {/* 3. Render the popup host */}
-              <NotifyHost />
-              <App />
-            </SoundProvider>
-          </I18nProvider>
-        </ThemeProvider>
-      </LightGuard>
-    </QueryClientProvider>
-  </React.StrictMode>,
-);
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  console.error('[CenPaya] Mount failed: #root element not found in index.html');
+  const errEl = document.createElement('div');
+  errEl.style.cssText = 'padding:24px;color:#c2362b;font-family:system-ui,sans-serif;text-align:center';
+  errEl.textContent = 'CenPaya failed to mount: missing #root element.';
+  document.body?.appendChild(errEl);
+} else {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <LightGuard>
+          <ThemeProvider>
+            <I18nProvider>
+              <SoundProvider>
+                {/* 3. Render the popup host */}
+                <NotifyHost />
+                <App />
+              </SoundProvider>
+            </I18nProvider>
+          </ThemeProvider>
+        </LightGuard>
+      </QueryClientProvider>
+    </React.StrictMode>,
+  );
+}

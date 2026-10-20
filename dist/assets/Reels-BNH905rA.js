@@ -1,0 +1,1 @@
+import{j as e}from"./index-BPD8HxCq.js";function t(){return e.jsxs("div",{className:"px-3 py-3 pb-24",children:[e.jsx("h1",{className:"text-base font-bold text-navy",children:"Reels"}),e.jsx("p",{className:"text-[10px] text-gray-500 mt-2",children:"Coming soon."})]})}export{t as default};
