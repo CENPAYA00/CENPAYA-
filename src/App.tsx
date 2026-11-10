@@ -112,11 +112,12 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthListener /> {/* ADDED THE BOUNCER HERE */}
-      
+
       {/* Suspense shows a loading state while the page downloads */}
       <Suspense fallback={<div className="h-screen bg-[#eef2f0] dark:bg-darkbg flex items-center justify-center text-brand font-bold">Loading...</div>}>
         <Routes>
           <Route path="/" element={<Login />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/legal/:slug" element={<Legal />} />
