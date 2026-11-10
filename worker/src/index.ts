@@ -1,4 +1,4 @@
-import { Pool } from '@neondatabase/serverless';
+import { Client } from 'pg';
 
 interface Env {
   HYPERDRIVE: Hyperdrive;
@@ -31,7 +31,7 @@ function corsHeaders(request: Request, env: Env): Headers {
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-headers': 'authorization, content-type, apikey',
     'access-control-max-age': '86400',
-    'vary': 'Origin',
+    vary: 'Origin',
   });
   const origin = request.headers.get('Origin');
   if (origin && env.CENPAYA_ORIGIN && origin === env.CENPAYA_ORIGIN) {
@@ -70,13 +70,15 @@ async function authenticate(request: Request, env: Env): Promise<AuthenticatedUs
 }
 
 async function databaseHealth(env: Env): Promise<boolean> {
-  const pool = new Pool({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
+  // Hyperdrive manages pooling; create a short-lived Client for each Worker invocation.
+  const client = new Client({ connectionString: env.HYPERDRIVE.connectionString });
   try {
+    await client.connect();
     // Constant query; no request values are interpolated into SQL.
-    const result = await pool.query('select 1 as ok');
+    const result = await client.query<{ ok: number }>('select 1 as ok');
     return result.rows[0]?.ok === 1;
   } finally {
-    await pool.end().catch(() => undefined);
+    await client.end().catch(() => undefined);
   }
 }
 
