@@ -1,0 +1,47 @@
+name: worker-verify
+
+on:
+push:
+branches:
+- migration/neon-worker-api
+paths:
+- 'worker/**'
+- '.github/workflows/worker-verify.yml'
+workflow_dispatch:
+
+jobs:
+worker-typecheck:
+runs-on: ubuntu-latest
+permissions:
+contents: read
+
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v4
+
+  - name: Set up Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20
+
+  - name: Install worker dependencies
+    working-directory: ./worker
+    run: npm install
+
+  - name: Type-check Worker
+    working-directory: ./worker
+    run: npm run typecheck
+
+  - name: Wrangler dry-run check
+    working-directory: ./worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      HYPERDRIVE_ID: ${{ secrets.HYPERDRIVE_ID }}
+    run: |
+      if [ -z "$HYPERDRIVE_ID" ] || [ "$HYPERDRIVE_ID" = "REPLACE_WITH_EXISTING_HYPERDRIVE_ID" ]; then
+        echo "Missing GitHub secret HYPERDRIVE_ID."
+        exit 1
+      fi
+
+      perl -0pi -e 's/REPLACE_WITH_EXISTING_HYPERDRIVE_ID/'"$HYPERDRIVE_ID"'/g' wrangler.toml
+      npx wrangler deploy --dry-run
