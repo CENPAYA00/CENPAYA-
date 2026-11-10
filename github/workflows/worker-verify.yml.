@@ -43,5 +43,5 @@ steps:
         exit 1
       fi
 
-      perl -0pi -e 's/REPLACE_WITH_EXISTING_HYPERDRIVE_ID/'"$HYPERDRIVE_ID"'/g' wrangler.toml
+      perl -0pi -e 's/c3605a1a0a084fd081c4c7b839d39809/'"$HYPERDRIVE_ID"'/g' wrangler.toml
       npx wrangler deploy --dry-run
