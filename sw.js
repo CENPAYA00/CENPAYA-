@@ -1,13 +1,21 @@
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
+const NOTIFICATION_ICON = "/icons/image_76ec5c90%20(1)%20(1)%20(1).png";
+
 self.addEventListener("push", (e) => {
-  const d = e.data ? e.data.json() : {};
+  let d = {};
+  try {
+    d = e.data ? e.data.json() : {};
+  } catch {
+    d = { body: e.data ? e.data.text() : "" };
+  }
+
   e.waitUntil(
     self.registration.showNotification(d.title || "CenPaya", {
       body: d.body || "",
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
+      icon: NOTIFICATION_ICON,
+      badge: NOTIFICATION_ICON,
       tag: d.tag,
       renotify: true,
       vibrate: [80, 40, 80],
@@ -21,7 +29,12 @@ self.addEventListener("notificationclick", (e) => {
   const url = (e.notification.data && e.notification.data.url) || "/";
   e.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      for (const c of list) { if ("focus" in c) { c.navigate(url); return c.focus(); } }
+      for (const c of list) {
+        if ("focus" in c) {
+          c.navigate(url);
+          return c.focus();
+        }
+      }
       return self.clients.openWindow(url);
     })
   );
