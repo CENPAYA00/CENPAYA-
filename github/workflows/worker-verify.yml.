@@ -38,7 +38,7 @@ steps:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       HYPERDRIVE_ID: ${{ secrets.HYPERDRIVE_ID }}
     run: |
-      if [ -z "$HYPERDRIVE_ID" ] || [ "$HYPERDRIVE_ID" = "REPLACE_WITH_EXISTING_HYPERDRIVE_ID" ]; then
+      if [ -z "$HYPERDRIVE_ID" ] || [ "$HYPERDRIVE_ID" = "c3605a1a0a084fd081c4c7b839d39809" ]; then
         echo "Missing GitHub secret HYPERDRIVE_ID."
         exit 1
       fi
