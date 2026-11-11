@@ -1,3 +1,4 @@
+
 name: worker-verify
 
 on:
@@ -23,27 +24,33 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
 
       - name: Install Worker dependencies
         working-directory: worker
-        run: npm install
+        run: npm ci
 
       - name: Type-check Worker
         working-directory: worker
         run: npm run typecheck
 
-      - name: Substitute Hyperdrive ID and run Wrangler dry-run
+      - name: Test Worker and database helpers
+        working-directory: worker
+        run: npm test
+
+      - name: Configure existing Hyperdrive ID for dry-run
         working-directory: worker
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           HYPERDRIVE_ID: ${{ secrets.HYPERDRIVE_ID }}
         shell: bash
         run: |
           set +x
           if [ -z "${HYPERDRIVE_ID:-}" ]; then
-            echo "::error::Required repository secret HYPERDRIVE_ID is missing or empty."
+            echo "::error::HYPERDRIVE_ID secret is missing."
             exit 1
           fi
+
           echo "::add-mask::$HYPERDRIVE_ID"
 
           python - <<'PY'
@@ -53,9 +60,25 @@ jobs:
           config = Path("wrangler.toml")
           text = config.read_text()
           placeholder = "REPLACE_WITH_EXISTING_HYPERDRIVE_ID"
+
           if text.count(placeholder) != 1:
-              raise SystemExit("Expected Hyperdrive ID placeholder exactly once in wrangler.toml.")
-          config.write_text(text.replace(placeholder, os.environ["HYPERDRIVE_ID"]))
+              raise SystemExit("Expected Hyperdrive placeholder exactly once.")
+
+          config.write_text(
+              text.replace(placeholder, os.environ["HYPERDRIVE_ID"])
+          )
           PY
 
-          npx wrangler deploy --dry-run
+      - name: Build Worker without deploying
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          set +x
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is missing."
+            exit 1
+          fi
+          npm run build
+          
