@@ -18,7 +18,7 @@ function toBase64Url(bytes: Uint8Array): string {
     .replace(/=+$/g, '');
 }
 
-function fromBase64Url(value: string): Uint8Array {
+function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const base64 = value
     .replace(/-/g, '+')
     .replace(/_/g, '/');
