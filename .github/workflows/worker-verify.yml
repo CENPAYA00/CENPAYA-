@@ -39,15 +39,16 @@ jobs:
         working-directory: worker
         run: npm test
 
-      - name: Configure existing Hyperdrive ID for dry-run
+      - name: Configure existing Hyperdrive ID
         working-directory: worker
         env:
           HYPERDRIVE_ID: ${{ secrets.HYPERDRIVE_ID }}
         shell: bash
         run: |
-          set +x
+          set -euo pipefail
+
           if [ -z "${HYPERDRIVE_ID:-}" ]; then
-            echo "::error::HYPERDRIVE_ID secret is missing."
+            echo "::error::HYPERDRIVE_ID repository secret is missing."
             exit 1
           fi
 
@@ -58,14 +59,16 @@ jobs:
           from pathlib import Path
 
           config = Path("wrangler.toml")
-          text = config.read_text()
+          content = config.read_text()
           placeholder = "REPLACE_WITH_EXISTING_HYPERDRIVE_ID"
 
-          if text.count(placeholder) != 1:
-              raise SystemExit("Expected Hyperdrive placeholder exactly once.")
+          if content.count(placeholder) != 1:
+              raise SystemExit(
+                  "Expected the Hyperdrive placeholder exactly once."
+              )
 
           config.write_text(
-              text.replace(placeholder, os.environ["HYPERDRIVE_ID"])
+              content.replace(placeholder, os.environ["HYPERDRIVE_ID"])
           )
           PY
 
@@ -75,10 +78,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         shell: bash
         run: |
-          set +x
+          set -euo pipefail
+
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN secret is missing."
+            echo "::error::CLOUDFLARE_API_TOKEN repository secret is missing."
             exit 1
           fi
+
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
           npm run build
           
