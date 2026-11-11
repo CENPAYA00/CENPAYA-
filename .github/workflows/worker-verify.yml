@@ -23,7 +23,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.12.0
           cache: npm
           cache-dependency-path: worker/package-lock.json
 
@@ -74,17 +74,6 @@ jobs:
 
       - name: Build Worker without deploying
         working-directory: worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
+        run: npm run build
 
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN repository secret is missing."
-            exit 1
-          fi
-
-          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
-          npm run build
           
