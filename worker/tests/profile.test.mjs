@@ -1,15 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readUserProfile, smallintToBoolean } from '../.test-build/profile.js';
+import { asBool, readUserProfile } from '../.test-build/profile.js';
 
 void describe('Neon user profile normalization', () => {
-  void it('normalizes SMALLINT zero/nonzero values and null safely', () => {
-    assert.equal(smallintToBoolean(0), false);
-    assert.equal(smallintToBoolean('0'), false);
-    assert.equal(smallintToBoolean(1), true);
-    assert.equal(smallintToBoolean('-1'), true);
-    assert.equal(smallintToBoolean(null), false);
-    assert.equal(smallintToBoolean(undefined), false);
+  void it('normalizes boolean, SMALLINT, and supported string encodings', () => {
+    for (const value of [true, 1, -1, '1', 'true', ' T ', 'Yes']) {
+      assert.equal(asBool(value), true, `expected ${String(value)} to normalize to true`);
+    }
+    for (const value of [false, 0, '0', 'false', 'f', 'no', null, undefined, 'unknown', '2']) {
+      assert.equal(asBool(value), false, `expected ${String(value)} to normalize to false`);
+    }
   });
 
   void it('queries the profile using a parameter and derives active membership from expiry/exemption/trial', async () => {
@@ -63,6 +63,19 @@ void describe('Neon user profile normalization', () => {
         moderation_state: 'active', signed_out_at: null,
       }] }), 'user-789', Date.parse('2026-01-01T00:00:00.000Z'));
       assert.equal(profile?.is_subscribed, true);
+      assert.equal(profile?.is_paid_membership_active, false);
+    }
+  });
+
+  void it('treats malformed or expired expiry values as inactive', async () => {
+    for (const expiry of ['not-a-date', '2026-01-01T00:00:00.000Z']) {
+      const profile = await readUserProfile(async () => ({ rows: [{
+        id: 'user-invalid-expiry', email: null, role: 'user', onboarding_completed: false,
+        is_subscribed: 1, banned: 0, is_membership_exempt: 'false',
+        membership_expires_at: expiry, trial_ends_at: null,
+        moderation_state: 'active', signed_out_at: null,
+      }] }), 'user-invalid-expiry', Date.parse('2026-01-01T00:00:00.000Z'));
+      assert.equal(profile?.is_subscribed, false);
       assert.equal(profile?.is_paid_membership_active, false);
     }
   });

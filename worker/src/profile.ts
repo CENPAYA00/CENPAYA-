@@ -31,21 +31,22 @@ export interface UserProfile {
 
 export type ProfileQuery = (sql: string, values: readonly unknown[]) => Promise<{ rows: UserProfileRow[] }>;
 
-/** Interpret PostgreSQL SMALLINT/boolean-like values without treating null as truthy. */
-export function smallintToBoolean(value: unknown): boolean {
-  return value !== null && value !== undefined && Number(value) !== 0;
+/** Normalize PostgreSQL SMALLINT and common boolean encodings without treating arbitrary strings as true. */
+export function asBool(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+
+  if (typeof value === 'string') {
+    return ['1', 'true', 't', 'yes'].includes(value.trim().toLowerCase());
+  }
+
+  return false;
 }
 
 function asIsoString(value: Date | string | null): string | null {
   if (value === null) return null;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function isFuture(value: Date | string | null, now: number): boolean {
-  if (value === null) return false;
-  const time = value instanceof Date ? value.getTime() : Date.parse(value);
-  return Number.isFinite(time) && time > now;
 }
 
 /**
@@ -69,9 +70,16 @@ export async function readUserProfile(
   const row = result.rows[0];
   if (!row) return null;
 
-  const isMembershipExempt = smallintToBoolean(row.is_membership_exempt);
-  const paidMembershipActive = isFuture(row.membership_expires_at, now);
-  const validTrial = isFuture(row.trial_ends_at, now);
+  const isMembershipExempt = asBool(row.is_membership_exempt);
+  const paidExpiry = row.membership_expires_at
+    ? new Date(row.membership_expires_at).getTime()
+    : Number.NaN;
+  const trialExpiry = row.trial_ends_at
+    ? new Date(row.trial_ends_at).getTime()
+    : Number.NaN;
+  const hasLivePaidMembership = Number.isFinite(paidExpiry) && paidExpiry > now;
+  const hasLiveTrial = Number.isFinite(trialExpiry) && trialExpiry > now;
+  const isSubscribed = isMembershipExempt || hasLivePaidMembership || hasLiveTrial;
 
   return {
     id: row.id,
@@ -79,12 +87,12 @@ export async function readUserProfile(
     role: row.role,
     onboarding_completed: row.onboarding_completed === true,
     // Expiry is authoritative for paid membership; exemption and valid trials are independent.
-    is_subscribed: isMembershipExempt || validTrial || paidMembershipActive,
-    is_paid_membership_active: paidMembershipActive,
+    is_subscribed: isSubscribed,
+    is_paid_membership_active: hasLivePaidMembership,
     is_membership_exempt: isMembershipExempt,
     membership_expires_at: asIsoString(row.membership_expires_at),
     trial_ends_at: asIsoString(row.trial_ends_at),
-    banned: smallintToBoolean(row.banned),
+    banned: asBool(row.banned),
     moderation_state: row.moderation_state,
     signed_out_at: asIsoString(row.signed_out_at),
   };
