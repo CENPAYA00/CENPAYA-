@@ -1,3 +1,4 @@
+import { Client } from 'pg';
 import {
   bearerToken,
   corsHeaders,
@@ -5,6 +6,7 @@ import {
   originAllowed,
 } from './http-utils';
 import { checkDatabaseHealth } from './database';
+import { readUserProfile, type ProfileQuery } from './profile';
 
 interface Env {
   HYPERDRIVE: Hyperdrive;
@@ -48,6 +50,22 @@ async function authenticate(request: Request, env: Env): Promise<AuthenticatedUs
   return { id: user.id, email: typeof user.email === 'string' ? user.email : undefined };
 }
 
+async function loadProfile(env: Env, userId: string) {
+  const client = new Client({
+    connectionString: env.HYPERDRIVE.connectionString,
+    connectionTimeoutMillis: 5_000,
+    query_timeout: 5_000,
+    statement_timeout: 5_000,
+  });
+  try {
+    await client.connect();
+    const query: ProfileQuery = (sql, values) => client.query(sql, [...values]);
+    return await readUserProfile(query, userId);
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const headers = corsHeaders(request, env.CENPAYA_ORIGIN);
@@ -64,12 +82,21 @@ export default {
     }
 
     if (url.pathname === '/api/v1/me' && request.method === 'GET') {
+      let user: AuthenticatedUser | null;
       try {
-        const user = await authenticate(request, env);
-        if (!user) return jsonResponse({ error: 'unauthorized' }, 401, headers);
-        return jsonResponse({ user: { id: user.id, email: user.email ?? null } }, 200, headers);
+        user = await authenticate(request, env);
       } catch {
         return jsonResponse({ error: 'authentication_unavailable' }, 503, headers);
+      }
+      if (!user) return jsonResponse({ error: 'unauthorized' }, 401, headers);
+
+      try {
+        const profile = await loadProfile(env, user.id);
+        if (!profile) return jsonResponse({ error: 'profile_not_found' }, 404, headers);
+        return jsonResponse({ user: { id: user.id, email: user.email ?? profile.email }, profile }, 200, headers);
+      } catch {
+        // Profile schema/connection errors are not sent to clients.
+        return jsonResponse({ error: 'profile_unavailable' }, 503, headers);
       }
     }
 
@@ -84,7 +111,6 @@ export default {
         const healthy = await checkDatabaseHealth(env.HYPERDRIVE.connectionString);
         return jsonResponse({ status: healthy ? 'ok' : 'unavailable' }, healthy ? 200 : 503, headers);
       } catch {
-        // Never expose driver errors, connection strings or stack traces to clients.
         return jsonResponse({ status: 'unavailable' }, 503, headers);
       }
     }
