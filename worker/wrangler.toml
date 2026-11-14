@@ -1,0 +1,17 @@
+name = "cenpaya-neon"
+main = "src/index.ts"
+compatibility_date = "2026-11-10"
+compatibility_flags = ["nodejs_compat"]
+
+# Configure this with the ID of the EXISTING Hyperdrive configuration in
+# Cloudflare Dashboard. Do not create a second Hyperdrive configuration.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "REPLACE_WITH_EXISTING_HYPERDRIVE_ID"
+
+[vars]
+# Set these in the Cloudflare dashboard for this Worker (or via wrangler secret).
+# Do not put secret values in this file or commit them.
+# CENPAYA_ORIGIN = "https://your-actual-pages-domain"
+# SUPABASE_URL = "https://your-project.supabase.co"
+# SUPABASE_ANON_KEY = "your-public-anon-key"

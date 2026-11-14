@@ -1,0 +1,79 @@
+
+name: worker-verify
+
+on:
+  push:
+    branches:
+      - migration/neon-worker-api
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-verify.yml'
+  workflow_dispatch:
+
+jobs:
+  worker-checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci
+
+      - name: Type-check Worker
+        working-directory: worker
+        run: npm run typecheck
+
+      - name: Test Worker and database helpers
+        working-directory: worker
+        run: npm test
+
+      - name: Configure existing Hyperdrive ID
+        working-directory: worker
+        env:
+          HYPERDRIVE_ID: ${{ secrets.HYPERDRIVE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HYPERDRIVE_ID:-}" ]; then
+            echo "::error::HYPERDRIVE_ID repository secret is missing."
+            exit 1
+          fi
+
+          echo "::add-mask::$HYPERDRIVE_ID"
+
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          config = Path("wrangler.toml")
+          content = config.read_text()
+          placeholder = "REPLACE_WITH_EXISTING_HYPERDRIVE_ID"
+
+          if content.count(placeholder) != 1:
+              raise SystemExit(
+                  "Expected the Hyperdrive placeholder exactly once."
+              )
+
+          config.write_text(
+              content.replace(placeholder, os.environ["HYPERDRIVE_ID"])
+          )
+          PY
+
+      - name: Build Worker without deploying
+        working-directory: worker
+        run: npm run build
+
+          
