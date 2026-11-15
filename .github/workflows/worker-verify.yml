@@ -4,7 +4,7 @@ name: worker-verify
 on:
   push:
     branches:
-      - migration/neon-worker-api
+      - migration/supabase-worker-api
     paths:
       - 'worker/**'
       - '.github/workflows/worker-verify.yml'
@@ -75,5 +75,4 @@ jobs:
       - name: Build Worker without deploying
         working-directory: worker
         run: npm run build
-
-          
+        
