@@ -1,4 +1,3 @@
-
 name: worker-verify
 
 on:
@@ -39,40 +38,8 @@ jobs:
         working-directory: worker
         run: npm test
 
-      - name: Configure existing Hyperdrive ID
-        working-directory: worker
-        env:
-          HYPERDRIVE_ID: ${{ secrets.HYPERDRIVE_ID }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -z "${HYPERDRIVE_ID:-}" ]; then
-            echo "::error::HYPERDRIVE_ID repository secret is missing."
-            exit 1
-          fi
-
-          echo "::add-mask::$HYPERDRIVE_ID"
-
-          python - <<'PY'
-          import os
-          from pathlib import Path
-
-          config = Path("wrangler.toml")
-          content = config.read_text()
-          placeholder = "REPLACE_WITH_EXISTING_HYPERDRIVE_ID"
-
-          if content.count(placeholder) != 1:
-              raise SystemExit(
-                  "Expected the Hyperdrive placeholder exactly once."
-              )
-
-          config.write_text(
-              content.replace(placeholder, os.environ["HYPERDRIVE_ID"])
-          )
-          PY
-
+      # Removed the Hyperdrive configuration step completely
+      
       - name: Build Worker without deploying
         working-directory: worker
         run: npm run build
-        
