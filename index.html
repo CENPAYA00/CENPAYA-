@@ -9,7 +9,7 @@
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/image_76ec5c90%20(1)%20(1)%20(1).png" />
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
 
     <!-- Apple mobile -->
@@ -21,7 +21,7 @@
     <script>
       (function () {
         try {
-          var stored = localStorage.theme;
+          var stored = localStorage.getItem('cenpaya_theme') || localStorage.theme;
           var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           if (stored === "dark" || (!stored && prefersDark)) {
             document.documentElement.classList.add("dark");
