@@ -75,6 +75,8 @@ export async function payForSubscription(
     });
     return { success: true, paymentUrl: result.data?.payment_url };
   } catch (error: unknown) {
-    return { success: false, error: error instanceof Error ? error.message : 'Subscription payment failed.' };
+    const message = error instanceof Error ? error.message : 'Subscription payment failed.';
+    if (/subscription_payment_requires_atomic_worker_migration/i.test(message)) return { success: false, error: 'Subscription payments are temporarily unavailable until the secure atomic settlement migration is complete.' };
+    return { success: false, error: message };
   }
 }
