@@ -1,5 +1,6 @@
 const API_BASE = String(import.meta.env.VITE_D1_API_URL ?? '').trim().replace(/\/$/, '');
 let sessionToken: string | null = null;
+let sessionTokenExpiresAt = 0;
 
 export type D1User = {
   id: string;
@@ -25,19 +26,24 @@ export class D1ApiError extends Error {
   }
 }
 
-export function getD1Token(): string | null { return sessionToken; }
+export function getD1Token(): string | null {
+  if (sessionToken && Date.now() >= sessionTokenExpiresAt - 30_000) { sessionToken = null; sessionTokenExpiresAt = 0; }
+  return sessionToken;
+}
 
-export function setD1Token(token: string | null) { sessionToken = token; }
+export function setD1Token(token: string | null) { sessionToken = token; sessionTokenExpiresAt = token ? Date.now() + 900_000 : 0; }
 
-export async function refreshD1Session(): Promise<string | null> {
+export async function refreshD1Session(force = false): Promise<string | null> {
+  if (!force && getD1Token()) return sessionToken;
   try {
     const response = await fetch(getD1ApiUrl('/api/auth/refresh'), {
       method: 'POST', credentials: 'include', cache: 'no-store',
     });
-    const payload = await response.json().catch(() => ({})) as { token?: string };
+    const payload = await response.json().catch(() => ({})) as { token?: string; expires_in?: number };
     sessionToken = response.ok && typeof payload.token === 'string' ? payload.token : null;
+    sessionTokenExpiresAt = sessionToken ? Date.now() + Math.max(60, Number(payload.expires_in) || 900) * 1000 : 0;
     return sessionToken;
-  } catch { sessionToken = null; return null; }
+  } catch { sessionToken = null; sessionTokenExpiresAt = 0; return null; }
 }
 
 export function getD1ApiUrl(path: string): string {
@@ -73,17 +79,17 @@ export function d1Register(input: {
 }
 
 export async function d1Login(identifier: string, password: string) {
-  const result = await d1Request<{ user: D1User; token: string }>('/api/auth/login', {
+  const result = await d1Request<{ user: D1User }>('/api/auth/login', {
     method: 'POST', body: JSON.stringify({ identifier, password }),
   });
-  setD1Token(result.token); return result;
+  await refreshD1Session(true); return result;
 }
 
 export async function d1VerifyOtp(user_id: string, code: string, purpose: 'verify_email' | 'verify_phone' | 'password_reset' = 'verify_email') {
-  const result = await d1Request<{ user: D1User; token: string }>('/api/auth/verify', {
+  const result = await d1Request<{ user: D1User }>('/api/auth/verify', {
     method: 'POST', body: JSON.stringify({ user_id, code, purpose }),
   });
-  setD1Token(result.token); return result;
+  await refreshD1Session(true); return result;
 }
 
 export function d1ResendOtp(identifier: string, purpose: 'verify_email' | 'verify_phone' = 'verify_email') {
@@ -99,10 +105,10 @@ export function d1RequestPasswordReset(identifier: string) {
 }
 
 export async function d1ResetPassword(identifier: string, code: string, new_password: string) {
-  const result = await d1Request<{ user: D1User; token: string }>('/api/auth/password/reset', {
+  const result = await d1Request<{ user: D1User }>('/api/auth/password/reset', {
     method: 'POST', body: JSON.stringify({ identifier, code, new_password }),
   });
-  setD1Token(result.token); return result;
+  await refreshD1Session(true); return result;
 }
 
 export function d1Me() {
