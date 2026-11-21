@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Store, MessageCircle, User, Plus, Bell, Search, Menu, Shield, Briefcase } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { d1Me } from '../lib/d1Api';
+import { d1Me, d1Request } from '../lib/d1Api';
 import Sidebar from './Sidebar';
 import { useSound } from '../contexts/sound';
 import { MessageToast } from './MessageToast';
@@ -40,13 +40,13 @@ export default function Layout() {
   }, [enabled, play]);
 
   useEffect(() => {
-    let cleanup: (() => void) | undefined;
+    let active = true;
+    let timer: number | undefined;
     const init = async () => {
       let user;
       try { ({ user } = await d1Me()); } catch { return; }
-      if (!user) return;
+      if (!user || !active) return;
       setUserId(user.id);
-
       const role = user.role || '';
       if (['support_agent', 'super_admin', 'owner'].includes(role)) {
         setStaffRole(role);
@@ -54,29 +54,26 @@ export default function Layout() {
           supabase.rpc('staff_list_tickets', { p_scope: 'mine' }),
           supabase.rpc('admin_list_reports', { p_status: 'open', p_limit: 100 }),
         ]);
-        const ticketCount = (ticketsRes.data?.tickets || []).reduce((s: number, t: any) => s + (t.unread || 0), 0);
+        const ticketCount = (ticketsRes.data?.tickets || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
         const reportCount = (reportsRes.data?.reports || []).length;
-        setStaffBadge(ticketCount + reportCount);
+        if (active) setStaffBadge(ticketCount + reportCount);
       }
-
-      const { count } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('is_read', false);
-      setUnreadNotifs(count || 0);
-
-      const sub = supabase.channel(`notif_${user.id}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => {
-          setUnreadNotifs(prev => prev + 1);
-          play('notification_received');
-        })
-        .subscribe();
-
-      cleanup = () => { supabase.removeChannel(sub); };
+      const refreshNotifications = async () => {
+        try {
+          const result = await d1Request<{ data: any[] }>('/api/notifications?limit=100');
+          if (!active) return;
+          const next = (result.data || []).filter((notification: any) => !notification.is_read).length;
+          setUnreadNotifs(previous => {
+            if (next > previous) play('notification_received');
+            return next;
+          });
+        } catch { /* Retry on the next polling cycle. */ }
+      };
+      await refreshNotifications();
+      timer = window.setInterval(() => { void refreshNotifications(); }, 15000);
     };
-    init();
-    return () => { cleanup?.(); };
+    void init();
+    return () => { active = false; if (timer) window.clearInterval(timer); };
   }, [play]);
 
   const goToPanel = () => {
