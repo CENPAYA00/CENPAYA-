@@ -101,6 +101,7 @@ export default function CreatePost() {
           body: JSON.stringify({ content: content.trim(), post_type: 'text', visibility: 'public' }),
         });
         setCached('home_posts', null);
+        setLoading(false);
         navigate('/home');
         return;
       }
