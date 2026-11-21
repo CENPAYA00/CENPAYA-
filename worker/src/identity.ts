@@ -1,6 +1,6 @@
 import { Env } from "./env.js";
 import { bearerToken } from "./http-utils.js";
-import { signSupabaseUserJwt, verifyD1IdentityAssertion } from "./jwt.js";
+import { signSupabaseUserJwt, verifyD1IdentityAssertionClaims } from "./jwt.js";
 import { createUserSupabaseClient } from "./supabase.js";
 
 export class IdentityError extends Error {
@@ -58,13 +58,33 @@ export async function authenticateD1Session(request: Request, env: Env): Promise
   }
   if (!assertion) throw new IdentityError("invalid_identity_response", 503);
 
-  let userId: string;
+  let verifiedAssertion: { userId: string; jti: string; expiresAt: number };
   try {
-    userId = await verifyD1IdentityAssertion(assertion, env.D1_TO_SUPABASE_HMAC_SECRET);
+    verifiedAssertion = await verifyD1IdentityAssertionClaims(assertion, env.D1_TO_SUPABASE_HMAC_SECRET);
   } catch {
     throw new IdentityError("unauthorized", 401);
   }
 
+  // Consume the signed assertion once in D1. A replayed token is rejected even
+  // during the allowed clock-skew window.
+  let consumeResponse: Response;
+  try {
+    consumeResponse = await env.D1_IDENTITY.fetch("https://d1-identity.internal/internal/v1/identity/consume", {
+      method: "POST",
+      headers: {
+        "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ jti: verifiedAssertion.jti, expires_at: verifiedAssertion.expiresAt }),
+      signal: AbortSignal.timeout(IDENTITY_TIMEOUT_MS),
+    });
+  } catch {
+    throw new IdentityError("identity_service_unavailable", 503);
+  }
+  if (consumeResponse.status === 409) throw new IdentityError("unauthorized", 401);
+  if (!consumeResponse.ok) throw new IdentityError("identity_service_unavailable", 503);
+
+  const userId = verifiedAssertion.userId;
   let userJwt: string;
   try {
     userJwt = await signSupabaseUserJwt(userId, env);
