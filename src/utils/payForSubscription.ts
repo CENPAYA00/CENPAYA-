@@ -1,10 +1,14 @@
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
 export type MobileMoneyMethod = 'mtn' | 'orange' | 'airtel' | 'moov' | 'wallet';
+export type SubscriptionOption = {
+  provider: 'FAPSHI' | 'CAMPAY';
+  payment_method: 'MTN_MOMO' | 'ORANGE_MONEY' | 'AIRTEL_MONEY' | 'MOOV_MONEY';
+  gross_amount: number;
+  gateway_fee: number;
+  priority: number;
+};
 
-export type SubscriptionProvider = 'campay' | 'fapshi' | 'cinetpay' | 'pawapay' | 'wallet';
-
-// Method labels for UI display
 export const METHOD_LABELS: Record<MobileMoneyMethod, string> = {
   mtn: 'MTN Mobile Money',
   orange: 'Orange Money',
@@ -13,70 +17,56 @@ export const METHOD_LABELS: Record<MobileMoneyMethod, string> = {
   wallet: 'Pay from Wallet',
 };
 
-// Provider priority per country (first match wins)
-const PROVIDER_PRIORITY: Record<string, SubscriptionProvider[]> = {
-  CM: ['fapshi', 'campay', 'cinetpay', 'pawapay'],
-  GA: ['cinetpay', 'pawapay'],
-  CG: ['cinetpay', 'pawapay'],
-  TD: ['cinetpay', 'pawapay'],
-  CF: ['cinetpay', 'pawapay'],
-  GQ: ['cinetpay', 'pawapay'],
+const PAYMENT_METHOD: Record<Exclude<MobileMoneyMethod, 'wallet'>, SubscriptionOption['payment_method']> = {
+  mtn: 'MTN_MOMO',
+  orange: 'ORANGE_MONEY',
+  airtel: 'AIRTEL_MONEY',
+  moov: 'MOOV_MONEY',
 };
-
-// Which method each provider supports
-const PROVIDER_METHODS: Record<SubscriptionProvider, MobileMoneyMethod[]> = {
-  fapshi: ['mtn', 'orange'],
-  campay: ['mtn', 'orange'],
-  cinetpay: ['mtn', 'orange', 'airtel', 'moov'],
-  pawapay: ['mtn', 'orange', 'airtel', 'moov'],
-  wallet: ['wallet'],
-};
-
-/**
- * Given a country and a mobile money method, returns the best aggregator to route through.
- * Returns null if no aggregator supports that combination.
- */
-export function pickProvider(country: string, method: MobileMoneyMethod): SubscriptionProvider | null {
-  if (method === 'wallet') return 'wallet';
-
-  const providers = PROVIDER_PRIORITY[country] || PROVIDER_PRIORITY.CM;
-  for (const p of providers) {
-    if (PROVIDER_METHODS[p].includes(method)) return p;
-  }
-  return null;
-}
-
-/**
- * Returns the list of mobile money methods available in a country.
- */
-export function availableMethods(country: string): MobileMoneyMethod[] {
-  const providers = PROVIDER_PRIORITY[country] || PROVIDER_PRIORITY.CM;
-  const set = new Set<MobileMoneyMethod>();
-  for (const p of providers) {
-    for (const m of PROVIDER_METHODS[p]) set.add(m);
-  }
-  // Wallet is always available
-  set.add('wallet');
-  return Array.from(set);
-}
 
 export async function payForSubscription(
-  userId: string,
   method: MobileMoneyMethod,
-  amount: number,
-  country: string = 'CM'
-): Promise<{ success: boolean; paymentUrl?: string; error?: string }> {
+  phone: string,
+  idempotencyKey: string,
+): Promise<{ success: boolean; paymentUrl?: string; pending?: boolean; paymentId?: string; error?: string }> {
   try {
-    const provider = method === 'wallet' ? 'wallet' : pickProvider(country, method);
-    if (!provider) return { success: false, error: 'No configured payment provider supports this method in your country.' };
-    const result = await supabaseWorkerRequest<{ data?: { payment_url?: string } }>('/api/v1/subscriptions', {
+    if (method === 'wallet') {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; event?: string; expires_at?: string } }>('/api/v1/subscriptions', {
+        method: 'POST',
+        body: JSON.stringify({ method: 'wallet', idempotency_key: idempotencyKey }),
+      });
+      return { success: result.data?.ok === true };
+    }
+
+    const optionsResponse = await supabaseWorkerRequest<{ data: { options: SubscriptionOption[] } }>('/api/v1/subscriptions/options');
+    const paymentMethod = PAYMENT_METHOD[method];
+    const option = (optionsResponse.data?.options || []).find(item => item.payment_method === paymentMethod);
+    if (!option) return { success: false, error: 'This mobile money option is not currently configured for your country.' };
+    if (!phone.trim()) return { success: false, error: 'Add a mobile money phone number to your profile before continuing.' };
+
+    const result = await supabaseWorkerRequest<{ data: { payment_id: string; status: string; payment_url?: string | null } }>('/api/v1/subscriptions', {
       method: 'POST',
-      body: JSON.stringify({ method, provider, amount, country }),
+      body: JSON.stringify({
+        method,
+        provider: option.provider,
+        payment_method: paymentMethod,
+        phone,
+        idempotency_key: idempotencyKey,
+      }),
     });
-    return { success: true, paymentUrl: result.data?.payment_url };
+    return {
+      success: true,
+      paymentUrl: result.data?.payment_url || undefined,
+      pending: result.data?.status !== 'succeeded',
+      paymentId: result.data?.payment_id,
+    };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Subscription payment failed.';
-    if (/subscription_payment_requires_atomic_worker_migration/i.test(message)) return { success: false, error: 'Subscription payments are temporarily unavailable until the secure atomic settlement migration is complete.' };
+    if (/insufficient_wallet_balance|insufficient funds/i.test(message)) return { success: false, error: 'Your wallet balance is too low. Top up before subscribing.' };
+    if (/idempotency_conflict/i.test(message)) return { success: false, error: 'This payment request was already submitted. Check its status before retrying.' };
+    if (/payment_provider_rejected_request/i.test(message)) return { success: false, error: 'The payment provider rejected the request. Check your phone number and try again.' };
+    if (/payment_initiation_uncertain_contact_support/i.test(message)) return { success: false, error: 'Payment initiation is uncertain. Check your payment status before retrying to avoid a duplicate charge.' };
+    if (/subscription_payment_method_unavailable/i.test(message)) return { success: false, error: 'This mobile money option is not configured for your country.' };
     return { success: false, error: message };
   }
 }
