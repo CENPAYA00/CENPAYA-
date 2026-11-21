@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Network, Link2, X, Plus } from 'lucide-react';
 
 export default function CommunityDetail() {
@@ -12,31 +12,30 @@ export default function CommunityDetail() {
   const [showLink, setShowLink] = useState(false);
 
   const load = async () => {
-    if (!id) return;
-    const [commRes, groupsRes] = await Promise.all([
-      supabase.rpc('get_community', { p_community_id: id }),
-      supabase.rpc('list_my_groups'),
-    ]);
-    if (commRes.data?.ok) setData(commRes.data);
-    setMyGroups(Array.isArray(groupsRes.data) ? groupsRes.data : []);
-    setLoading(false);
+    try {
+      const [communityResult, groupsResult] = await Promise.all([
+        d1Request<{ data: any }>('/api/communities/' + encodeURIComponent(id || '')),
+        d1Request<{ data: any[] }>('/api/groups'),
+      ]);
+      setData(communityResult.data);
+      setMyGroups(groupsResult.data || []);
+    } catch (error: any) { alert(error.message || 'Could not load community'); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [id]);
 
   const unlink = async (groupId: string) => {
     if (!window.confirm('Remove this group from the community?')) return;
-    await supabase.rpc('unlink_group_from_community', { p_community_id: id, p_group_id: groupId });
-    load();
+    try { await d1Request('/api/communities/' + encodeURIComponent(id || '') + '/groups/' + encodeURIComponent(groupId), { method: 'DELETE' }); await load(); } catch (error: any) { alert(error.message || 'Could not unlink group'); }
   };
 
   const link = async (groupId: string) => {
-    const { data: res, error } = await supabase.rpc('link_group_to_community', {
-      p_community_id: id,
-      p_group_id: groupId,
-    });
-    if (error || !res?.ok) alert(error?.message || res?.error || 'Failed');
-    else { setShowLink(false); load(); }
+    try {
+      await d1Request('/api/communities/' + encodeURIComponent(id || '') + '/groups', { method: 'POST', body: JSON.stringify({ group_id: groupId }) });
+      setShowLink(false);
+      await load();
+    } catch (error: any) { alert(error.message || 'Could not link group'); }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
