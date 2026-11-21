@@ -165,6 +165,37 @@ export async function handleAuthenticatedApi(
   const path = normalizedAdminPath(url.pathname);
   const method = request.method.toUpperCase();
 
+  if (method === "GET" && path === "/api/v1/checkout/quote") {
+    const listingId = url.searchParams.get("listing_id")?.trim() || "";
+    if (!listingId || listingId.length > 128 || !env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) {
+      return failure("invalid_checkout_quote_request", 400, headers);
+    }
+    try {
+      const response = await env.D1_IDENTITY.fetch(
+        "https://d1.internal/internal/v1/market/listings/" + encodeURIComponent(listingId) + "/quote",
+        { method: "GET", headers: { "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET } },
+      );
+      const result = await response.json() as { success?: boolean; data?: Record<string, unknown> };
+      if (!response.ok || !result.success || !result.data) return failure("listing_quote_unavailable", response.status === 404 ? 404 : 503, headers);
+      const listing = result.data;
+      const amountValue = listing.price_is_range === true ? listing.price_min : listing.price;
+      const amount = typeof amountValue === "number" ? amountValue : Number(amountValue);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000_000) return failure("listing_price_invalid", 409, headers);
+      const [{ data: pct, error: pctError }, { data: fixed, error: fixedError }] = await Promise.all([
+        supabase.rpc("setting", { p_key: "fee_pct_non_member" }),
+        supabase.rpc("setting", { p_key: "fee_fixed_non_member" }),
+      ]);
+      if (pctError || fixedError) return failure("checkout_fee_unavailable", 503, headers);
+      const feePct = Number(pct), feeFixed = Number(fixed);
+      if (!Number.isFinite(feePct) || feePct < 0 || feePct > 100 || !Number.isFinite(feeFixed) || feeFixed < 0) {
+        return failure("checkout_fee_configuration_invalid", 503, headers);
+      }
+      const platformFee = Math.round(amount * feePct / 100);
+      return success({ amount, fee_pct: feePct, fee_fixed: feeFixed, platform_fee: platformFee, total: amount + platformFee + feeFixed }, headers);
+    } catch {
+      return failure("checkout_quote_unavailable", 503, headers);
+    }
+  }
   if (method === "POST" && path === "/api/v1/checkout/orders") {
     const body = await readJsonObject(request, 16_384);
     const listingId = typeof body?.listing_id === "string" ? body.listing_id.trim() : "";
