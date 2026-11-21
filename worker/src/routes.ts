@@ -182,12 +182,16 @@ export async function handleAuthenticatedApi(
         .eq("user_id", userId).abortSignal(AbortSignal.timeout(5_000)).maybeSingle(),
     ]);
     if (balancesError || legacyError) return failure("wallet_lookup_failed", 502, headers);
+    // XAF remains backed by wallets until every financial RPC is migrated.
+    // Keep other currency rows from user_balances and replace any duplicate XAF row.
+    const allBalances = (balances || []).filter((balance) => !legacy || balance.currency_code !== "XAF");
+    if (legacy) allBalances.unshift({ ...legacy, currency_code: "XAF" });
     const primary = legacy
       ? { ...legacy, currency_code: "XAF" }
-      : balances?.find((balance) => balance.currency_code === "XAF") || balances?.[0] || null;
+      : allBalances.find((balance) => balance.currency_code === "XAF") || allBalances[0] || null;
     return success(primary ? {
       ...primary,
-      balances: balances || [],
+      balances: allBalances,
       source: legacy ? "wallets_xaf_with_user_balances" : "user_balances",
     } : null, headers);
   }
