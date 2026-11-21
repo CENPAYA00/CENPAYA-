@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Store, MessageCircle, User, Plus, Bell, Search, Menu, Shield, Briefcase } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 import Sidebar from './Sidebar';
 import { useSound } from '../contexts/sound';
 import { MessageToast } from './MessageToast';
@@ -41,12 +42,12 @@ export default function Layout() {
   useEffect(() => {
     let cleanup: (() => void) | undefined;
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      let user;
+      try { ({ user } = await d1Me()); } catch { return; }
       if (!user) return;
       setUserId(user.id);
 
-      const { data } = await supabase.from('users').select('role').eq('id', user.id).single();
-      const role = data?.role || '';
+      const role = user.role || '';
       if (['support_agent', 'super_admin', 'owner'].includes(role)) {
         setStaffRole(role);
         const [ticketsRes, reportsRes] = await Promise.all([
