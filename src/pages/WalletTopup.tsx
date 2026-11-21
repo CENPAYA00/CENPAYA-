@@ -24,18 +24,16 @@ export default function WalletTopup() {
     const load = async () => {
       const { user } = await d1Me();
       if (!user) return;
-      const [userRes, countriesRes] = await Promise.all([
-        supabase.from('users').select('country_iso, phone, momo_number, momo_provider').eq('id', user.id).single(),
-        supabase.from('supported_countries').select('code, name, phone_prefix').eq('is_active', true).order('code'),
+      const [profileRes, countriesRes] = await Promise.all([
+        d1Request<{ data: { country_iso?: string; phone?: string; momo_number?: string; momo_provider?: string } }>('/api/me/personal-details'),
+        d1Request<{ data: Array<{ country_code: string; name: string; phone_prefix: string }> }>('/api/countries'),
       ]);
-      if (userRes.error) throw userRes.error;
-      if (countriesRes.error) throw countriesRes.error;
-      setCountries(countriesRes.data || []);
-      const iso = userRes.data?.country_iso || 'CM';
+      setCountries((countriesRes.data || []).map(country => ({ code: country.country_code, name: country.name, phone_prefix: country.phone_prefix })));
+      const iso = profileRes.data?.country_iso || 'CM';
       setSelectedCountry(iso);
-      if (userRes.data?.momo_number) setPhone(userRes.data.momo_number.replace(/^\+\d+\s?/, ''));
-      else if (userRes.data?.phone) setPhone(userRes.data.phone.replace(/^\+\d+\s?/, ''));
-      if (METHODS.includes(userRes.data?.momo_provider)) setProvider(userRes.data.momo_provider as Method);
+      const savedPhone = profileRes.data?.momo_number || profileRes.data?.phone;
+      if (savedPhone) setPhone(savedPhone.replace(/^\+\d+\s?/, ''));
+      if (profileRes.data?.momo_provider && METHODS.includes(profileRes.data.momo_provider as Method)) setProvider(profileRes.data.momo_provider as Method);
     };
     load().catch((error: any) => setErrorMsg(error?.message || 'Could not load payment details.'));
   }, []);
