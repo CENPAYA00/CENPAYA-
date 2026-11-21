@@ -173,14 +173,14 @@ async function enforcePaymentRateLimit(
 }
 async function startTopup(
   provider: Gateway, creds: Credentials, env: Env, id: string, amountXaf: number,
-  phoneNumber: string | null, email: string,
+  phoneNumber: string | null, email: string, description = "CenPaya wallet top-up",
 ): Promise<{ reference: string; checkoutUrl: string | null }> {
   const base = baseUrl(provider, environment(env));
   if (provider === "FAPSHI") {
     const { response, data } = await providerFetch(base + "/initiate-pay", {
       method: "POST",
       headers: { "Content-Type": "application/json", apiuser: creds.api_public_key!, apikey: creds.api_secret_key! },
-      body: JSON.stringify({ amount: amountXaf, email, userId: id, externalId: id, message: "CenPaya wallet top-up" }),
+      body: JSON.stringify({ amount: amountXaf, email, userId: id, externalId: id, message: description }),
     });
     if (!response.ok) throw new Error("provider_rejected_" + response.status);
     const reference = text(data.transId);
@@ -193,7 +193,7 @@ async function startTopup(
     headers: { "Content-Type": "application/json", Authorization: "Token " + creds.api_secret_key },
     body: JSON.stringify({
       amount: String(amountXaf), currency: "XAF", from: phoneNumber,
-      description: "CenPaya wallet top-up", external_reference: id,
+      description, external_reference: id,
     }),
   });
   if (!response.ok) throw new Error("provider_rejected_" + response.status);
@@ -240,6 +240,117 @@ export async function handleAuthenticatedPaymentApi(
 ): Promise<Response | null> {
   const url = new URL(request.url), method = request.method.toUpperCase();
 
+  if (method === "GET" && url.pathname === "/api/v1/subscriptions/options") {
+    const { data, error } = await userDb.rpc("cenpaya_momo_membership_options", {
+      p_user_id: userId, p_environment: environment(env), p_supported: ["FAPSHI", "CAMPAY"],
+    });
+    const options = object(data);
+    if (error || options.ok !== true) return jsonResponse({ success: false, error: "subscription_options_unavailable" }, 503, headers);
+    return jsonResponse({ success: true, data: options }, 200, headers);
+  }
+
+  if (method === "POST" && url.pathname === "/api/v1/subscriptions") {
+    const limited = await enforcePaymentRateLimit(userId, "topup", env, headers);
+    if (limited) return limited;
+    const body = await readJsonObject(request, BODY_LIMIT);
+    if (!body) return jsonResponse({ success: false, error: "invalid_json_body" }, 400, headers);
+    const idem = text(body.idempotency_key, 128);
+    if (idem.length < 8) return jsonResponse({ success: false, error: "idempotency_key_required" }, 400, headers);
+    const methodName = text(body.method, 32).toLowerCase();
+    if (methodName === "wallet") {
+      const { data, error } = await userDb.rpc("cenpaya_activate_membership", { p_user_id: userId, p_idempotency_key: idem });
+      const result = object(data);
+      if (error) return jsonResponse({ success: false, error: "subscription_payment_failed" }, 502, headers);
+      if (result.ok !== true) {
+        const code = String(result.error || "subscription_payment_failed").toLowerCase().includes("insufficient") ? "insufficient_wallet_balance" : "subscription_payment_failed";
+        return jsonResponse({ success: false, error: code, data: result }, 409, headers);
+      }
+      return jsonResponse({ success: true, data: result }, 200, headers);
+    }
+
+    const provider = text(body.provider, 24).toUpperCase();
+    const paymentMethod = text(body.payment_method, 32).toUpperCase();
+    const mobile = phone(body.phone);
+    if (!isGateway(provider) || !["MTN_MOMO", "ORANGE_MONEY", "AIRTEL_MONEY", "MOOV_MONEY"].includes(paymentMethod) || !mobile) {
+      return jsonResponse({ success: false, error: "invalid_subscription_payment_request" }, 400, headers);
+    }
+    const { data: optionData, error: optionError } = await userDb.rpc("cenpaya_momo_membership_options", {
+      p_user_id: userId, p_environment: environment(env), p_supported: ["FAPSHI", "CAMPAY"],
+    });
+    const optionResult = object(optionData);
+    const available = Array.isArray(optionResult.options) ? optionResult.options as Array<Record<string, unknown>> : [];
+    const selected = available.find(option => String(option.provider).toUpperCase() === provider && String(option.payment_method).toUpperCase() === paymentMethod);
+    if (optionError || optionResult.ok !== true || !selected) return jsonResponse({ success: false, error: "subscription_payment_method_unavailable" }, 409, headers);
+
+    const { data: startedData, error: startError } = await userDb.rpc("cenpaya_momo_membership_start", {
+      p_user_id: userId, p_idempotency_key: idem, p_provider: provider, p_payment_method: paymentMethod, p_phone: mobile,
+    });
+    const started = object(startedData);
+    if (startError || started.ok !== true || typeof started.payment_id !== "string") {
+      return jsonResponse({ success: false, error: String(started.error || "subscription_payment_start_failed") }, 409, headers);
+    }
+    if (started.status === "succeeded" || started.provider_reference) {
+      return jsonResponse({ success: true, data: { payment_id: started.payment_id, status: started.status, gross_amount: started.gross_amount, gateway_fee: started.gateway_fee, currency: started.currency } }, 200, headers);
+    }
+
+    let db: SupabaseClient, creds: Credentials;
+    try { db = await serviceClient(env, userId); creds = await credentials(db, provider, env); }
+    catch { return jsonResponse({ success: false, error: "payment_provider_not_configured" }, 503, headers); }
+
+    if (env.D1_IDENTITY && env.D1_INTERNAL_CALL_SECRET) {
+      try {
+        const idemResponse = await env.D1_IDENTITY.fetch("https://d1-identity.internal/internal/v1/idempotency/consume", {
+          method: "POST", headers: { "Content-Type": "application/json", "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET },
+          body: JSON.stringify({ user_id: userId, scope: "membership_payment", idempotency_key: idem }), signal: AbortSignal.timeout(3_000),
+        });
+        if (idemResponse.status === 409) return jsonResponse({ success: false, error: "idempotency_conflict" }, 409, headers);
+        if (!idemResponse.ok) return jsonResponse({ success: false, error: "idempotency_service_unavailable" }, 503, headers);
+      } catch { return jsonResponse({ success: false, error: "idempotency_service_unavailable" }, 503, headers); }
+    } else return jsonResponse({ success: false, error: "idempotency_service_unavailable" }, 503, headers);
+
+    let email = "";
+    if (provider === "FAPSHI") {
+      const { data: userInfo, error: userInfoError } = await userDb.from("users").select("email").eq("id", userId).maybeSingle();
+      email = typeof userInfo?.email === "string" ? userInfo.email.trim() : "";
+      if (userInfoError || !email) return jsonResponse({ success: false, error: "verified_email_required_for_fapshi" }, 400, headers);
+    }
+    try {
+      const initiated = await startTopup(provider, creds, env, started.payment_id, Number(started.gross_amount), provider === "CAMPAY" ? mobile : null, email, "CenPaya premium membership");
+      const attached = object(await callRpc(db, "cenpaya_momo_membership_attach", { p_payment_id: started.payment_id, p_provider_reference: initiated.reference }));
+      if (attached.ok !== true) throw new Error("membership_reference_not_recorded");
+      return jsonResponse({ success: true, data: { payment_id: started.payment_id, status: "pending", provider, provider_reference: initiated.reference, payment_url: initiated.checkoutUrl, gross_amount: started.gross_amount, gateway_fee: started.gateway_fee, currency: started.currency } }, 200, headers);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "provider_initiation_failed";
+      const definitive = reason.startsWith("provider_rejected_");
+      try { await callRpc(db, "cenpaya_momo_membership_fail", { p_payment_id: started.payment_id, p_reason: reason, p_uncertain: !definitive }); } catch { /* Keep uncertain payments for provider reconciliation. */ }
+      return jsonResponse({ success: false, error: definitive ? "payment_provider_rejected_request" : "payment_initiation_uncertain_contact_support" }, definitive ? 502 : 503, headers);
+    }
+  }
+
+  const subscriptionStatus = url.pathname.match(/^\/api\/v1\/subscriptions\/([0-9a-f-]{36})$/i);
+  if (method === "GET" && subscriptionStatus) {
+    let result = object(await callRpc(userDb, "cenpaya_momo_membership_get", { p_payment_id: subscriptionStatus[1] }));
+    if (!result.id || result.user_id !== userId) return jsonResponse({ success: false, error: "subscription_payment_not_found" }, 404, headers);
+    if (result.provider_reference && ["pending", "expired"].includes(String(result.status))) {
+      try {
+        const provider = String(result.provider).toUpperCase() as Gateway;
+        if (isGateway(provider)) {
+          const db = await serviceClient(env, userId);
+          const creds = await credentials(db, provider, env);
+          const verified = await providerStatus(provider, creds, env, String(result.provider_reference));
+          if (verified.status === "SUCCESSFUL" || verified.status === "FAILED") {
+            await callRpc(db, "cenpaya_momo_membership_confirm", {
+              p_payment_id: subscriptionStatus[1], p_provider_reference: String(result.provider_reference),
+              p_success: verified.status === "SUCCESSFUL", p_paid_amount: verified.amount, p_currency: verified.currency,
+              p_reason: verified.status === "FAILED" ? "Provider reported failed payment" : null,
+            });
+            result = object(await callRpc(userDb, "cenpaya_momo_membership_get", { p_payment_id: subscriptionStatus[1] }));
+          }
+        }
+      } catch { /* Keep the payment pending while provider status is uncertain. */ }
+    }
+    return jsonResponse({ success: true, data: result }, 200, headers);
+  }
   if (method === "POST" && url.pathname === "/api/v1/wallet/topups") {
     const limited = await enforcePaymentRateLimit(userId, "topup", env, headers);
     if (limited) return limited;
