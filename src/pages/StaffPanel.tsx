@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { MessageSquare, Check, Shield } from 'lucide-react';
 
 export default function StaffPanel() {
@@ -12,26 +12,29 @@ export default function StaffPanel() {
 
   const load = async () => {
     setLoading(true);
-    const [profileRes, ticketsRes] = await Promise.all([
-      supabase.rpc('staff_my_profile'),
-      supabase.rpc('staff_list_tickets', { p_scope: tab }),
-    ]);
-
-    if (!profileRes.data?.ok) {
+    try {
+      const [profileRes, ticketsRes] = await Promise.all([
+        d1Request<{ data: any }>('/api/staff/profile'),
+        d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`),
+      ]);
+      if (!profileRes.data) { navigate('/home'); return; }
+      setProfile(profileRes.data);
+      setTickets(ticketsRes.data || []);
+    } catch (error: any) {
+      console.warn('Could not load staff panel', error);
       navigate('/home');
       return;
     }
-    setProfile(profileRes.data);
-    setTickets(ticketsRes.data?.tickets || []);
     setLoading(false);
   };
 
   useEffect(() => { load(); }, [tab]);
 
   const claim = async (ticketId: string) => {
-    const { error } = await supabase.rpc('staff_claim_ticket', { p_ticket_id: ticketId });
-    if (error) alert(error.message);
-    else load();
+    try {
+      await d1Request(`/api/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
+      load();
+    } catch (error: any) { alert(error.message || 'Could not claim ticket'); }
   };
 
   if (loading) return <div className="p-8 text-center text-[13px] text-[#6f8077]">Loading...</div>;
