@@ -229,7 +229,7 @@ export async function handleAuthenticatedPaymentApi(
         status: "pending", provider_reference: started.reference, checkout_url: started.checkoutUrl,
       } }, 200, headers);
     } catch (error) {
-      if (error instanceof Error && /^provider_rejected_4\\d\\d$/.test(error.message)) {
+      if (error instanceof Error && /^provider_rejected_4\d\d$/.test(error.message)) {
         await callRpc(db, "fail_wallet_topup_from_gateway", {
           p_topup_id: topupId, p_provider: providerName,
           p_provider_transaction_id: "initiating:" + topupId,
@@ -328,7 +328,7 @@ export async function handleAuthenticatedPaymentApi(
       } catch { /* Keep funds reserved while the provider result is uncertain. */ }
       return jsonResponse({ success: true, data: { id: withdrawalId, status: state, gateway_reference: reference } }, 200, headers);
     } catch (error) {
-      if (error instanceof Error && /^provider_rejected_4\\d\\d$/.test(error.message)) {
+      if (error instanceof Error && /^provider_rejected_4\d\d$/.test(error.message)) {
         await callRpc(db, "finalize_withdrawal_from_gateway", {
           p_withdrawal_id: withdrawalId, p_gateway_provider: gateway,
           p_outcome: "failed", p_gateway_reference: null,
@@ -433,10 +433,14 @@ export async function handleGatewayWebhook(request: Request, env: Env): Promise<
   if (!withdrawal || String(withdrawal.gateway_provider || "").toUpperCase() !== provider) {
     return jsonResponse({ ok: false, error: "payment_reference_not_found" }, 404);
   }
-  if (withdrawal.gateway_reference && withdrawal.gateway_reference !== reference) {
+  if (
+    withdrawal.gateway_reference &&
+    !String(withdrawal.gateway_reference).startsWith("initiating:") &&
+    withdrawal.gateway_reference !== reference
+  ) {
     return jsonResponse({ ok: false, error: "withdrawal_reference_mismatch" }, 409);
   }
-  if (!withdrawal.gateway_reference) {
+  if (!withdrawal.gateway_reference || String(withdrawal.gateway_reference).startsWith("initiating:")) {
     const recorded = await callRpc(db, "record_withdrawal_provider_reference", {
       p_withdrawal_id: withdrawal.id, p_gateway_provider: provider, p_gateway_reference: reference,
     });

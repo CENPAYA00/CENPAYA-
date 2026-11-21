@@ -4,6 +4,7 @@ import { corsHeaders, jsonResponse, originAllowed } from "./http-utils.js";
 import { checkDatabaseHealth } from "./database.js";
 import { createPublicSupabaseClient } from "./supabase.js";
 import { handleAuthenticatedApi } from "./routes.js";
+import { handleAuthenticatedPaymentApi, handleGatewayWebhook } from "./payments.js";
 
 function configuredOrigins(env: Env): string[] {
   const values = (env.CENPAYA_ORIGINS || env.CENPAYA_ORIGIN || "")
@@ -44,12 +45,24 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/v1/webhooks/fapshi" || url.pathname === "/api/v1/webhooks/campay") {
+      try {
+        return await handleGatewayWebhook(request, env);
+      } catch {
+        return jsonResponse({ ok: false, error: "webhook_processing_failed" }, 500);
+      }
+    }
+
     if (!url.pathname.startsWith("/api/")) {
       return jsonResponse({ success: false, error: "not_found" }, 404, headers);
     }
 
     try {
       const identity = await authenticateD1Session(request, env);
+      const paymentResponse = await handleAuthenticatedPaymentApi(
+        request, identity.userId, identity.supabase, env, headers,
+      );
+      if (paymentResponse) return paymentResponse;
       return await handleAuthenticatedApi(request, identity.userId, identity.supabase, headers);
     } catch (error) {
       if (error instanceof IdentityError) {

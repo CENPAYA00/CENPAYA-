@@ -5,19 +5,19 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 SUPABASE_URL = "https://vtfwglrjjznxxujrlcnb.supabase.co"
-# Set CENPAYA_ORIGINS to the exact comma-separated deployed frontend origins.
-# Set SUPABASE_JWT_ALGORITHM to the active Supabase project's signing algorithm.
+# Set CENPAYA_ORIGINS to exact deployed frontend origins.
+# Set SUPABASE_JWT_ALGORITHM to the active Supabase signing algorithm.
+# Set PAYMENT_ENVIRONMENT to sandbox or production.
 
-# Private Worker-to-Worker identity validation. The target service name is the
-# existing D1 Worker name; its assertion endpoint must be deployed separately.
 [[services]]
 binding = "D1_IDENTITY"
 service = "cenpaya-d1-worker"
 
-# Configure these as Cloudflare Worker secrets; never put values in this file:
+# Configure as Cloudflare Worker secrets, never commit values:
 # SUPABASE_ANON_KEY
+# SUPABASE_SERVICE_ROLE_KEY (server-side payment operations only)
 # D1_INTERNAL_CALL_SECRET
 # D1_TO_SUPABASE_HMAC_SECRET
-# For HS256: SUPABASE_JWT_SECRET
-# For RS256/ES256: SUPABASE_JWT_PRIVATE_JWK (private JWK JSON)
+# HS256: SUPABASE_JWT_SECRET
+# RS256/ES256: SUPABASE_JWT_PRIVATE_JWK
 # Optional: SUPABASE_JWT_KID

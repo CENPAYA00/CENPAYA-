@@ -4,6 +4,7 @@ import {
   signHmacJwt,
   signSupabaseUserJwt,
   verifyD1IdentityAssertion,
+  verifyHs256Jwt,
 } from "../.test-build/jwt.js";
 
 const secret = "test-only-d1-assertion-secret-with-more-than-32-bytes";
@@ -76,5 +77,20 @@ void describe("Supabase user JWT creation", () => {
 
   void it("fails closed when the project's signing key is not configured", async () => {
     await assert.rejects(() => signSupabaseUserJwt(userId, {}, 1_800_000_000));
+  });
+});
+
+void describe("provider callback JWT verification", () => {
+  void it("accepts a valid HS256 callback token", async () => {
+    const token = await signHmacJwt({ reference: "provider-ref", exp: 1_900_000_000 }, secret);
+    const claims = await verifyHs256Jwt(token, secret);
+    assert.equal(claims.reference, "provider-ref");
+  });
+
+  void it("rejects a tampered callback signature", async () => {
+    const token = await signHmacJwt({ reference: "provider-ref" }, secret);
+    const parts = token.split(".");
+    parts[2] = (parts[2][0] === "A" ? "B" : "A") + parts[2].slice(1);
+    await assert.rejects(() => verifyHs256Jwt(parts.join("."), secret));
   });
 });
