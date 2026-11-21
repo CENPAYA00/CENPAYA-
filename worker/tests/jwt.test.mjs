@@ -98,6 +98,7 @@ void describe("provider callback JWT verification", () => {
 
 void describe("restricted payment-worker JWT", () => {
   void it("uses the dedicated payment role and short expiry", async () => {
+    const now = 1_800_000_000;
     const token = await signSupabasePaymentWorkerJwt(userId, {
       SUPABASE_JWT_ALGORITHM: "HS256",
       SUPABASE_JWT_SECRET: secret,

@@ -477,7 +477,7 @@ end;
 $function$;
 
 revoke all on function public.worker_upsert_vault_secret(uuid, text, text, text)
-  from public, anon, authenticated, service_role;
+  from public, anon, authenticated, service_role, cenpaya_payment_worker;
 revoke all on function public.worker_get_gateway_credentials(text, text)
   from public, anon, authenticated, service_role;
 grant execute on function public.worker_get_gateway_credentials(text, text) to cenpaya_payment_worker;
