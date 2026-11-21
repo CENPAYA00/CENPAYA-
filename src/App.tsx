@@ -1,6 +1,5 @@
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'; // ADDED useNavigate
-import { lazy, Suspense, useEffect } from 'react'; // ADDED useEffect
-import { d1Me, setD1Token } from './lib/d1Api';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import StaffLayout from './components/StaffLayout';
@@ -85,30 +84,9 @@ const AdminPaymentMethods = lazy(() => import('./pages/admin/AdminPaymentMethods
 const AdminEscrow = lazy(() => import('./pages/admin/AdminEscrow'));
 const ArchivedPosts = lazy(() => import('./pages/ArchivedPosts'));
 
-// Complete the D1 Google OAuth hand-off and restore the D1 user session.
-function AuthListener() {
-  const navigate = useNavigate();
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const token = params.get('d1_token');
-    if (!token) return;
-    setD1Token(token);
-    window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
-    d1Me().then(({ user }) => {
-      navigate(user.onboarding_completed ? '/home' : '/complete-profile', { replace: true });
-    }).catch(() => {
-      setD1Token(null);
-      navigate('/login', { replace: true });
-    });
-  }, [navigate]);
-  return null;
-}
-
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthListener /> {/* ADDED THE BOUNCER HERE */}
-
       {/* Suspense shows a loading state while the page downloads */}
       <Suspense fallback={<div className="h-screen bg-[#eef2f0] dark:bg-darkbg flex items-center justify-center text-brand font-bold">Loading...</div>}>
         <Routes>
