@@ -1,0 +1,62 @@
+name: Validate CenPaya application and Workers
+
+on:
+  push:
+    branches:
+      - main
+      - migration/supabase-worker-api
+      - migration/d1-worker-api-v2
+  pull_request:
+    branches:
+      - main
+      - migration/supabase-worker-api
+      - migration/d1-worker-api-v2
+
+jobs:
+  frontend:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+
+  supabase-worker:
+    if: github.ref == 'refs/heads/migration/supabase-worker-api' || github.event_name == 'pull_request' && github.base_ref == 'migration/supabase-worker-api'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  d1-worker:
+    if: github.ref == 'refs/heads/migration/d1-worker-api-v2' || github.event_name == 'pull_request' && github.base_ref == 'migration/d1-worker-api-v2'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: d1-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: d1-worker/package-lock.json
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
