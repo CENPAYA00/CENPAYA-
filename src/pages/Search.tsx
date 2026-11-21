@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Search as SearchIcon, X, Clock, User as UserIcon, Store, Briefcase, FileText } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import DemoBadge from '../components/DemoBadge';
 
@@ -48,13 +48,13 @@ export default function Search() {
       const me = await getCachedUser();
       setMeId(me?.id || null);
 
-      const { data } = await supabase
-        .from('public_profiles')
-        .select('id, username, avatar_url, occupation, city')
-        .limit(20);
-
-      const filtered = (data || []).filter((u: any) => u.id !== me?.id).slice(0, 8);
-      setPeople(filtered);
+      try {
+        const { data } = await d1Request<{ data: any[] }>('/api/profiles/suggestions');
+        setPeople((data || []).filter((u: any) => u.id !== me?.id).slice(0, 8));
+      } catch (error) {
+        console.warn('Could not load D1 profile suggestions:', error);
+        setPeople([]);
+      }
     };
     load();
   }, []);
@@ -104,25 +104,20 @@ export default function Search() {
         }
 
         if (context === 'market') {
-          const { data, error } = await supabase.rpc('get_market_listings', {
-            p_search: debounced,
-            p_category: null,
-            p_limit: 40,
-            p_offset: 0,
-          });
-          if (error) console.warn(error);
-          const listings = (data?.listings || []) as any[];
-          list = listings.map((l: any) => ({
-            id: l.id,
+          const { data: listings } = await d1Request<{ data: any[] }>(
+            `/api/market/search?q=${encodeURIComponent(debounced)}&limit=40&offset=0`
+          );
+          list = (listings || []).map((l: any) => ({
+            id: l.listing_id || l.id,
             kind: 'listing',
-            title: l.title,
-            subtitle: l.location_city || l.location_region || l.location_country || '',
-            cover: Array.isArray(l.images) ? l.images[0] : null,
-            meta: (l.price_is_range
-              ? `${Number(l.price_min).toLocaleString()} – ${Number(l.price_max ?? l.price_min).toLocaleString()}`
-              : `${Number(l.price || 0).toLocaleString()}`) + ' XAF',
-            is_demo: l.is_demo,
-          }));
+            title: l.product_title || l.title || 'Marketplace listing',
+            subtitle: [l.city, l.region, l.country_code].filter(Boolean).join(', '),
+            cover: l.cover_image_url || l.image_url || l.thumbnail_url || null,
+            meta: l.price_amount != null
+              ? `${Number(l.price_amount).toLocaleString()} ${l.currency_code || 'XAF'}`
+              : '',
+            is_demo: !!l.is_demo,
+          })).filter((item: Result) => !!item.id);
         }
 
         if (context === 'services') {
