@@ -247,7 +247,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const channel=email?"email":"sms",purpose=email?"verify_email":"verify_phone";
     let delivered=false;
     try{delivered=await sendOtp(env,env.DB,id,channel,email||phone!,purpose);}catch{delivered=false;}
-    if(!delivered)return json({success:false,error:"Verification delivery is unavailable; retry OTP delivery for this account.",user_id:id},503);
+    if(!delivered)return json({success:true,user_id:id,verification_required:true,channel,delivery_pending:true},202);
     return json({success:true,user_id:id,verification_required:true,channel},201);
   }
   if(path==="/api/auth/otp/resend"&&method==="POST"){
