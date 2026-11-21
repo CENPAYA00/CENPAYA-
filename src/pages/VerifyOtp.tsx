@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request, setD1SessionToken } from '../lib/d1Api';
 import { ArrowLeft, Mail, Loader2 } from 'lucide-react';
 
 export default function VerifyOtp() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const email = params.get('email') || '';
+  const userId = params.get('user_id') || '';
+  const purpose = params.get('purpose') || 'verify_email';
   
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,19 +17,17 @@ export default function VerifyOtp() {
 
   const handleVerify = async () => {
     if (code.length !== 6) return setErrorMsg('Enter the 6-digit code');
+    if (!userId) return setErrorMsg('Your verification session is missing. Please sign up again.');
     setLoading(true);
     setErrorMsg('');
-
     try {
-      const { data, error } = await supabase.functions.invoke('verify-otp', {
-        body: { code },
+      const result = await d1Request<{ token: string; user: { onboarding_completed?: boolean } }>('/api/auth/verify', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId, code, purpose }),
       });
-
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Verification failed');
-
+      setD1SessionToken(result.token);
       setSuccess(true);
-      setTimeout(() => navigate('/onboarding'), 1500);
+      setTimeout(() => navigate(result.user?.onboarding_completed ? '/home' : '/complete-profile', { replace: true }), 800);
     } catch (e: any) {
       setErrorMsg(e.message || 'Invalid code');
     } finally {
@@ -36,13 +36,15 @@ export default function VerifyOtp() {
   };
 
   const handleResend = async () => {
+    if (!email) return setErrorMsg('Your email address is missing.');
     setLoading(true);
     setErrorMsg('');
     try {
-      const { data, error } = await supabase.functions.invoke('resend-otp');
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Resend failed');
-      alert('New code sent to your email.');
+      await d1Request('/api/auth/otp/resend', {
+        method: 'POST',
+        body: JSON.stringify({ identifier: email, purpose }),
+      });
+      alert('If verification is still required, a new code has been requested.');
     } catch (e: any) {
       setErrorMsg(e.message || 'Resend failed');
     } finally {
