@@ -90,13 +90,14 @@ function AuthListener() {
   const navigate = useNavigate();
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const queryParams = new URLSearchParams(window.location.search);
     const callbackToken = params.get('d1_token');
     if (callbackToken) {
       setD1SessionToken(callbackToken);
       window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
     }
-    if (params.has('google_error')) {
-      navigate('/login?google_error=' + encodeURIComponent(params.get('google_error') || 'sign_in_failed'), { replace: true });
+    if (queryParams.has('google_error')) {
+      navigate('/login?google_error=' + encodeURIComponent(queryParams.get('google_error') || 'sign_in_failed'), { replace: true });
       return;
     }
     if (!callbackToken && !getD1SessionToken()) return;
