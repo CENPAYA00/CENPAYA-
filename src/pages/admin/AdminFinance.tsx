@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { d1Me } from '../../lib/d1Api';
 import { TrendingUp, Wallet, Settings as Cog, Globe } from 'lucide-react';
 import AdminFinanceGains from './AdminFinanceGains';
@@ -29,29 +29,28 @@ export default function AdminFinance() {
     setLoading(true);
     const { user } = await d1Me();
 
-    const [gainsRes, settingsRes, regionsRes, walletRes, gainsInfoRes, breakdownRes, userRes] = await Promise.all([
-      supabase.from('system_gains').select('*').order('processed_at', { ascending: false }).limit(100),
-      supabase.from('app_settings').select('key, value'),
-      supabase.from('supported_countries').select('*').eq('is_active', true).order('name'),
-      user ? supabase.from('wallets').select('available_funds').eq('user_id', user.id).maybeSingle() : Promise.resolve({ data: null }),
-      supabase.rpc('admin_available_gains'),
-      supabase.rpc('admin_gains_breakdown'),
-      user ? supabase.from('users').select('momo_number, momo_provider').eq('id', user.id).maybeSingle() : Promise.resolve({ data: null }),
+    const [gainsRes, settingsRes, regionsRes, walletRes, financeRes, userRes] = await Promise.all([
+      supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/gains'),
+      supabaseWorkerRequest<{ data: Array<{ key: string; value: string }> }>('/api/v1/admin/settings'),
+      supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/regions'),
+      user ? supabaseWorkerRequest<{ data: { available_funds?: number } | null }>('/api/v1/wallet') : Promise.resolve({ data: null }),
+      supabaseWorkerRequest<{ data: { available_gains?: any; gains_breakdown?: any } }>('/api/v1/admin/finance'),
+      d1Me().then(result => d1Request<{ data: { momo_number?: string; momo_provider?: string } }>('/api/me/personal-details')).catch(() => ({ data: null })),
     ]);
 
     if (gainsRes.data) {
       setGains(gainsRes.data);
-      setTotal(gainsRes.data.reduce((s: number, g: any) => s + (g.amount_earned || 0), 0));
+      setTotal(gainsRes.data.reduce((sum: number, gain: any) => sum + (gain.amount_earned || 0), 0));
     }
     const map: Record<string, string> = {};
     (settingsRes.data || []).forEach((r: any) => { map[r.key] = r.value; });
     setSettings(map);
     setRegions(regionsRes.data || []);
-    setWalletBalance((walletRes as any)?.data?.available_funds || 0);
-    if (gainsInfoRes.data?.ok) setGainsInfo(gainsInfoRes.data);
-    if (breakdownRes.data?.ok) setBreakdown(breakdownRes.data.breakdown);
-    if ((userRes as any)?.data?.momo_number) setWdPhone((userRes as any).data.momo_number.replace(/^\+\d+\s?/, ''));
-    if ((userRes as any)?.data?.momo_provider) setWdProvider((userRes as any).data.momo_provider);
+    setWalletBalance(walletRes.data?.available_funds || 0);
+    if (financeRes.data?.available_gains?.ok) setGainsInfo(financeRes.data.available_gains);
+    if (financeRes.data?.gains_breakdown?.ok) setBreakdown(financeRes.data.gains_breakdown.breakdown);
+    if (userRes.data?.momo_number) setWdPhone(userRes.data.momo_number.replace(/^\+\d+\s?/, ''));
+    if (userRes.data?.momo_provider) setWdProvider(userRes.data.momo_provider as any);
     setLoading(false);
   };
 
@@ -63,9 +62,10 @@ export default function AdminFinance() {
     const value = settings[key];
     if (value === undefined) return;
     setSavingKey(key);
-    const { error } = await supabase.rpc('admin_set_app_setting', { p_key: key, p_value: String(value) });
-    if (error) alert(error.message);
-    else alert('Saved. Applies to new orders/purchases only.');
+    try {
+      await supabaseWorkerRequest(`/api/v1/admin/settings/${encodeURIComponent(key)}`, { method: 'POST', body: JSON.stringify({ value: String(value) }) });
+      alert('Saved. Applies to new orders/purchases only.');
+    } catch (error: unknown) { alert(error instanceof Error ? error.message : 'Could not save setting.'); }
     setSavingKey(null);
   };
 
@@ -73,9 +73,11 @@ export default function AdminFinance() {
     const amt = Number(topupAmount);
     if (!amt || amt <= 0) return alert('Enter a valid amount.');
     if (!window.confirm(`Top up your wallet by ${amt.toLocaleString()} XAF?`)) return;
-    const { data, error } = await supabase.rpc('admin_topup_my_wallet', { p_amount: amt, p_reason: 'admin self topup' });
-    if (error || !data?.ok) return alert(error?.message || data?.error || 'Top-up failed');
-    alert(`New balance: ${data.new_balance.toLocaleString()} XAF`);
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; new_balance?: number; error?: string } }>('/api/v1/admin/wallet/topup', { method: 'POST', body: JSON.stringify({ amount: amt, reason: 'admin self topup' }) });
+      if (!result.data?.ok) return alert(result.data?.error || 'Top-up failed');
+      alert(`New balance: ${Number(result.data.new_balance || 0).toLocaleString()} XAF`);
+    } catch (error: unknown) { return alert(error instanceof Error ? error.message : 'Top-up failed'); }
     setTopupAmount('');
     load();
   };
@@ -86,9 +88,11 @@ export default function AdminFinance() {
     if (amt > (gainsInfo?.available || 0)) return alert('Exceeds available gains.');
     if (!window.confirm(`Move ${amt.toLocaleString()} XAF from platform gains into your admin wallet?`)) return;
     setWithdrawing(true);
-    const { data, error } = await supabase.rpc('admin_withdraw_gains_to_wallet', { p_amount: amt });
-    if (error || !data?.ok) alert(error?.message || data?.error || 'Withdrawal failed');
-    else { alert(`New wallet balance: ${data.new_wallet_balance.toLocaleString()} XAF`); setWithdrawAmount(''); load(); }
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; new_wallet_balance?: number; error?: string } }>('/api/v1/admin/gains/withdraw-to-wallet', { method: 'POST', body: JSON.stringify({ amount: amt }) });
+      if (!result.data?.ok) alert(result.data?.error || 'Withdrawal failed');
+      else { alert(`New wallet balance: ${Number(result.data.new_wallet_balance || 0).toLocaleString()} XAF`); setWithdrawAmount(''); load(); }
+    } catch (error: unknown) { alert(error instanceof Error ? error.message : 'Withdrawal failed'); }
     setWithdrawing(false);
   };
 
@@ -100,13 +104,10 @@ export default function AdminFinance() {
     if (amt > walletBalance) { setWdMsg({ kind: 'error', text: 'Amount exceeds wallet balance.' }); return; }
     if (!wdPhone || wdPhone.trim().length < 6) { setWdMsg({ kind: 'error', text: 'Enter a valid MoMo number.' }); return; }
     setWdBusy(true);
-    const { data, error } = await supabase.rpc('admin_withdraw_from_my_wallet', {
-      p_amount: amt,
-      p_momo_number: wdPhone.trim(),
-      p_provider: wdProvider,
-    });
-    if (error || !data?.ok) setWdMsg({ kind: 'error', text: error?.message || data?.error || 'Withdrawal failed.' });
-    else { setWdMsg({ kind: 'success', text: `Withdrawal requested: ${amt.toLocaleString()} XAF` }); setWdAmount(''); load(); }
+    try {
+      await supabaseWorkerRequest('/api/v1/admin/wallet/withdraw', { method: 'POST', body: JSON.stringify({ amount: amt, momo_number: wdPhone.trim(), provider: wdProvider }) });
+      setWdMsg({ kind: 'success', text: `Withdrawal requested: ${amt.toLocaleString()} XAF` }); setWdAmount(''); load();
+    } catch (error: unknown) { setWdMsg({ kind: 'error', text: error instanceof Error ? error.message : 'Withdrawal failed.' }); }
     setWdBusy(false);
   };
 
