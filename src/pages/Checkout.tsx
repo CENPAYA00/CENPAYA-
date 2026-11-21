@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Wallet, Smartphone, Shield, Check, MapPin } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import Select from '../components/Select';
@@ -20,8 +20,10 @@ export default function Checkout() {
   const [pkg, setPkg] = useState<any>(null);
   const [seller, setSeller] = useState<any>(null);
   const [walletFunds, setWalletFunds] = useState<number>(0);
-  const [feePct, setFeePct] = useState<number>(3);
-  const [feeFixed, setFeeFixed] = useState<number>(50);
+  const [feePct, setFeePct] = useState<number>(0);
+  const [feeFixed, setFeeFixed] = useState<number>(0);
+  const [serverAmount, setServerAmount] = useState<number | null>(null);
+  const [quoteReady, setQuoteReady] = useState(false);
   const [method, setMethod] = useState<PaymentMethod>('wallet');
   const [payPhone, setPayPhone] = useState('');
   const [requirements, setRequirements] = useState('');
@@ -63,17 +65,21 @@ export default function Checkout() {
         setSeller(p);
       }
 
-      const { data: w } = await supabase.from('wallets').select('available_funds').eq('user_id', me.id).maybeSingle();
-      setWalletFunds(Number(w?.available_funds || 0));
-
       try {
-        const { data: fPct } = await supabase.rpc('setting', { p_key: 'fee_pct_non_member' });
-        const { data: fFixed } = await supabase.rpc('setting', { p_key: 'fee_fixed_non_member' });
-        setFeePct(Number(fPct ?? 3));
-        setFeeFixed(Number(fFixed ?? 50));
-      } catch {
-        setFeePct(3);
-        setFeeFixed(50);
+        const walletResponse = await supabaseWorkerRequest<{ data: { available_funds?: number } | null }>('/api/v1/wallet');
+        setWalletFunds(Number(walletResponse.data?.available_funds || 0));
+      } catch { setWalletFunds(0); }
+
+      if (listingId) {
+        try {
+          const quoteResponse = await supabaseWorkerRequest<{ data: { amount: number; fee_pct: number; fee_fixed: number } }>(`/api/v1/checkout/quote?listing_id=${encodeURIComponent(listingId)}`);
+          setServerAmount(Number(quoteResponse.data.amount));
+          setFeePct(Number(quoteResponse.data.fee_pct));
+          setFeeFixed(Number(quoteResponse.data.fee_fixed));
+          setQuoteReady(true);
+        } catch { setQuoteReady(false); }
+      } else {
+        setQuoteReady(false);
       }
 
       const { data: profile } = await d1Request<{ data: any }>('/api/me/personal-details');
@@ -114,9 +120,9 @@ export default function Checkout() {
     if (!cList.includes(city)) setCity(cList[0] || '');
   }, [region, country, countries]);
 
-  const amount = item?._kind === 'service'
+  const amount = serverAmount ?? (item?._kind === 'service'
     ? Number(pkg?.price || item?.starting_price || 0)
-    : (item?.price_is_range ? Number(item?.price_min || 0) : Number(item?.price || 0));
+    : (item?.price_is_range ? Number(item?.price_min || 0) : Number(item?.price || 0)));
 
   const feePctAmount = Math.round(amount * feePct / 100);
   const total = amount + feePctAmount + feeFixed;
@@ -137,57 +143,29 @@ export default function Checkout() {
 
     try {
       if (item._kind === 'service') {
-        if (method === 'wallet') {
-          const { data, error } = await supabase.rpc('create_service_order', {
-            p_service_id: item.id,
-            p_package_id: packageId,
-            p_requirements: requirements.trim() || null,
-            p_pay_from_wallet: true,
-          });
-          if (error) throw error;
-          if (!data?.ok) throw new Error(data?.error || 'Order failed');
-          navigate(`/service-order/${data.order_id}`);
-        } else {
-          const { data, error } = await supabase.functions.invoke('initiate-payment', {
-            body: {
-              service_id: item.id,
-              package_id: packageId,
-              buyer_id: me.id,
-              requirements: requirements.trim() || '—',
-              method: 'mtn_momo',
-            }
-          });
-          if (error) throw error;
-          if (!data?.ok) throw new Error(data?.error || 'Payment initiation failed');
-          if (data.payment_url) window.location.href = data.payment_url;
-          else throw new Error("No payment URL returned");
-        }
+        throw new Error('Service checkout is not yet available through the financial Worker. No direct database or Edge Function call was made.');
       } else {
-        const payload: any = {
-          buyer_id: me.id,
-          seller_id: item.seller_id,
-          listing_id: item.id,
-          listing_title: item.title,
-          amount,
-          currency_code: 'XAF',
-          fee_pct: feePct,
-          fee_fixed: feeFixed,
-          escrow_status: 'hold',
-          escrow_created_at: new Date().toISOString(),
-          shipping_country: country,
-          shipping_region: region,
-          shipping_city: city,
-          shipping_address: address.trim() || null,
-          payment_method: method,
-          payment_phone: method === 'momo' ? payPhone : null,
-        };
-
-        const { data, error } = await supabase.from('orders').insert(payload).select().single();
-        if (error) throw error;
-        navigate(`/order/${data.id}`);
+        const response = await supabaseWorkerRequest<{ data: { id: string } }>('/api/v1/checkout/orders', {
+          method: 'POST',
+          body: JSON.stringify({
+            listing_id: item.id,
+            payment_method: method,
+            payment_phone: method === 'momo' ? payPhone : null,
+            shipping_country: country,
+            shipping_region: region,
+            shipping_city: city,
+            shipping_address: address.trim() || null,
+          }),
+        });
+        navigate(`/order/${response.data.id}`);
       }
-    } catch (e: any) {
-      setErr(e.message || 'Payment failed');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Payment failed';
+      if (/insufficient/i.test(message)) setErr('Insufficient wallet balance. Top up first.');
+      else if (/idempotency|duplicate/i.test(message)) setErr('This checkout was already submitted. Refresh your orders before retrying.');
+      else if (/provider_rejected/i.test(message)) setErr('The payment provider rejected the request. Check the payment details and try again.');
+      else if (/uncertain|timeout|network/i.test(message)) setErr('Payment status is uncertain. Check your orders before retrying to avoid duplicate payment.');
+      else setErr(message);
     } finally {
       setProcessing(false);
     }
@@ -351,10 +329,10 @@ export default function Checkout() {
         <div className="max-w-[600px] mx-auto">
           <button
             onClick={handleConfirmOrder}
-            disabled={processing}
+            disabled={processing || !quoteReady}
             className="w-full bg-accent text-white font-bold py-3 rounded-xl text-[13px] disabled:opacity-50 cursor-pointer"
           >
-            {processing ? 'Processing…' : `Pay ${total.toLocaleString()} XAF`}
+            {processing ? 'Processing…' : !quoteReady ? 'Checkout quote unavailable' : `Pay ${total.toLocaleString()} XAF`}
           </button>
         </div>
       </div>
