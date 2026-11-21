@@ -268,7 +268,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
     const b=await body(request);
     const userId=str(b?.user_id,64),key=str(b?.idempotency_key,128),scope=str(b?.scope,40);
-    if(!UUID.test(userId)||key.length<16||scope!=="marketplace_order")return fail("Invalid idempotency request",400);
+    if(!UUID.test(userId)||key.length<16||!["marketplace_order","membership_payment"].includes(scope))return fail("Invalid idempotency request",400);
     try{
       const now=Math.floor(Date.now()/1000);
       await env.DB.prepare("DELETE FROM rate_limits WHERE key LIKE 'idem:%' AND window_start<?").bind(now-86400).run();
