@@ -63,7 +63,7 @@ export default {
         request, identity.userId, identity.supabase, env, headers,
       );
       if (paymentResponse) return paymentResponse;
-      return await handleAuthenticatedApi(request, identity.userId, identity.supabase, headers);
+      return await handleAuthenticatedApi(request, identity.userId, identity.supabase, headers, env);
     } catch (error) {
       if (error instanceof IdentityError) {
         return jsonResponse({ success: false, error: error.message }, error.status, headers);
