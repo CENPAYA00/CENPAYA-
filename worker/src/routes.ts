@@ -370,6 +370,20 @@ export async function handleAuthenticatedApi(
     const result = await rpc(supabase, "admin_list_open_escrows", { p_limit: pageSize(url, 100) });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
+  if (method === "GET" && path === "/api/v1/admin/settings") {
+    const { data, error } = await supabase.from("app_settings").select("key,value").order("key", { ascending: true });
+    if (error) return failure("settings_lookup_failed", 502, headers);
+    return success(data || [], headers);
+  }
+  const adminSetting = path.match(/^\/api\/v1\/admin\/settings\/([a-z0-9_]{1,100})$/);
+  if (method === "POST" && adminSetting) {
+    const body = await readJsonObject(request, 4096);
+    if (!body || !onlyKeys(body, ["value"]) || (typeof body.value !== "string" && typeof body.value !== "number" && typeof body.value !== "boolean")) {
+      return failure("invalid_setting_value", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_set_app_setting", { p_key: adminSetting[1], p_value: String(body.value) });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
   if (method === "GET" && path === "/api/v1/admin/finance") {
     const names = ["admin_available_gains", "admin_gains_breakdown", "admin_money_circulation_full"] as const;
     const results = await Promise.all(names.map((name) => rpc(supabase, name, {})));
