@@ -35,7 +35,7 @@ function withCors(response: Response, request: Request, env: Env): Response {
 function sessionCookie(token:string,env:Env){const ttl=Math.max(300,Math.min(2592000,Number(env.SESSION_TTL_SECONDS||2592000)));return `cenpaya_session=${encodeURIComponent(token)}; Path=/; Max-Age=${ttl}; HttpOnly; Secure; SameSite=None`;}
 function clearSessionCookie(){return "cenpaya_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None";}
 function sessionJson(data:unknown,token:string,env:Env,status=200){return json(data,status,{"Set-Cookie":sessionCookie(token,env)});}
-function requestSessionToken(request:Request){const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);return bearer||(cookie?decodeURIComponent(cookie):"");}
+function requestSessionToken(request:Request){const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);return (cookie?decodeURIComponent(cookie):"")||bearer||"";}
 async function body(request: Request): Promise<Record<string,unknown>|null> {
   const type=request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
   if(type!=="application/json") return null;
@@ -153,7 +153,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(!await verifyOtp(env,env.DB,userId,purpose as "verify_email"|"verify_phone",code))return fail("Invalid or expired verification code",400);
     const user=await readUser(env.DB,userId);if(!user)return fail("Account not found",404);
     const token=await createSession(env.DB,userId,request,env);
-    return sessionJson({success:true,user:safeUser(user),token},token,env);
+    return sessionJson({success:true,user:safeUser(user)},token,env);
   }
   if(path==="/api/auth/password/request"&&method==="POST"){
     const b=await body(request);if(!b)return fail("Valid JSON body required");
@@ -184,7 +184,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     await env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at="+NOW+" WHERE user_id=? AND status='active'").bind(userId).run();
     const token=await createSession(env.DB,userId,request,env);
     const updated=await readUser(env.DB,userId);
-    return sessionJson({success:true,user:updated?safeUser(updated):null,token},token,env);
+    return sessionJson({success:true,user:updated?safeUser(updated):null},token,env);
   }
   if(path==="/api/auth/login"&&method==="POST"){
     const b=await body(request);if(!b)return fail("Valid JSON body required");
@@ -205,9 +205,10 @@ async function handle(request:Request,env:Env):Promise<Response>{
   }
   if(path==="/api/auth/refresh"&&method==="POST"){
     const user=await auth(request,env);
-    const token=requestSessionToken(request);
-    if(!user||!token)return fail("Unauthorized",401);
-    return sessionJson({success:true,token,user:safeUser(user)},token,env);
+    const refreshToken=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);
+    if(!user||!refreshToken)return fail("Unauthorized",401);
+    const accessToken=await createSession(env.DB,user.id,request,env,900);
+    return json({success:true,token:accessToken,expires_in:900,user:safeUser(user)});
   }
   const user=await auth(request,env);
   if(path==="/api/me"&&method==="GET"){
