@@ -36,8 +36,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: worker/package-lock.json
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
@@ -54,8 +52,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: d1-worker/package-lock.json
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
