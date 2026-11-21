@@ -1,94 +1,60 @@
-# CenPaya — Frontend Architecture
+# CenPaya — Application Architecture
 
 ## Overview
-CenPaya is a Pan-African commerce/fintech single-page application for the CEMAC region (buy, sell, grow with escrow protection). It is a client-side React app with PWA support, served via Vite.
+CenPaya is a Pan-African commerce and fintech application for the CEMAC region. The frontend is a React single-page application, built with Vite and delivered as a Progressive Web App (PWA).
 
-## Tech Stack
-- **Runtime / framework:** React 18.3.1 + TypeScript 5.5.2
-- **Build tool:** Vite 5.3.1
-- **Routing:** React Router DOM 6.24.0 (BrowserRouter, lazy + Suspense code-split pages)
-- **Server state:** TanStack Query v5 (queryClient with 5 min staleTime, refetchOnWindowFocus disabled)
-- **Virtual scrolling:** TanStack React Virtual v3
-- **Backend client:** Supabase JS v2 (see `src/lib/supabase.ts`)
-- **Icons:** lucide-react
-- **Styling:** Tailwind CSS 3.4.4 + PostCSS + Autoprefixer (custom brand palette in `tailwind.config.js`, darkMode via `class`)
-- **PWA:** vite-plugin-pwa (autoUpdate, manifest, workbox runtime caching incl. Supabase API + images)
-- **Service worker:** `sw.js` at project root
+## Backend ownership
 
-## Entry Point & Providers (`src/main.tsx`)
-ReactDOM renders `<App />` wrapped (inner to outer) in:
-1. `React.StrictMode`
-2. `QueryClientProvider` (TanStack Query)
-3. `LightGuard` (component)
-4. `ThemeProvider` (dark/light theme, class-based)
-5. `I18nProvider` (internationalization)
-6. `SoundProvider` (sound effects)
-7. `NotifyHost` + `installNotify()` (global notification system, replaces browser `alert`)
+CenPaya uses two backend data systems with deliberately separate responsibilities:
 
-## Router (`src/App.tsx`)
-Uses `BrowserRouter` with `Routes`/`Route`. All pages are lazy-loaded via `React.lazy` + `Suspense` with a green loading fallback.
+- **Cloudflare D1 through the Cloudflare Worker:** identity and authentication, email/phone verification, user profiles, country and feature configuration, marketplace listings and services, social/feed data, chat, notifications, support, reports, and other non-financial application data.
+- **Supabase:** financial records and financial administration, including wallets, deposits, withdrawals, checkout, escrow, ledger, orders/transactions, subscriptions, boosts, payment methods, and financial staff/admin operations.
 
-Three layout shells:
-- **Public (no layout):** `/`, `/signup`, `/forgot-password`, `/legal/:slug`, `/onboarding`, `/verify-otp`
-- **`Layout` (user app):** home, market, checkout, wallet, profile, listings, posts, chat, settings, groups, communities, notifications, etc.
-- **`StaffLayout`:** `/staff`, `/staff/tickets/:id`, `/staff/reports`
-- **`AdminLayout`:** `/admin` super-admin dashboard + staff, inbox, ledger, payments, vault, finance, features, users, reports, security, audit, permissions, regions
+The frontend must not use Supabase Auth as the source of user identity. It obtains the signed-in user's identity from the D1 Worker. Financial requests must use the approved financial API/data access path and must not assume that a D1 user ID automatically satisfies Supabase RLS policies.
 
-Page files live in `src/pages/` (flat) plus `src/pages/admin/`.
+Do not duplicate ownership of a data domain across D1 and Supabase. If a workflow spans both systems, keep the financial record authoritative in Supabase and use D1 only for its non-financial presentation, identity, or notification data.
 
-## Directory Structure (`src/`)
-```
-src/
-├── main.tsx              # App entry + providers
-├── index.css             # Global / Tailwind base styles
-├── App.tsx               # Router + lazy page imports
-├── vite-env.d.ts
-│
-├── pages/                # Route components (lazy-loaded in App.tsx)
-│   ├── Home.tsx, Market.tsx, Checkout.tsx, Wallet.tsx, ...
-│   ├── Settings.tsx + Settings*.tsx (settings sub-pages)
-│   ├── admin/            # Super-admin pages
-│   └── ...
-│
-├── components/           # Reusable UI components
-│   ├── Layout.tsx, AdminLayout.tsx, StaffLayout.tsx
-│   ├── FeedPostCard.tsx, ListingDetail.tsx, Chat.tsx, ...
-│   └── ...
-│
-├── contexts/             # React context providers
-│   ├── theme.tsx, i18n.tsx, sound.tsx
-│
-├── hooks/                # Custom React hooks
-│   ├── useChatThread.ts, usePostPrivacy.ts, useVoiceRecorder.ts, ...
-│
-├── lib/                  # Utility libraries / service modules
-│   ├── supabase.ts, notify.ts, push.ts, sounds.ts, cache.ts, ...
-│   └── socialApi.ts
-│
-├── utils/                # Pure helper functions
-│   ├── compressImage.ts, getMyWallet.ts, searchMarketplace.ts, ...
-│
-├── types/                # TypeScript type definitions
-│   ├── UserProfile.ts, Listing.ts, ChatMessage.ts, Wallet.ts, ...
-│
-├── constants/            # Static constants
-│   ├── activityActions.ts, policies.ts, supportCategories.ts
-│
-└── ...
-```
+## Technology stack
 
-## Public Assets
-- `index.html` — HTML entry, mounts `#root`, loads `/src/main.tsx`, theme-color `#0F5132`, PWA meta tags
-- `public/icons/` — PWA icons (192, 512, maskable)
-- `sw.js` — service worker
-- `vite.config.ts` — Vite + PWA plugin config
-- `tailwind.config.js` — Tailwind config (brand colors, Inter font, 22px card radius)
-- `postcss.config.js` — PostCSS config
-- `tsconfig.json` — TypeScript config
+- React 18 + TypeScript
+- Vite 5
+- React Router DOM
+- TanStack Query
+- Cloudflare Worker API backed by D1 for non-financial features
+- Supabase for financial data and operations
+- Tailwind CSS + PostCSS
+- vite-plugin-pwa for installability and static asset caching
 
-## Key Conventions Observed
-- Pages are code-split with `React.lazy` and registered in `src/App.tsx`.
-- Styling is Tailwind with custom `brand`, `darkbg`, `offwhite`, `navy`, `ink`, `mute`, `chip`, `gold`, `danger` colors.
-- Notifications go through `lib/notify.ts` (not `window.alert`).
-- TypeScript strict types live in `src/types/`.
-- Database/backend logic is in `src/lib/supabase.ts` and `src/lib/socialApi.ts` (out of scope per request).
+## Application entry and routing
+
+src/main.tsx mounts the application and its providers. src/App.tsx defines the route tree and lazy-loaded pages.
+
+The route tree and actual feature inventory in src/ are authoritative. This document intentionally describes backend ownership rather than listing every page.
+
+## Repository layout
+
+- src/ — frontend application, UI, hooks, API clients, and feature logic.
+- database/d1/ — D1 schema reference and incremental SQL migrations.
+- public/ — public static assets.
+- vite.config.ts — Vite and PWA build configuration.
+- sw.js — push notification service worker entry.
+- tailwind.config.js — design tokens and Tailwind configuration.
+- rls_policies.sql — legacy Supabase policy reference; review before applying to any database.
+
+## API and security rules
+
+1. D1 Worker is the authority for user identity and non-financial data.
+2. Supabase is reserved for financial data; do not move auth, OTP, profile, chat, or general application records into Supabase.
+3. Never expose service-role credentials or database secrets in frontend code.
+4. Do not trust a user ID supplied by the browser. The receiving backend must derive identity from a verified session/token.
+5. Do not assume Supabase auth.uid() represents a D1-authenticated user. Cross-system financial access requires an explicitly designed, verified server-to-server identity bridge.
+6. Do not cache authenticated API responses in the service worker. Public static assets and public images may be cached.
+7. Keep financial writes authoritative and auditable; do not create a second financial ledger in D1.
+
+## PWA caching
+
+The service worker may cache versioned static assets and public images. It must not cache D1 or Supabase API responses, authenticated profile data, chat messages, wallet balances, payment records, or other private user data.
+
+## D1 migrations
+
+D1 migrations are incremental and must be applied in order to the intended database. Check the D1 migration tracker before applying a migration. Never import exported user rows, credentials, or backup tables as part of a schema migration.
