@@ -5,6 +5,7 @@ import {
   signSupabaseUserJwt,
   signSupabasePaymentWorkerJwt,
   verifyD1IdentityAssertion,
+  verifyD1IdentityAssertionClaims,
   verifyHs256Jwt,
 } from "../.test-build/jwt.js";
 
@@ -29,6 +30,18 @@ void describe("D1 identity assertion verification", () => {
     }, secret);
 
     assert.equal(await verifyD1IdentityAssertion(token, secret, now), userId);
+  });
+
+  void it("returns the assertion jti and expiry for one-time replay consumption", async () => {
+    const now = 1_800_000_000;
+    const jti = "fresh-random-assertion-id-1234";
+    const token = await signHmacJwt({
+      iss: "cenpaya-d1-worker", aud: "cenpaya-supabase-worker",
+      sub: userId, iat: now, exp: now + 120, jti,
+    }, secret);
+    assert.deepEqual(await verifyD1IdentityAssertionClaims(token, secret, now), {
+      userId, jti, expiresAt: now + 120,
+    });
   });
 
   void it("allows bounded clock skew while keeping assertions short-lived", async () => {
