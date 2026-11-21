@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, MessageCircle, ChevronRight, X, Send } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import Select from '../components/Select';
 import { ALL_SUPPORT_CATEGORIES } from '../constants/supportCategories';
@@ -14,15 +14,9 @@ export default function ContactAdmin() {
 
   const load = async () => {
     setLoading(true);
-    const me = await getCachedUser();
-    if (!me) { setLoading(false); return; }
-    const { data } = await supabase
-      .from('support_tickets')
-      .select('id, category, subject, status, created_at')
-      .eq('user_id', me.id)
-      .order('created_at', { ascending: false });
-    setTickets(data || []);
-    setLoading(false);
+    try { const result = await d1Request<{ data: any[] }>('/api/support/tickets'); setTickets(result.data || []); }
+    catch (error: any) { alert(error.message || 'Could not load admin messages'); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
@@ -114,14 +108,13 @@ function NewMessageSheet({ onClose, onSent }: { onClose: () => void; onSent: () 
     const me = await getCachedUser();
     if (!me) { setBusy(false); return setErr('Not signed in.'); }
 
-    const { error } = await supabase.from('support_tickets').insert({
-      user_id: me.id,
-      category,
-      subject: subject.trim(),
-      body: message.trim(),
-      status: 'open',
-      created_at: new Date().toISOString(),
-    });
+    try {
+      const normalizedCategory = ['general','account','technical','marketplace','payments','security','privacy','other'].includes(category) ? category : 'other';
+      await d1Request('/api/support/tickets', { method: 'POST', body: JSON.stringify({ category: normalizedCategory, subject: subject.trim(), description: message.trim() }) });
+      setBusy(false);
+      onSent();
+      return;
+    } catch (error: any) { setBusy(false); setErr(error.message || 'Could not send message'); return; }
 
     setBusy(false);
     if (error) { setErr(error.message); return; }
