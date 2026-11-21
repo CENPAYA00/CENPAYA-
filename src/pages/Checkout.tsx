@@ -59,6 +59,7 @@ export default function Checkout() {
           const selectedPackage = (packages || []).find((p: any) => p.id === packageId) || null;
           setPkg(selectedPackage);
           setServerAmount(Number(selectedPackage?.price || loadedItem?.starting_price || 0));
+          setServerTotal(Number(selectedPackage?.price || loadedItem?.starting_price || 0));
         }
       }
 
@@ -88,7 +89,7 @@ export default function Checkout() {
         setFeePct(0);
         setFeeFixed(0);
         setServerPlatformFee(0);
-        setServerTotal(Number(serverAmount || item?.starting_price || 0));
+        if (!packageId) setServerTotal(Number(loadedItem?.starting_price || 0));
         setQuoteReady(true);
       } else {
         setQuoteReady(false);
