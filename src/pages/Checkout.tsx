@@ -7,6 +7,18 @@ import { getCachedUser } from '../lib/cache';
 import Select from '../components/Select';
 
 type PaymentMethod = 'wallet' | 'momo';
+type CheckoutItem = {
+  id: string; title?: string; seller_id?: string; price?: number | string;
+  price_min?: number | string; price_is_range?: boolean; starting_price?: number | string;
+  images?: string[]; thumbnail_url?: string; _kind?: 'listing' | 'service';
+};
+type ServicePackage = { id: string; title?: string; price?: number | string };
+type SellerProfile = { username?: string | null };
+type CheckoutCountry = {
+  code: string; country_code?: string; name: string; flag_emoji?: string;
+  regions?: string[]; cities?: Record<string, string[]>;
+};
+type PersonalDetails = { phone?: string | null; country_iso?: string | null; region?: string | null; city?: string | null };
 
 export default function Checkout() {
   const navigate = useNavigate();
@@ -16,9 +28,9 @@ export default function Checkout() {
   const packageId = params.get('package');
 
   const [loading, setLoading] = useState(true);
-  const [item, setItem] = useState<any>(null);
-  const [pkg, setPkg] = useState<any>(null);
-  const [seller, setSeller] = useState<any>(null);
+  const [item, setItem] = useState<CheckoutItem | null>(null);
+  const [pkg, setPkg] = useState<ServicePackage | null>(null);
+  const [seller, setSeller] = useState<SellerProfile | null>(null);
   const [walletFunds, setWalletFunds] = useState<number>(0);
   const [feePct, setFeePct] = useState<number>(0);
   const [feeFixed, setFeeFixed] = useState<number>(0);
@@ -32,7 +44,7 @@ export default function Checkout() {
   const [processing, setProcessing] = useState(false);
   const [err, setErr] = useState('');
 
-  const [countries, setCountries] = useState<any[]>([]);
+  const [countries, setCountries] = useState<CheckoutCountry[]>([]);
   const [country, setCountry] = useState('CM');
   const [regions, setRegions] = useState<string[]>([]);
   const [region, setRegion] = useState('');
@@ -45,18 +57,18 @@ export default function Checkout() {
       const me = await getCachedUser();
       if (!me) { navigate('/'); return; }
 
-      let loadedItem: any = null;
+      let loadedItem: CheckoutItem | null = null;
 
       if (listingId) {
-        const { data } = await d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(listingId)}`);
+        const { data } = await d1Request<{ data: Omit<CheckoutItem, '_kind'> }>(`/api/market/listings/${encodeURIComponent(listingId)}`);
         loadedItem = data ? { ...data, _kind: 'listing' } : null;
       } else if (serviceId) {
-        const { data } = await d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(serviceId)}`);
+        const { data } = await d1Request<{ data: Omit<CheckoutItem, '_kind'> }>(`/api/market/listings/${encodeURIComponent(serviceId)}`);
         loadedItem = data ? { ...data, _kind: 'service' } : null;
 
         if (packageId) {
-          const { data: packages } = await d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(serviceId)}/packages`);
-          const selectedPackage = (packages || []).find((p: any) => p.id === packageId) || null;
+          const { data: packages } = await d1Request<{ data: ServicePackage[] }>(`/api/market/listings/${encodeURIComponent(serviceId)}/packages`);
+          const selectedPackage = (packages || []).find(p => p.id === packageId) || null;
           setPkg(selectedPackage);
           setServerAmount(Number(selectedPackage?.price || loadedItem?.starting_price || 0));
           setServerTotal(Number(selectedPackage?.price || loadedItem?.starting_price || 0));
@@ -66,7 +78,7 @@ export default function Checkout() {
       setItem(loadedItem);
 
       if (loadedItem?.seller_id) {
-        const { data: p } = await d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(loadedItem.seller_id)}`);
+        const { data: p } = await d1Request<{ data: SellerProfile }>(`/api/profiles/${encodeURIComponent(loadedItem.seller_id)}`);
         setSeller(p);
       }
 
@@ -95,15 +107,16 @@ export default function Checkout() {
         setQuoteReady(false);
       }
 
-      const { data: profile } = await d1Request<{ data: any }>('/api/me/personal-details');
+      const { data: profile } = await d1Request<{ data: PersonalDetails }>('/api/me/personal-details');
       setPayPhone(profile?.phone || '');
       setCountry(profile?.country_iso || 'CM');
       setRegion(profile?.region || '');
       setCity(profile?.city || '');
 
-      const { data: countryData } = await d1Request<{ data: any[] }>('/api/countries');
-      setCountries(countryData || []);
-      const cRow = (countryData || []).find((x: any) => x.code === (profile?.country_iso || 'CM'));
+      const { data: countryData } = await d1Request<{ data: Array<Omit<CheckoutCountry, 'code'> & { country_code: string }> }>('/api/countries');
+      const normalizedCountries: CheckoutCountry[] = (countryData || []).map(row => ({ ...row, code: row.country_code }));
+      setCountries(normalizedCountries);
+      const cRow = normalizedCountries.find(x => x.code === (profile?.country_iso || 'CM'));
       const rList: string[] = Array.isArray(cRow?.regions) ? cRow.regions : [];
       setRegions(rList);
       if (!rList.includes(region)) setRegion(rList[0] || '');
