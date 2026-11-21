@@ -63,27 +63,27 @@ export default function Home() {
   };
 
   const handleLike = async (postId: string) => {
-    if (!userId) return alert('Please log in to like posts.');
+    if (!userId) return;
     const currentlyLiked = likedPosts.has(postId);
     setLikedPosts(prev => { const n = new Set(prev); currentlyLiked ? n.delete(postId) : n.add(postId); return n; });
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: (p.likes_count || 0) + (currentlyLiked ? -1 : 1) } : p));
-    if (currentlyLiked) await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', userId);
-    else await supabase.from('post_likes').insert({ post_id: postId, user_id: userId });
+    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/like`, { method: currentlyLiked ? 'DELETE' : 'POST' }); }
+    catch (error: any) { alert(error.message || 'Could not update like'); }
   };
 
   const handleSave = async (postId: string) => {
     if (!userId) return alert('Please log in to save posts.');
     const isSaved = savedPosts.has(postId);
     setSavedPosts(prev => { const n = new Set(prev); isSaved ? n.delete(postId) : n.add(postId); return n; });
-    if (isSaved) await supabase.from('saved_posts').delete().eq('post_id', postId).eq('user_id', userId);
-    else await supabase.from('saved_posts').insert({ post_id: postId, user_id: userId });
+    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/save`, { method: isSaved ? 'DELETE' : 'POST' }); }
+    catch (error: any) { alert(error.message || 'Could not update saved post'); }
   };
 
   const handleShare = async (postId: string) => {
     const url = `https://cenpaya.pages.dev/post/${postId}`;
     if (navigator.share) { try { await navigator.share({ url, title: 'CenPaya post' }); } catch {} }
     else { await navigator.clipboard.writeText(url); alert('Link copied'); }
-    try { await supabase.rpc('track_post_share', { p_post_id: postId, p_channel: 'external' }); } catch {}
+    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/share`, { method: 'POST', body: JSON.stringify({ channel: 'external' }) }); } catch {}
   };
 
   const handleFollowToggle = async (authorId: string, isNowFollowing: boolean) => {
