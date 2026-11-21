@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 
 type Tier = { id: number; price: number; duration_days: number; scope: string; label: string; description: string };
@@ -52,11 +53,11 @@ export default function BoostModal({
     try {
       const me = await getCachedUser();
       if (me) {
-        await supabase.from('notifications').insert({
-          user_id: me.id, kind: 'system', title: 'Boost activated',
+        await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
+          kind: 'system', title: 'Boost activated',
           body: `${selectedTier.label} — ${targetType} boosted until ${new Date(data.until).toLocaleDateString()}`,
-          link_url: `/${targetType}/${targetId}`, actor_id: me.id,
-        });
+          link_url: `/${targetType}/${targetId}`,
+        }) });
       }
     } catch (e) { console.warn(e); }
 
