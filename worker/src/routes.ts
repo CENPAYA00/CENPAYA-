@@ -176,7 +176,7 @@ async function enforceMarketplaceCheckoutRateLimit(env: Env, userId: string, hea
     }
     return null;
   } catch {
-    return jsonResponse({ success: false, error: "marketplace_rate_limit_unavailable" }, 503);
+    return jsonResponse({ success: false, error: "marketplace_rate_limit_unavailable" }, 503, headers);
   }
 }
 
