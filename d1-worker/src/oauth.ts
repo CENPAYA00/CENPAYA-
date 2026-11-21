@@ -2,6 +2,7 @@ import type { Env } from "./types.js";
 import { readUser } from "./auth.js";
 import { createSession } from "./sessions.js";
 import { digest, randomToken, sha256Base64Url, uuid } from "./security.js";
+const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), {
   status,
