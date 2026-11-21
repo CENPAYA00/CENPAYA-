@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, UserPlus, MessageCircle, Star } from 'lucide-react';
 import { useI18n } from '../contexts/i18n';
 import FeedPostCard from '../components/FeedPostCard';
@@ -19,108 +19,44 @@ export default function SellerProfile() {
   useEffect(() => {
     const load = async () => {
       if (!id) return;
-
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUserId(user?.id || null);
-
-      // Fetch from public_profiles
-      const { data } = await supabase
-        .from('public_profiles')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle();
-      setProfile(data);
-
-      if (data) {
-        const { data: userPosts } = await supabase
-          .from('posts')
-          .select('*')
-          .eq('user_id', id)
-          .eq('moderation_status', 'approved')
-          .order('created_at', { ascending: false })
-          .limit(20);
-        
-        // Attach username to posts
-        const enriched = (userPosts || []).map(p => ({ ...p, username: data.username }));
-        setPosts(enriched);
-      }
-
-      if (user?.id) {
-        const { data: follow } = await supabase
-          .from('user_follows')
-          .select('id')
-          .eq('follower_id', user.id)
-          .eq('followed_id', id)
-          .maybeSingle();
-        setIsFollowing(!!follow);
-      }
-
-      setLoading(false);
+      try {
+        const [meResult, profileResult, postsResult, followResult] = await Promise.all([
+          d1Request<{ user: any }>('/api/me').catch(() => ({ user: null })),
+          d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(id)}`),
+          d1Request<{ data: any[] }>(`/api/profiles/${encodeURIComponent(id)}/posts`),
+          d1Request<{ following: boolean }>(`/api/profiles/${encodeURIComponent(id)}/follow-status`).catch(() => ({ following: false })),
+        ]);
+        setCurrentUserId(meResult.user?.id || null);
+        setProfile(profileResult.data);
+        setPosts((postsResult.data || []).map((p: any) => ({ ...p, user_id: p.author_id || p.user_id, username: profileResult.data?.username })));
+        setIsFollowing(!!followResult.following);
+      } catch (error: any) { alert(error.message || 'Could not load profile'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, [id]);
 
   const handleFollow = async () => {
     if (!currentUserId || !id) return;
     if (currentUserId === id) return alert("You can't follow yourself.");
-
-    if (isFollowing) {
-      await supabase.from('user_follows').delete().eq('follower_id', currentUserId).eq('followed_id', id);
-      setIsFollowing(false);
-      setProfile((p: any) => p ? { ...p, followers_count: Math.max(0, (p.followers_count || 1) - 1) } : p);
-    } else {
-      await supabase.from('user_follows').insert({ follower_id: currentUserId, followed_id: id });
-      setIsFollowing(true);
-      setProfile((p: any) => p ? { ...p, followers_count: (p.followers_count || 0) + 1 } : p);
-    }
+    const next = !isFollowing;
+    try {
+      await d1Request(`/api/profiles/${encodeURIComponent(id)}/follow`, { method: next ? 'POST' : 'DELETE' });
+      setIsFollowing(next);
+      setProfile((p: any) => p ? { ...p, followers_count: Math.max(0, (p.followers_count || 0) + (next ? 1 : -1)) } : p);
+    } catch (error: any) { alert(error.message || 'Could not update follow'); }
   };
 
   const handleChat = async () => {
-  if (!currentUserId || !id) return;
-  if (currentUserId === id) return alert("You can't chat with yourself.");
-
-  setStartingChat(true);
-  try {
-    // 1. Check if a channel already exists
-    const { data: myParticipantRows } = await supabase
-      .from('chat_participants')
-      .select('channel_id')
-      .eq('user_id', currentUserId);
-      
-    if (myParticipantRows && myParticipantRows.length > 0) {
-      const myChannelIds = myParticipantRows.map(r => r.channel_id);
-      
-      const { data: match } = await supabase
-        .from('chat_participants')
-        .select('channel_id')
-        .in('channel_id', myChannelIds)
-        .eq('user_id', id)
-        .maybeSingle();
-
-      if (match?.channel_id) {
-        // Channel exists, go to it
-        navigate(`/chat/${match.channel_id}`);
-        setStartingChat(false);
-        return;
-      }
-    }
-
-    // 2. Call the new SQL function to create it safely
-    const { data: newChannelId, error: rpcErr } = await supabase.rpc('create_new_direct_chat', {
-      target_user_id: id
-    });
-
-    if (rpcErr) throw new Error(rpcErr.message);
-
-    // 3. Navigate to the new channel
-    navigate(`/chat/${newChannelId}`);
-
-  } catch (e: any) {
-    alert(e.message || 'Could not start chat');
-  } finally {
-    setStartingChat(false);
-  }
-};
+    if (!currentUserId || !id) return;
+    if (currentUserId === id) return alert("You can't chat with yourself.");
+    setStartingChat(true);
+    try {
+      const result = await d1Request<{ id: string }>('/api/chat/direct', { method: 'POST', body: JSON.stringify({ user_id: id }) });
+      navigate(`/chat/${result.id}`);
+    } catch (error: any) { alert(error.message || 'Could not start chat'); }
+    finally { setStartingChat(false); }
+  };
 
   if (loading) return <div className="p-4 text-center text-xs">{t('loading')}</div>;
   if (!profile) return <div className="p-4 text-center text-xs">{t('no_results')}</div>;
