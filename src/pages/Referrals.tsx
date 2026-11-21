@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Copy, Check, TrendingUp, Sparkles, Users, Gift, Link2, ArrowDownToLine, Smartphone } from 'lucide-react';
@@ -53,7 +54,7 @@ export default function Referrals() {
           .select('id, referred_id, points, status, created_at')
           .eq('referrer_id', user.id)
           .order('created_at', { ascending: false }),
-        supabase.from('wallets').select('referral_earnings_available').eq('user_id', user.id).single(),
+        supabaseWorkerRequest<{ data: { referral_earnings_available?: number } }>('/api/v1/wallet'),
         supabase.from('users').select('country_iso, phone, momo_number, momo_provider').eq('id', user.id).single(),
         supabase.from('supported_countries').select('code, name, phone_prefix').eq('is_active', true).order('code'),
       ]);
