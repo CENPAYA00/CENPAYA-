@@ -429,19 +429,20 @@ export async function handleAuthenticatedPaymentApi(
     if (error) return jsonResponse({ success: false, error: "topup_status_unavailable" }, 502, headers);
     if (!data) return jsonResponse({ success: false, error: "topup_not_found" }, 404, headers);
     let state = object(data);
-    if (state.status === "pending" && typeof state.provider_reference === "string" && state.provider_reference) {
+    const providerReference = typeof state.provider_reference === "string" ? state.provider_reference : "";
+    if (state.status === "pending" && providerReference) {
       try {
         const provider = String(state.provider).toUpperCase();
         if (isGateway(provider)) {
           const db = await serviceClient(env, userId);
           const creds = await credentials(db, provider, env);
-          const verified = await providerStatus(provider, creds, env, state.provider_reference);
+          const verified = await providerStatus(provider, creds, env, providerReference);
           if (verified.amount === Number(state.amount) && verified.currency === String(state.currency_code || "XAF").toUpperCase()) {
             let rpcName = "";
             let args: Record<string, unknown> = {};
             if (verified.status === "SUCCESSFUL") {
               rpcName = "settle_wallet_topup_from_gateway";
-              args = { p_topup_id: topupStatus[1], p_provider: provider, p_provider_transaction_id: state.provider_reference, p_amount: verified.amount, p_currency_code: verified.currency };
+              args = { p_topup_id: topupStatus[1], p_provider: provider, p_provider_transaction_id: providerReference, p_amount: verified.amount, p_currency_code: verified.currency };
             } else if (verified.status === "FAILED") {
               rpcName = "fail_wallet_topup_from_gateway";
               args = { p_topup_id: topupStatus[1], p_provider: provider, p_provider_transaction_id: state.provider_reference };
