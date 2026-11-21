@@ -179,6 +179,7 @@ export async function handleAuthenticatedApi(
       if (!response.ok || !result.success || !result.data) return failure("listing_quote_unavailable", response.status === 404 ? 404 : 503, headers);
       const listing = result.data;
       const isRange = listing.price_is_range === true || listing.price_is_range === 1 || listing.price_is_range === "true";
+      const amountValue = isRange ? listing.price_min : listing.price;
       const amount = Math.round(Number(amountValue));
       const currency = String(listing.currency_code || "XAF").toUpperCase();
       const sellerId = typeof listing.seller_id === "string" ? listing.seller_id : "";
