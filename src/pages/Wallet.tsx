@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, Send, Headphones, MessageCircle, ChevronRight, Phone, Clock } from 'lucide-react';
 import { PaymentMethodLogo } from '../components/PaymentMethodLogo';
@@ -33,7 +34,7 @@ export default function Wallet() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await d1Me();
       if (!user) { setLoading(false); return; }
 
       const [walletRes, userRes, escrowRes, countriesRes] = await Promise.all([
@@ -58,7 +59,7 @@ export default function Wallet() {
 
   const saveMomo = async () => {
     setSavingMomo(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user } = await d1Me();
     if (!user) { setSavingMomo(false); return; }
     await supabase.from('users').update({
       momo_number: momoNumber.trim() || null,
