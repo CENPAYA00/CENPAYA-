@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Image as ImageIcon, X, MapPin, FileText, Check
@@ -65,40 +65,35 @@ export default function CreateListing() {
     const load = async () => {
       const u = await getCachedUser();
       setUser(u);
-
-      const [catsRes, countryRes] = await Promise.all([
-        supabase
-          .from('listing_categories')
-          .select('id, slug, display_name, icon, listing_type, section, display_order')
-          .eq('is_active', true)
-          .order('section', { ascending: true })
-          .order('display_order', { ascending: true }),
-        supabase
-          .from('supported_countries')
-          .select('code, name, phone_prefix, flag_emoji, regions, cities')
-          .in('code', ['CM', 'GA', 'CG', 'TD', 'CF', 'GQ'])
-          .order('name'),
-      ]);
-
-      if (catsRes.data) setCategories(catsRes.data as Category[]);
-      const countryData = countryRes.data || [];
-      setCountries(countryData);
-
-      const iso = u?.country_iso || 'CM';
-      setCountryIso(iso);
-
-      const countryRow = countryData.find((x: any) => x.code === iso);
-      const rList: string[] = Array.isArray(countryRow?.regions) ? countryRow.regions : [];
-      setRegions(rList);
-
-      const initialRegion = u?.region || rList[0] || '';
-      setRegion(initialRegion);
-
-      const cList: string[] = (countryRow?.cities || {})[initialRegion] || [];
-      setCities(cList);
-      setCity(u?.city || cList[0] || '');
+      try {
+        const [catsRes, countryRes] = await Promise.all([
+          d1Request<{ data: any[] }>('/api/market/categories'),
+          d1Request<{ data: any[] }>('/api/countries'),
+        ]);
+        const categoryRows = (catsRes.data || []).map((c: any) => ({
+          ...c, display_name: c.name || c.display_name, listing_type: c.category_type || c.listing_type || 'product',
+          section: c.section || 'products', display_order: c.position ?? c.display_order ?? 0,
+        }));
+        setCategories(categoryRows as Category[]);
+        const countryData = (countryRes.data || []).map((c: any) => ({
+          ...c, code: c.country_code || c.code, flag_emoji: c.flag_emoji || '',
+          regions: c.regions?.length ? c.regions : ['Other'],
+          cities: c.cities || { Other: ['Other'] },
+        }));
+        setCountries(countryData);
+        const iso = u?.country_code || u?.country_iso || 'CM';
+        setCountryIso(iso);
+        const countryRow = countryData.find((x: any) => x.code === iso);
+        const rList: string[] = countryRow?.regions || ['Other'];
+        setRegions(rList);
+        const initialRegion = u?.location_region || u?.region || rList[0] || 'Other';
+        setRegion(initialRegion);
+        const cList: string[] = (countryRow?.cities || {})[initialRegion] || ['Other'];
+        setCities(cList);
+        setCity(u?.location_city || u?.city || cList[0] || 'Other');
+      } catch (error: any) { setErrorMsg(error.message || 'Could not load listing setup'); }
     };
-    load();
+    void load();
   }, []);
 
   useEffect(() => {
@@ -158,69 +153,46 @@ export default function CreateListing() {
 
     setLoading(true);
     try {
-      const imageUrls: string[] = [];
-      for (const img of images) {
-        const compressed = await compressImage(img);
-        const ext = compressed.name.split('.').pop();
-        const path = `listings/${me.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('listings').upload(path, compressed);
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('listings').getPublicUrl(path);
-        imageUrls.push(urlData.publicUrl);
-      }
-
-      const docUrls: string[] = [];
-      for (const d of docs) {
-        const ext = d.name.split('.').pop();
-        const path = `listing-docs/${me.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('listings').upload(path, d);
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('listings').getPublicUrl(path);
-        docUrls.push(urlData.publicUrl);
-      }
-
-      const payload: any = {
-        seller_id: me.id,
-        title: title.trim(),
-        category: selectedCategory.slug,
-        category_id: selectedCategory.id,
-        description: description.trim() || null,
-        listing_type: selectedCategory.listing_type,
-        delivery_required: offerShipping,
-        availability: availability === 'in_stock' ? 'in_stock' : 'single',
-        images: imageUrls.length > 0 ? imageUrls : null,
-        documents: docUrls.length > 0 ? docUrls : null,
-        location_city: `${region} - ${city}`,
-        location_region: region,
-        location_country: countryIso,
-        currency_code: 'XAF',
-        moderation_status: 'approved',
-        is_active: true,
-        hide_from_friends: hideFromFriends,
+      const uploadFile = async (file: File, folder: string) => {
+        const form = new FormData();
+        form.append('file', file, file.name);
+        form.append('folder', folder);
+        const token = getD1Token();
+        const response = await fetch(getD1ApiUrl('/api/market/media'), {
+          method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.url) throw new Error(result.error || 'File upload failed');
+        return result.url as string;
       };
+      const imageUrls: string[] = [];
+      for (const img of images) imageUrls.push(await uploadFile(await compressImage(img), 'listings/images'));
+      const docUrls: string[] = [];
+      for (const doc of docs) docUrls.push(await uploadFile(doc, 'listings/documents'));
 
-      if (usePriceRange) {
-        payload.price_is_range = true;
-        payload.price_min = Number(priceMin);
-        payload.price_max = priceMax ? Number(priceMax) : Number(priceMin);
-        payload.price = Number(priceMin);
-      } else {
-        payload.price_is_range = false;
-        payload.price = finalPrice;
-        payload.price_min = finalPrice;
-        payload.price_max = finalPrice;
-      }
-
-      const { data, error } = await supabase
-        .from('listings')
-        .insert(payload)
-        .select()
-        .single();
-
-      if (error) throw error;
+      const priceType = usePriceRange ? 'negotiable' : 'fixed';
+      const result = await d1Request<{ id: string }>('/api/market/listings', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || '',
+          category_id: selectedCategory.id,
+          listing_type: selectedCategory.listing_type === 'service' ? 'service' : 'product',
+          country_code: countryIso,
+          price_type: priceType,
+          price_amount: usePriceRange ? Number(priceMin) : Number(finalPrice),
+          currency_code: 'XAF',
+          region, city, delivery_required: offerShipping,
+          availability: availability === 'in_stock' ? 'in_stock' : 'single',
+          images_json: imageUrls, documents_json: docUrls,
+          price_is_range: usePriceRange, price_min: usePriceRange ? Number(priceMin) : Number(finalPrice),
+          price_max: usePriceRange ? (priceMax ? Number(priceMax) : Number(priceMin)) : Number(finalPrice),
+          hide_from_friends: hideFromFriends,
+        }),
+      });
 
       alert('Listing published!');
-      navigate(`/listing/${data.id}`);
+      navigate(`/listing/${result.id}`);
     } catch (e: any) {
       setErrorMsg(e.message || 'Could not publish listing.');
     }
