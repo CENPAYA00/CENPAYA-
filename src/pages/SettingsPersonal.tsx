@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, User, Mail, Phone, MapPin, Info, Crown, Calendar } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import Select from '../components/Select';
 import DobPicker from '../components/DobPicker';
 import PhoneInput from '../components/PhoneInput';
@@ -40,40 +40,37 @@ export default function SettingsPersonal() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data }, { data: countryData }] = await Promise.all([
-        supabase.rpc('get_my_personal_details'),
-        supabase
-          .from('supported_countries')
-          .select('code, name, phone_prefix, flag_emoji, regions, cities')
-          .in('code', ['CM', 'GA', 'CG', 'TD', 'CF', 'GQ'])
-          .order('name'),
-      ]);
-
-      setCountries(countryData || []);
-
-      if (data?.ok) {
-        const p = data.profile;
-        setDetails(p);
-        setUsername(p.username || '');
-        setBio(p.bio || '');
-        setDob(p.date_of_birth || '');
-        setCountry(p.country_iso || 'CM');
-        setRegion(p.region || '');
-        setCity(p.city || '');
-        setOccupation(p.occupation || '');
-        // Phone — split prefix and number
-        const fullPhone = p.phone || '';
-        const matchedCountry = (countryData || []).find((c: any) => fullPhone.startsWith(c.phone_prefix));
-        if (matchedCountry) {
-          setPhoneCountry(matchedCountry.code);
-          setPhoneNumber(fullPhone.replace(matchedCountry.phone_prefix, '').trim());
-        } else {
-          setPhoneNumber(fullPhone.replace(/^\+\d+\s?/, ''));
+      try {
+        const [profileResult, countryResult] = await Promise.all([
+          d1Request<{ data: any }>('/api/me/personal-details'),
+          d1Request<{ data: any[] }>('/api/countries'),
+        ]);
+        const countryData = (countryResult.data || []).map((c: any) => ({
+          ...c, code: c.country_code || c.code, phone_prefix: c.phone_prefix || '',
+          flag_emoji: c.flag_emoji || '', regions: c.regions || [], cities: c.cities || {},
+        }));
+        setCountries(countryData);
+        const p = profileResult.data;
+        if (p) {
+          setDetails(p);
+          setUsername(p.username || '');
+          setBio(p.bio || '');
+          setDob(p.date_of_birth || '');
+          setCountry(p.country_code || p.country_iso || 'CM');
+          setRegion(p.location_region || p.region || '');
+          setCity(p.location_city || p.city || '');
+          setOccupation(p.occupation || '');
+          const fullPhone = p.phone || '';
+          const matchedCountry = countryData.find((c: any) => fullPhone.startsWith(c.phone_prefix));
+          if (matchedCountry) {
+            setPhoneCountry(matchedCountry.code);
+            setPhoneNumber(fullPhone.replace(matchedCountry.phone_prefix, '').trim());
+          } else setPhoneNumber(fullPhone.replace(/^\\+\\d+\\s?/, ''));
         }
-      }
-      setLoading(false);
+      } catch (error: any) { setErrorMsg(error.message || 'Could not load personal details'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, []);
 
   useEffect(() => {
@@ -104,28 +101,25 @@ export default function SettingsPersonal() {
     setSaving(true);
     setErrorMsg('');
     setSuccessMsg('');
-
     const fullPhone = phoneNumber.trim() ? `${phonePrefix} ${phoneNumber.trim()}` : null;
-
-    const { data, error } = await supabase.rpc('update_personal_details', {
-      p_username: username !== details?.username ? username : null,
-      p_phone: fullPhone && fullPhone !== details?.phone ? fullPhone : null,
-      p_bio: bio !== details?.bio ? bio : null,
-      p_location_city: `${region} - ${city}`,
-      p_region: region !== details?.region ? region : null,
-      p_city: city !== details?.city ? city : null,
-      p_occupation: occupation !== details?.occupation ? occupation : null,
-      p_country_iso: country !== details?.country_iso ? country : null,
-      p_date_of_birth: dob !== details?.date_of_birth ? (dob || null) : null,
-    });
-
-    if (error || !data?.ok) {
-      setErrorMsg(error?.message || data?.error || 'Save failed');
-    } else {
+    try {
+      await d1Request('/api/me/personal-details', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          username: username !== details?.username ? username : undefined,
+          phone: fullPhone !== details?.phone ? fullPhone : undefined,
+          bio: bio !== details?.bio ? bio : undefined,
+          country_code: country !== (details?.country_code || details?.country_iso) ? country : undefined,
+          location_region: region !== (details?.location_region || details?.region) ? region : undefined,
+          location_city: city !== (details?.location_city || details?.city) ? city : undefined,
+          occupation: occupation !== details?.occupation ? occupation : undefined,
+          date_of_birth: dob !== details?.date_of_birth ? (dob || null) : undefined,
+        }),
+      });
       setSuccessMsg('✓ Saved');
       setTimeout(() => setSuccessMsg(''), 2000);
-    }
-    setSaving(false);
+    } catch (error: any) { setErrorMsg(error.message || 'Save failed'); }
+    finally { setSaving(false); }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">{t('loading')}</div>;
