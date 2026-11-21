@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { d1Request } from '../../lib/d1Api';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { Search, Shield, Crown, ShieldAlert } from 'lucide-react';
 
 export default function AdminUsers() {
@@ -11,7 +11,7 @@ export default function AdminUsers() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await d1Request<{ data: any[] }>('/api/admin/users?limit=200');
+      const result = await supabaseWorkerRequest<{ data: any[] }>('/api/admin/users?limit=200');
       const profiles = result.data || [];
       const ids = profiles.map((user: any) => user.id).filter(Boolean);
       const { data: membershipRows } = ids.length
@@ -46,7 +46,7 @@ export default function AdminUsers() {
   const changeRole = async (user: any, newRole: string) => {
     if (!confirm(`Change @${user.username} role to ${newRole}?`)) return;
     try {
-      await d1Request(`/api/admin/users/${encodeURIComponent(user.id)}`, {
+      await supabaseWorkerRequest(`/api/admin/users/${encodeURIComponent(user.id)}`, {
         method: 'PATCH', body: JSON.stringify({ role: newRole }),
       });
       load();
