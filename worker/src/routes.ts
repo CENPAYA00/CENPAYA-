@@ -8,6 +8,9 @@ type AdminRpcSchema = {
   genericAllowed: boolean;
   validate: (args: Record<string, unknown>) => boolean;
 };
+const noArgs = (args: Record<string, unknown>) => Object.keys(args).length === 0;
+const integerIn = (value: unknown, min: number, max: number) =>
+  Number.isSafeInteger(value) && Number(value) >= min && Number(value) <= max;
 const isText = (v: unknown, max = 500, min = 1) =>
   typeof v === "string" && v.trim().length >= min && v.length <= max;
 const isUuid = (v: unknown) =>
