@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Shield, Upload, Check, AlertTriangle, Wallet, Clock } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
@@ -46,7 +47,7 @@ export default function ServiceOrder() {
         const [svcRes, packagesRes, walletRes] = await Promise.all([
           d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(serviceId)}`),
           d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(serviceId)}/packages`),
-          supabase.from('wallets').select('available_funds').eq('user_id', u.id).single(),
+          supabaseWorkerRequest<{ data: { available_funds?: number } }>('/api/v1/wallet'),
         ]);
         const selectedPackage = (packagesRes.data || []).find((row: any) => row.id === packageId) || null;
         setService(svcRes.data);
