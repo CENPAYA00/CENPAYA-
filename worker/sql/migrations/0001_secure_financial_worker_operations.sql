@@ -251,7 +251,13 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(v_uid::text || ':topup:' || p_idempotency_key, 0));
   select id into v_existing from public.wallet_topups
    where user_id = v_uid and idempotency_key = p_idempotency_key;
-  if v_existing is not null then return v_existing; end if;
+  if v_existing is not null then
+    if not exists (
+      select 1 from public.wallet_topups
+       where id = v_existing and amount = p_amount and upper(provider) = upper(p_provider)
+    ) then raise exception 'idempotency key reused with different top-up details'; end if;
+    return v_existing;
+  end if;
 
   insert into public.wallet_topups(id, user_id, provider, transaction_id, amount, currency_code, status, idempotency_key)
   values (v_id, v_uid, upper(p_provider), 'pending:' || v_id::text, p_amount, 'XAF', 'pending', p_idempotency_key);
@@ -396,7 +402,18 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(p_user_id::text || ':withdrawal:' || p_idempotency_key, 0));
   select id into v_existing from public.user_withdrawals
    where user_id = p_user_id and idempotency_key = p_idempotency_key;
-  if v_existing is not null then return v_existing; end if;
+  if v_existing is not null then
+    if not exists (
+      select 1 from public.user_withdrawals
+       where id = v_existing
+         and requested_amount = p_amount
+         and source_bucket = p_source_bucket
+         and coalesce(destination_phone, '') = coalesce(p_destination_phone, '')
+         and coalesce(destination_provider, '') = coalesce(p_destination_provider, '')
+         and upper(coalesce(gateway_provider, '')) = upper(p_gateway_provider)
+    ) then raise exception 'idempotency key reused with different withdrawal details'; end if;
+    return v_existing;
+  end if;
 
   v_id := public.create_withdrawal(p_user_id, p_amount, p_source_bucket, p_destination_phone, p_destination_provider);
   update public.user_withdrawals set idempotency_key = p_idempotency_key,
@@ -468,8 +485,20 @@ begin
   select * into v_row from public.user_withdrawals where id = p_withdrawal_id for update;
   if not found or upper(coalesce(v_row.gateway_provider, '')) <> upper(p_gateway_provider) then return false; end if;
   if auth.uid() <> '00000000-0000-4000-8000-000000000001'::uuid and v_row.user_id <> auth.uid() then return false; end if;
-  if v_row.status = p_outcome then return true; end if;
+  if v_row.status = p_outcome then
+    return p_gateway_reference is null or v_row.gateway_reference = p_gateway_reference;
+  end if;
   if v_row.status <> 'pending' then return false; end if;
+  if p_gateway_reference is not null then
+    if v_row.gateway_reference is not null
+       and v_row.gateway_reference not like 'initiating:%'
+       and v_row.gateway_reference <> p_gateway_reference then
+      return false;
+    end if;
+  elsif v_row.gateway_reference is not null
+        and v_row.gateway_reference <> 'initiating:' || v_row.id::text then
+    return false;
+  end if;
 
   if p_outcome = 'completed' then
     update public.user_withdrawals set status = 'completed',
@@ -481,19 +510,25 @@ begin
 
   if v_row.source_bucket = 'referral' then
     update public.wallets set referral_earnings_available = referral_earnings_available + v_row.requested_amount,
-      daily_withdrawn_total = case when daily_withdrawn_reset_at = v_today
+      daily_withdrawn_total = case
+        when (v_row.created_at at time zone 'Africa/Douala')::date = v_today
+         and daily_withdrawn_reset_at = v_today
         then greatest(0, daily_withdrawn_total - v_row.requested_amount) else daily_withdrawn_total end,
       monthly_withdrawn_total = case
-        when date_trunc('month', monthly_withdrawn_reset_at)::date = date_trunc('month', v_today)::date
+        when date_trunc('month', v_row.created_at at time zone 'Africa/Douala') = date_trunc('month', v_today::timestamp)
+         and date_trunc('month', monthly_withdrawn_reset_at)::date = date_trunc('month', v_today)::date
         then greatest(0, monthly_withdrawn_total - v_row.requested_amount) else monthly_withdrawn_total end,
       updated_at = now()
      where user_id = v_row.user_id returning referral_earnings_available into v_after;
   else
     update public.wallets set available_funds = available_funds + v_row.requested_amount,
-      daily_withdrawn_total = case when daily_withdrawn_reset_at = v_today
+      daily_withdrawn_total = case
+        when (v_row.created_at at time zone 'Africa/Douala')::date = v_today
+         and daily_withdrawn_reset_at = v_today
         then greatest(0, daily_withdrawn_total - v_row.requested_amount) else daily_withdrawn_total end,
       monthly_withdrawn_total = case
-        when date_trunc('month', monthly_withdrawn_reset_at)::date = date_trunc('month', v_today)::date
+        when date_trunc('month', v_row.created_at at time zone 'Africa/Douala') = date_trunc('month', v_today::timestamp)
+         and date_trunc('month', monthly_withdrawn_reset_at)::date = date_trunc('month', v_today)::date
         then greatest(0, monthly_withdrawn_total - v_row.requested_amount) else monthly_withdrawn_total end,
       updated_at = now()
      where user_id = v_row.user_id returning available_funds into v_after;
