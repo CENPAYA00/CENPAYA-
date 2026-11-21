@@ -1,7 +1,7 @@
-import { Env } from "./env";
-import { bearerToken } from "./http-utils";
-import { signSupabaseUserJwt, verifyD1IdentityAssertion } from "./jwt";
-import { createUserSupabaseClient } from "./supabase";
+import { Env } from "./env.js";
+import { bearerToken } from "./http-utils.js";
+import { signSupabaseUserJwt, verifyD1IdentityAssertion } from "./jwt.js";
+import { createUserSupabaseClient } from "./supabase.js";
 
 export class IdentityError extends Error {
   constructor(message: string, readonly status: number) {

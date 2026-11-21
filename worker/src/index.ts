@@ -1,9 +1,9 @@
-import { Env } from "./env";
-import { authenticateD1Session, IdentityError } from "./identity";
-import { corsHeaders, jsonResponse, originAllowed } from "./http-utils";
-import { checkDatabaseHealth } from "./database";
-import { createPublicSupabaseClient } from "./supabase";
-import { handleAuthenticatedApi } from "./routes";
+import { Env } from "./env.js";
+import { authenticateD1Session, IdentityError } from "./identity.js";
+import { corsHeaders, jsonResponse, originAllowed } from "./http-utils.js";
+import { checkDatabaseHealth } from "./database.js";
+import { createPublicSupabaseClient } from "./supabase.js";
+import { handleAuthenticatedApi } from "./routes.js";
 
 function configuredOrigins(env: Env): string[] {
   const values = (env.CENPAYA_ORIGINS || env.CENPAYA_ORIGIN || "")

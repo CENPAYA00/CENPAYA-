@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Env } from "./env";
+import { Env } from "./env.js";
 
 export function createUserSupabaseClient(env: Env, userJwt: string): SupabaseClient {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {

@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { jsonResponse, readJsonObject } from "./http-utils";
-import { readUserProfile } from "./profile";
+import { jsonResponse, readJsonObject } from "./http-utils.js";
+import { readUserProfile } from "./profile.js";
 
 const ADMIN_RPCS = new Set([
   "admin_add_country", "admin_add_payment_method", "admin_assign_role",
@@ -129,21 +129,6 @@ export async function handleAuthenticatedApi(
     return success(data || [], headers);
   }
 
-  if (method === "POST" && path === "/api/v1/orders/services") {
-    const body = await readJsonObject(request);
-    if (!body) return failure("invalid_json_body", 400, headers);
-    const serviceId = typeof body.service_id === "string" ? body.service_id : "";
-    const packageId = typeof body.package_id === "string" ? body.package_id : "";
-    const requirements = typeof body.requirements === "string" ? body.requirements.slice(0, 5000) : null;
-    if (!serviceId || !packageId) return failure("service_and_package_required", 400, headers);
-    const result = await rpc(supabase, "create_service_order", {
-      p_service_id: serviceId,
-      p_package_id: packageId,
-      p_requirements: requirements,
-      p_pay_from_wallet: true,
-    });
-    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
-  }
 
   if (method === "GET" && path === "/api/v1/admin/ledger") {
     const flow = url.searchParams.get("flow");
