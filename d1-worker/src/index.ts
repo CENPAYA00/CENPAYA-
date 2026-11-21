@@ -180,7 +180,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(path==="/api/auth/password/reset"&&method==="POST"){
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const userId=str(b.user_id,64),code=str(b.code,6),password=str(b.new_password,128);
-    if(!UUID.test(userId)||!/^\\d{6}$/.test(code)||password.length<12)return fail("Valid user, six-digit code, and new password (12+ characters) required");
+    if(!UUID.test(userId)||!/^\d{6}$/.test(code)||password.length<12)return fail("Valid user, six-digit code, and new password (12+ characters) required");
     if(!await rateLimit(env.DB,"password-reset-verify:"+userId,8,900))return fail("Too many reset attempts",429);
     if(!await verifyOtp(env,env.DB,userId,"password_reset",code))return fail("Invalid or expired reset code",400);
     const hash=await passwordHash(password);
