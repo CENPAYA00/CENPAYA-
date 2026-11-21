@@ -286,9 +286,7 @@ export async function handleAuthenticatedApi(
   if (serviceOrderPath && (method === "GET" || method === "POST")) {
     return failure("service_order_schema_not_present_in_financial_database", 501, headers);
   }
-  if (method === "POST" && path === "/api/v1/subscriptions") {
-    return failure("subscription_payment_requires_atomic_worker_migration", 501, headers);
-  }
+
   if (method === "GET" && path === "/api/v1/me/profile") {
     const profile = await readUserProfile(supabase, userId);
     return profile ? success(profile, headers) : failure("profile_not_found", 404, headers);
