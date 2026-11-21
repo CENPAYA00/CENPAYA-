@@ -299,6 +299,11 @@ export async function handleAuthenticatedApi(
     });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
+  if (method === "POST" && path === "/api/v1/subscriptions") {
+    // Subscription settlement needs a dedicated atomic database transaction and provider callback.
+    // Do not debit the wallet or mark membership from separate browser requests.
+    return failure("subscription_payment_requires_atomic_worker_migration", 501, headers);
+  }
   if (method === "GET" && path === "/api/v1/me/profile") {
     const profile = await readUserProfile(supabase, userId);
     return profile ? success(profile, headers) : failure("profile_not_found", 404, headers);
