@@ -7,8 +7,8 @@ CenPaya is a Pan-African commerce and fintech application for the CEMAC region. 
 
 CenPaya uses two backend data systems with deliberately separate responsibilities:
 
-- **Cloudflare D1 through the Cloudflare Worker:** identity and authentication, email/phone verification, user profiles, country and feature configuration, marketplace listings and services, social/feed data, chat, notifications, support, reports, and other non-financial application data.
-- **Supabase:** financial records and financial administration, including wallets, deposits, withdrawals, checkout, escrow, ledger, orders/transactions, subscriptions, boosts, payment methods, and financial staff/admin operations.
+- **Cloudflare D1 through the Cloudflare Worker:** user identity and authentication, email/phone verification, user profiles, marketplace listings and services, social/feed content, chat, notifications, and other general application data.
+- **Supabase:** all financial records and operations (wallets, deposits, withdrawals, checkout, escrow, ledger, financial orders/transactions), referrals and referral earnings, boosts, subscriptions/memberships, payment methods, platform API vault, and the complete admin/super-admin control plane (admin identity mapping, roles, permissions, staff access, audit logs, platform settings, feature/region controls, and administrative actions).
 
 The frontend must not use Supabase Auth as the source of user identity. It obtains the signed-in user's identity from the D1 Worker. Financial requests must use the approved financial API/data access path and must not assume that a D1 user ID automatically satisfies Supabase RLS policies.
 
