@@ -3,6 +3,7 @@ name: D1 Worker CI
 on:
   push:
     branches:
+      - migration/d1-worker-api-v2
       - integration/main-d1-supabase-monolith
   pull_request:
     branches:
@@ -25,4 +26,5 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run typecheck
+      - run: npm test
       - run: npm run build
