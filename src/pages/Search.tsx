@@ -112,9 +112,10 @@ export default function Search() {
             kind: 'listing',
             title: l.product_title || l.title || 'Marketplace listing',
             subtitle: [l.city, l.region, l.country_code].filter(Boolean).join(', '),
-            cover: l.cover_image_url || l.image_url || l.thumbnail_url || null,
-            meta: l.price_amount != null
-              ? `${Number(l.price_amount).toLocaleString()} ${l.currency_code || 'XAF'}`
+            cover: null,
+            subtitle: l.merchant_name || [l.city, l.country_code].filter(Boolean).join(', '),
+            meta: l.product_price != null
+              ? `${Number(l.product_price).toLocaleString()} ${l.currency_code || 'XAF'}`
               : '',
             is_demo: !!l.is_demo,
           })).filter((item: Result) => !!item.id);
