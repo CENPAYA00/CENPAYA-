@@ -557,12 +557,12 @@ revoke all on function public.worker_get_withdrawal_payment_details(uuid)
   from public, anon, authenticated, service_role;
 grant execute on function public.worker_get_withdrawal_payment_details(uuid) to authenticated;
 
-revoke all on function public.create_wallet_topup_intent(bigint, text, text) from public, anon;
+revoke all on function public.create_wallet_topup_intent(bigint, text, text) from public, anon, service_role;
 grant execute on function public.create_wallet_topup_intent(bigint, text, text) to authenticated;
 revoke all on function public.claim_wallet_topup_initiation(uuid)
   from public, anon, authenticated, service_role;
 grant execute on function public.claim_wallet_topup_initiation(uuid) to authenticated;
-revoke all on function public.get_wallet_topup_status(uuid) from public, anon;
+revoke all on function public.get_wallet_topup_status(uuid) from public, anon, service_role;
 grant execute on function public.get_wallet_topup_status(uuid) to authenticated;
 revoke all on function public.record_wallet_topup_provider_reference(uuid, text, text, text)
   from public, anon, authenticated, service_role;
