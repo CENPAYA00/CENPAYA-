@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Me } from '../lib/d1Api';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, Check, AlertCircle, Shield } from 'lucide-react';
@@ -42,23 +43,24 @@ export default function OrderDetail() {
     if (upErr) { setErrorMsg('Upload failed: ' + upErr.message); setActionLoading(false); return; }
     const { data: urlData } = supabase.storage.from('listings').getPublicUrl(filePath);
 
-    const { error } = await supabase.rpc('seller_mark_delivered', {
-      p_order_id: order.id,
-      p_photo_url: urlData.publicUrl,
-      p_photo_hash: filePath,
-    });
-
-    if (error) setErrorMsg(error.message);
-    else { setOrder({ ...order, seller_confirmed_delivered: true, photo_proof_url: urlData.publicUrl }); alert('Marked delivered.'); }
+    try {
+      await supabaseWorkerRequest(`/api/v1/orders/${encodeURIComponent(order.id)}/action`, {
+        method: 'POST', body: JSON.stringify({ action: 'mark_delivered', photo_url: urlData.publicUrl, photo_hash: filePath }),
+      });
+      setOrder({ ...order, seller_confirmed_delivered: true, photo_proof_url: urlData.publicUrl });
+      alert('Marked delivered.');
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not mark order delivered.'); }
     setActionLoading(false);
   };
 
   const handleBuyerConfirm = async () => {
     setErrorMsg('');
     setActionLoading(true);
-    const { error } = await supabase.rpc('buyer_mark_received', { p_order_id: order.id });
-    if (error) setErrorMsg(error.message);
-    else { setOrder({ ...order, buyer_confirmed_received: true, escrow_status: 'released' }); alert('Funds released to seller.'); }
+    try {
+      await supabaseWorkerRequest(`/api/v1/orders/${encodeURIComponent(order.id)}/action`, { method: 'POST', body: JSON.stringify({ action: 'mark_received' }) });
+      setOrder({ ...order, buyer_confirmed_received: true, escrow_status: 'released' });
+      alert('Funds released to seller.');
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not confirm delivery.'); }
     setActionLoading(false);
   };
 
@@ -67,13 +69,11 @@ export default function OrderDetail() {
     const reason = prompt('Describe the problem:');
     if (!reason) return;
     setActionLoading(true);
-    const { error } = await supabase.from('order_disputes').insert({ order_id: order.id, raised_by: userId, reason, status: 'open' });
-    if (error) setErrorMsg(error.message);
-    else {
-      await supabase.rpc('transition_escrow', { p_order_id: order.id, p_target_status: 'disputed' });
+    try {
+      await supabaseWorkerRequest(`/api/v1/orders/${encodeURIComponent(order.id)}/action`, { method: 'POST', body: JSON.stringify({ action: 'dispute', reason: reason.trim() }) });
       setOrder({ ...order, escrow_status: 'disputed', dispute_hold: true });
       alert('Dispute opened.');
-    }
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not open dispute.'); }
     setActionLoading(false);
   };
 
