@@ -323,6 +323,8 @@ export async function handleAuthenticatedPaymentApi(
 
   const subscriptionStatus = url.pathname.match(/^\/api\/v1\/subscriptions\/([0-9a-f-]{36})$/i);
   if (method === "GET" && subscriptionStatus) {
+    const limited = await enforcePaymentRateLimit(userId, "payment_status", env, headers);
+    if (limited) return limited;
     let result = object(await callRpc(userDb, "cenpaya_momo_membership_get", { p_payment_id: subscriptionStatus[1] }));
     if (!result.id || result.user_id !== userId) return jsonResponse({ success: false, error: "subscription_payment_not_found" }, 404, headers);
     if (result.provider_reference && ["pending", "expired"].includes(String(result.status))) {
