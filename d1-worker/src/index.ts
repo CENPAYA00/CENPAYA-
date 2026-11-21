@@ -150,11 +150,11 @@ async function verifyOtp(env:Env,db:D1Database,userId:string,purpose:"verify_ema
 function safeUser(u:User){return {id:u.id,username:u.username,display_name:u.display_name,email:u.email,phone:u.phone,email_verified:!!u.email_verified,phone_verified:!!u.phone_verified,role:u.role,onboarding_completed:!!u.onboarding_completed};}
 async function randomToken(bytes=32):Promise<string>{
   const data=crypto.getRandomValues(new Uint8Array(bytes));
-  return btoa(String.fromCharCode(...data)).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/g,"");
+  return btoa(String.fromCharCode(...data)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
 }
 async function sha256Base64Url(value:string):Promise<string>{
   const hash=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)));
-  return btoa(String.fromCharCode(...hash)).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/g,"");
+  return btoa(String.fromCharCode(...hash)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
 }
 async function cacheGet(env:Env,key:string):Promise<unknown|null>{
   if(!env.CACHE)return null;
