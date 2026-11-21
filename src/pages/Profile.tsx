@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
   Share2, Settings, Camera, Calendar, MapPin, Briefcase,
@@ -32,41 +32,30 @@ export default function Profile() {
 
   useEffect(() => {
     const load = async () => {
-      const u = await getCachedUser();
-      if (!u) { setLoading(false); return; }
-
-      const [userRes, postsRes, servicesRes, listingsRes, followersRes, followingRes] = await Promise.all([
-        supabase.from('users').select('*').eq('id', u.id).single(),
-        supabase.from('posts').select('*').eq('user_id', u.id).eq('moderation_status', 'approved').is('archived_at', null).order('created_at', { ascending: false }).limit(LIMIT),
-        supabase.from('services').select('*').eq('seller_id', u.id).eq('is_active', true).order('created_at', { ascending: false }).limit(LIMIT),
-        supabase.from('listings').select('*').eq('seller_id', u.id).order('created_at', { ascending: false }).limit(LIMIT),
-        supabase.from('user_follows').select('*', { count: 'exact', head: true }).eq('followed_id', u.id),
-        supabase.from('user_follows').select('*', { count: 'exact', head: true }).eq('follower_id', u.id),
-      ]);
-
-      if (userRes.data) setUser(userRes.data);
-      
-      if (postsRes.data) {
-        const enriched = (postsRes.data as any[]).map(p => ({ ...p, username: u.username }));
-        setPosts(enriched);
-
-        if (postsRes.data.length > 0) {
-          const postIds = postsRes.data.map((p: any) => p.id);
-          const [likesRes, savedRes] = await Promise.all([
-            supabase.from('post_likes').select('post_id').eq('user_id', u.id).in('post_id', postIds),
-            supabase.from('saved_posts').select('post_id').eq('user_id', u.id).in('post_id', postIds),
-          ]);
-          setLikedPosts(new Set((likesRes.data || []).map((l: any) => l.post_id)));
-          setSavedPosts(new Set((savedRes.data || []).map((s: any) => s.post_id)));
-        }
-      }
-      if (servicesRes.data) setServices(servicesRes.data);
-      if (listingsRes.data) setListings(listingsRes.data);
-      setFollowerCount(followersRes.count || 0);
-      setFollowingCount(followingRes.count || 0);
-      setLoading(false);
+      const cached = await getCachedUser();
+      if (!cached) { setLoading(false); return; }
+      try {
+        const [meResult, postsResult, listingsResult, servicesResult, socialResult] = await Promise.all([
+          d1Request<{ user: any }>('/api/me'),
+          d1Request<{ data: any[] }>('/api/posts/mine'),
+          d1Request<{ data: any[] }>('/api/market/my-listings'),
+          d1Request<{ data: any[] }>('/api/market/my-services'),
+          d1Request<{ data: { followers_count?: number; following_count?: number; liked_post_ids?: string[]; saved_post_ids?: string[] } }>('/api/me/social-summary'),
+        ]);
+        const current = meResult.user || cached;
+        setUser({ ...current, country_iso: current.country_code || current.country_iso, city: current.location_city || current.city, region: current.location_region || current.region });
+        const postRows = (postsResult.data || []).map((p: any) => ({ ...p, user_id: p.author_id || p.user_id, username: current.username }));
+        setPosts(postRows);
+        setListings(listingsResult.data || []);
+        setServices(servicesResult.data || []);
+        setFollowerCount(socialResult.data?.followers_count || current.followers_count || 0);
+        setFollowingCount(socialResult.data?.following_count || 0);
+        setLikedPosts(new Set(socialResult.data?.liked_post_ids || []));
+        setSavedPosts(new Set(socialResult.data?.saved_post_ids || []));
+      } catch (error: any) { alert(error.message || 'Could not load profile'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, []);
 
   const uploadImage = async (file: File, kind: 'avatar' | 'cover') => {
@@ -74,21 +63,20 @@ export default function Profile() {
     setUploading(true);
     try {
       const compressed = await compressImage(file, { maxDimension: kind === 'cover' ? 1400 : 800 });
-      const ext = compressed.name.split('.').pop();
-      const path = `${user.id}/${kind}_${Date.now()}.${ext}`;
-      const bucket = kind === 'avatar' ? 'avatars' : 'covers';
-      const { error: upErr } = await supabase.storage.from(bucket).upload(path, compressed, { upsert: true });
-      if (upErr) throw upErr;
-      const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
+      const form = new FormData();
+      form.append('file', compressed, compressed.name || `${kind}.jpg`);
+      form.append('kind', kind);
+      const token = getD1Token();
+      const response = await fetch(getD1ApiUrl('/api/me/media'), {
+        method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.url) throw new Error(result.error || 'Upload failed');
       const field = kind === 'avatar' ? 'avatar_url' : 'cover_url';
-      const { error: dbErr } = await supabase.from('users').update({ [field]: urlData.publicUrl }).eq('id', user.id);
-      if (dbErr) throw dbErr;
-      setUser({ ...user, [field]: urlData.publicUrl });
+      setUser((current: any) => ({ ...current, [field]: result.url }));
       setCached('home_posts', null);
-    } catch (e: any) {
-      alert(e.message || 'Upload failed');
-    }
-    setUploading(false);
+    } catch (e: any) { alert(e.message || 'Upload failed'); }
+    finally { setUploading(false); }
   };
 
   const handleShare = async () => {
@@ -103,20 +91,25 @@ export default function Profile() {
   };
 
   const handleLike = async (postId: string) => {
-    if (!user) return;
     const currentlyLiked = likedPosts.has(postId);
-    setLikedPosts(prev => { const n = new Set(prev); currentlyLiked ? n.delete(postId) : n.add(postId); return n; });
+    setLikedPosts(prev => { const next = new Set(prev); currentlyLiked ? next.delete(postId) : next.add(postId); return next; });
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: (p.likes_count || 0) + (currentlyLiked ? -1 : 1) } : p));
-    if (currentlyLiked) await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', user.id);
-    else await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
+    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/like`, { method: currentlyLiked ? 'DELETE' : 'POST' }); }
+    catch (error: any) {
+      setLikedPosts(prev => { const next = new Set(prev); currentlyLiked ? next.add(postId) : next.delete(postId); return next; });
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: (p.likes_count || 0) + (currentlyLiked ? 1 : -1) } : p));
+      alert(error.message || 'Could not update like');
+    }
   };
 
   const handleSave = async (postId: string) => {
-    if (!user) return;
     const isSaved = savedPosts.has(postId);
-    setSavedPosts(prev => { const n = new Set(prev); isSaved ? n.delete(postId) : n.add(postId); return n; });
-    if (isSaved) await supabase.from('saved_posts').delete().eq('post_id', postId).eq('user_id', user.id);
-    else await supabase.from('saved_posts').insert({ post_id: postId, user_id: user.id });
+    setSavedPosts(prev => { const next = new Set(prev); isSaved ? next.delete(postId) : next.add(postId); return next; });
+    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/save`, { method: isSaved ? 'DELETE' : 'POST' }); }
+    catch (error: any) {
+      setSavedPosts(prev => { const next = new Set(prev); isSaved ? next.add(postId) : next.delete(postId); return next; });
+      alert(error.message || 'Could not update saved post');
+    }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">{t('loading')}</div>;
