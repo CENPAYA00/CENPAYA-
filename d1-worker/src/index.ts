@@ -195,12 +195,18 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(user.banned||user.account_status!=="active")return fail("Account is unavailable",403);
     if(!(user.email_verified||user.phone_verified))return fail("Verify your email address or phone number before signing in",403);
     const token=await createSession(env.DB,user.id,request,env);
-    return json({success:true,user:safeUser(user),token});
+    return sessionJson({success:true,user:safeUser(user),token},token,env);
   }
   if(path==="/api/auth/logout"&&method==="POST"){
     const token=(request.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"");
     if(token)await env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at="+NOW+" WHERE session_token_hash=?").bind(await digest(token)).run();
-    return json({success:true});
+    return json({success:true},200,{"Set-Cookie":clearSessionCookie()});
+  }
+  if(path==="/api/auth/refresh"&&method==="POST"){
+    const user=await auth(request,env);
+    const token=requestSessionToken(request);
+    if(!user||!token)return fail("Unauthorized",401);
+    return sessionJson({success:true,token,user:safeUser(user)},token,env);
   }
   const user=await auth(request,env);
   if(path==="/api/me"&&method==="GET"){
