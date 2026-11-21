@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MoreVertical, Palette, ChevronDown } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { d1Request, getD1ApiUrl } from '../lib/d1Api';
+import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { useSound } from '../contexts/sound';
 import ReadReceipt from '../components/ReadReceipt';
 import ChatMenus from '../components/ChatMenus';
@@ -22,9 +22,10 @@ async function upload(blob: Blob, folder: string, ext: string): Promise<string> 
   const form = new FormData();
   form.append('file', blob, `${crypto.randomUUID()}.${ext}`);
   form.append('folder', folder);
+  const token = getD1Token();
   const response = await fetch(getD1ApiUrl('/api/chat/media'), {
     method: 'POST',
-    credentials: 'include',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   });
   const result = await response.json().catch(() => ({}));
