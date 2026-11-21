@@ -46,7 +46,7 @@ All routes below, except liveness, DB health, and provider callbacks, require a 
 | GET | `/healthz` | Worker liveness |
 | GET | `/api/v1/healthz/db` | Public-read database connectivity probe |
 | GET | `/api/v1/me/profile` | Existing financial user profile |
-| GET | `/api/v1/wallet` | Current user's wallet balances under RLS |
+| GET | `/api/v1/wallet` | Legacy XAF wallet plus all rows from the multi-currency `user_balances` table under RLS |
 | GET | `/api/v1/ledger` | Current user's ledger under RLS |
 | GET | `/api/v1/orders` | Orders where current user is buyer or seller |
 | POST | `/api/v1/wallet/topups` | Idempotent XAF top-up initiation (Fapshi/Campay) |
@@ -61,8 +61,13 @@ All routes below, except liveness, DB health, and provider callbacks, require a 
 | GET | `/api/v1/admin/regions` or `/api/v1/admin/countries` | Financial regional fee configuration |
 | GET | `/api/v1/admin/providers` | Provider metadata only; never secrets |
 | GET | `/api/v1/admin/users` | Existing admin user-list RPC |
-| POST | `/api/v1/admin/escrows/:id/action` | Existing escrow action RPC |
-| POST | `/api/v1/admin/rpc/:name` | Read-only RPC allowlist with strict per-RPC argument schemas; mutations require dedicated typed routes |
+| POST | `/api/v1/admin/escrows/:id/action` | Existing escrow action RPC with typed action/reason validation |
+| POST | `/api/v1/admin/users/:id/ban` or `/unban` | Typed user moderation controls |
+| POST | `/api/v1/admin/platform-gains/withdraw` | Typed platform-gains withdrawal request |
+| POST | `/api/v1/admin/wallet/topup` or `/withdraw` | Typed admin wallet operations |
+| POST | `/api/v1/admin/gains/withdraw-to-wallet` | Typed platform-gains-to-wallet operation |
+| POST | `/api/v1/admin/gateway-credentials` or `/remove` | Typed gateway credential configuration |
+| POST | `/api/v1/admin/rpc/:name` | Strict per-RPC schemas; generic gateway is limited to explicitly approved lower-risk operations |
 | POST | `/api/v1/webhooks/fapshi` | Verify Fapshi webhook secret and query provider status |
 | POST | `/api/v1/webhooks/campay` | Verify Campay HS256 callback token and query provider status |
 
