@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { d1Request } from '../../lib/d1Api';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { Phone, Zap } from 'lucide-react';
 
 export default function AdminFeatures() {
@@ -11,7 +11,7 @@ export default function AdminFeatures() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await d1Request<{ data: any[]; voice_calls_enabled: boolean }>('/api/admin/features');
+      const result = await supabaseWorkerRequest<{ data: any[]; voice_calls_enabled: boolean }>('/api/admin/features');
       setFlags(result.data || []);
       setVoiceEnabled(!!result.voice_calls_enabled);
     } catch (error) { console.warn('Could not load feature flags', error); setFlags([]); }
@@ -22,7 +22,7 @@ export default function AdminFeatures() {
 
   const toggleFlag = async (flag: any) => {
     try {
-      await d1Request(`/api/admin/features/${encodeURIComponent(flag.id)}`, {
+      await supabaseWorkerRequest(`/api/admin/features/${encodeURIComponent(flag.id)}`, {
         method: 'PATCH', body: JSON.stringify({ is_enabled_globally: !flag.is_enabled_globally }),
       });
       setFlags(flags.map(f => f.id === flag.id ? { ...f, is_enabled_globally: !f.is_enabled_globally } : f));
@@ -33,7 +33,7 @@ export default function AdminFeatures() {
     setSavingVoice(true);
     const next = !voiceEnabled;
     try {
-      await d1Request('/api/admin/settings/voice_calls_enabled', {
+      await supabaseWorkerRequest('/api/admin/settings/voice_calls_enabled', {
         method: 'PATCH', body: JSON.stringify({ value: next ? 'true' : 'false' }),
       });
       setVoiceEnabled(next);
