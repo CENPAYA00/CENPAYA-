@@ -19,6 +19,8 @@ interface Env {
   CACHE?: KVNamespace;
   UPSTASH_REDIS_REST_URL?: string;
   UPSTASH_REDIS_REST_TOKEN?: string;
+  D1_INTERNAL_CALL_SECRET?: string;
+  D1_TO_SUPABASE_HMAC_SECRET?: string;
 }
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -152,6 +154,29 @@ async function randomToken(bytes=32):Promise<string>{
   const data=crypto.getRandomValues(new Uint8Array(bytes));
   return btoa(String.fromCharCode(...data)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
 }
+function constantTimeEqual(left:string,right:string):boolean{
+  const a=new TextEncoder().encode(left),b=new TextEncoder().encode(right);
+  let diff=a.length^b.length;
+  const length=Math.max(a.length,b.length);
+  for(let i=0;i<length;i++)diff|=(a[i]||0)^(b[i]||0);
+  return diff===0;
+}
+function base64Url(bytes:Uint8Array):string{
+  return btoa(String.fromCharCode(...bytes)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
+}
+async function signD1IdentityAssertion(userId:string,secret:string):Promise<string>{
+  if(secret.length<32)throw new Error("Identity signing secret is not configured securely");
+  const now=Math.floor(Date.now()/1000);
+  const header=base64Url(new TextEncoder().encode(JSON.stringify({alg:"HS256",typ:"JWT"})));
+  const payload=base64Url(new TextEncoder().encode(JSON.stringify({
+    iss:"cenpaya-d1-worker",aud:"cenpaya-supabase-worker",sub:userId,
+    iat:now,exp:now+120,jti:await randomToken(24)
+  })));
+  const input=header+"."+payload;
+  const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  const signature=new Uint8Array(await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(input)));
+  return input+"."+base64Url(signature);
+}
 async function sha256Base64Url(value:string):Promise<string>{
   const hash=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)));
   return btoa(String.fromCharCode(...hash)).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
@@ -233,6 +258,20 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(path==="/health"&&method==="GET"){
     try{await env.DB.prepare("SELECT 1").first();return json({success:true,service:"cenpaya-d1-worker",database:"connected"});}
     catch{return fail("D1 unavailable",503);}
+  }
+  if(path==="/internal/v1/identity/assert"&&method==="POST"){
+    const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
+    const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
+    if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
+    if(!env.D1_TO_SUPABASE_HMAC_SECRET||env.D1_TO_SUPABASE_HMAC_SECRET.length<32)return fail("Identity service unavailable",503);
+    const identity=await auth(request,env);
+    if(!identity)return fail("Unauthorized",401);
+    try{
+      const assertion=await signD1IdentityAssertion(identity.id,env.D1_TO_SUPABASE_HMAC_SECRET);
+      return json({assertion},200);
+    }catch{
+      return fail("Identity service unavailable",503);
+    }
   }
   if(path==="/api/auth/register"&&method==="POST"){
     const b=await body(request); if(!b)return fail("Valid JSON body required");
