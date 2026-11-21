@@ -73,81 +73,11 @@ export default function Search() {
     const run = async () => {
       setLoading(true);
       try {
-        let list: Result[] = [];
-
-        if (context === 'home') {
-          const { data } = await supabase
-            .from('posts')
-            .select('id, user_id, content, image_url, post_type, is_demo, created_at')
-            .eq('moderation_status', 'approved')
-            .is('archived_at', null)
-            .ilike('content', `%${debounced}%`)
-            .limit(30);
-
-          const userIds = [...new Set((data || []).map((p: any) => p.user_id))];
-          const { data: profiles } = await supabase
-            .from('public_profiles')
-            .select('id, username')
-            .in('id', userIds.length ? userIds : ['00000000-0000-0000-0000-000000000000']);
-          const nameMap: Record<string, string> = {};
-          (profiles || []).forEach((p: any) => { nameMap[p.id] = p.username; });
-
-          list = (data || []).map((p: any) => ({
-            id: p.id,
-            kind: 'post',
-            title: (p.content || 'Post').slice(0, 80),
-            subtitle: `@${nameMap[p.user_id] || 'user'}`,
-            cover: p.image_url ? p.image_url.split(',')[0] : null,
-            meta: new Date(p.created_at).toLocaleDateString(),
-            is_demo: p.is_demo,
-          }));
-        }
-
-        if (context === 'market') {
-          const { data: listings } = await d1Request<{ data: any[] }>(
-            `/api/market/search?q=${encodeURIComponent(debounced)}&limit=40&offset=0`
-          );
-          list = (listings || []).map((l: any) => ({
-            id: l.listing_id || l.id,
-            kind: 'listing',
-            title: l.product_title || l.title || 'Marketplace listing',
-            subtitle: [l.city, l.region, l.country_code].filter(Boolean).join(', '),
-            cover: null,
-            subtitle: l.merchant_name || [l.city, l.country_code].filter(Boolean).join(', '),
-            meta: l.product_price != null
-              ? `${Number(l.product_price).toLocaleString()} ${l.currency_code || 'XAF'}`
-              : '',
-            is_demo: !!l.is_demo,
-          })).filter((item: Result) => !!item.id);
-        }
-
-        if (context === 'services') {
-          const { data } = await supabase
-            .from('services')
-            .select('id, title, category, starting_price, thumbnail_url, images, is_demo, seller_username:seller_id')
-            .eq('is_active', true)
-            .eq('moderation_status', 'approved')
-            .ilike('title', `%${debounced}%`)
-            .limit(40);
-
-          const sellerIds = [...new Set((data || []).map((s: any) => s.seller_username))];
-          const { data: profiles } = await supabase
-            .from('public_profiles')
-            .select('id, username')
-            .in('id', sellerIds.length ? sellerIds : ['00000000-0000-0000-0000-000000000000']);
-          const nameMap: Record<string, string> = {};
-          (profiles || []).forEach((p: any) => { nameMap[p.id] = p.username; });
-
-          list = (data || []).map((s: any) => ({
-            id: s.id,
-            kind: 'service',
-            title: s.title,
-            subtitle: `@${nameMap[s.seller_username] || 'seller'}${s.category ? ` · ${s.category}` : ''}`,
-            cover: s.thumbnail_url || (Array.isArray(s.images) ? s.images[0] : null),
-            meta: `From ${Number(s.starting_price || 0).toLocaleString()} XAF`,
-            is_demo: s.is_demo,
-          }));
-        }
+        const type = context === 'home' ? 'home' : context === 'market' ? 'market' : 'services';
+        const { data } = await d1Request<{ data: Result[] }>(
+          `/api/search?q=${encodeURIComponent(debounced)}&type=${type}&limit=40`
+        );
+        const list: Result[] = data || [];
 
         if (!cancelled) setResults(list);
       } finally {
