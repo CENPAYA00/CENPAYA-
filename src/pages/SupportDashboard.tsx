@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MessageCircle, HeadphonesIcon, Flag } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { useI18n } from '../contexts/i18n';
 
@@ -18,15 +19,15 @@ export default function SupportDashboard() {
       const me = await getCachedUser();
       if (!me) { setLoading(false); return; }
 
-      const [ticketsRes, disputesRes, recentRes] = await Promise.all([
-        supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('user_id', me.id).eq('status', 'open'),
+      const [ticketsResult, disputesRes] = await Promise.all([
+        d1Request<{ data: any[] }>('/api/support/tickets'),
         supabase.from('order_disputes').select('id', { count: 'exact', head: true }).eq('raised_by', me.id).neq('status', 'resolved'),
-        supabase.from('support_tickets').select('id, subject, category, status, created_at').eq('user_id', me.id).order('created_at', { ascending: false }).limit(5),
       ]);
 
-      setOpenTickets(ticketsRes.count || 0);
+      const tickets = ticketsResult.data || [];
+      setOpenTickets(tickets.filter((ticket: any) => ['open', 'in_progress', 'waiting'].includes(ticket.status)).length);
       setActiveDisputes(disputesRes.count || 0);
-      setRecentTickets(recentRes.data || []);
+      setRecentTickets(tickets.slice(0, 5));
       setLoading(false);
     };
     load();
