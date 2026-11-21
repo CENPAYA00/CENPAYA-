@@ -115,12 +115,16 @@ export async function verifyD1IdentityAssertion(
 
   const issuedAt = claims.iat as number;
   const expiresAt = claims.exp as number;
+  // Workers can have small clock differences and service-binding requests can be delayed.
+  // Keep the assertion short-lived, but tolerate at most 15 seconds of skew on either side.
+  const CLOCK_SKEW_SECONDS = 15;
+  const MAX_ASSERTION_LIFETIME_SECONDS = 120;
   if (
-    issuedAt > nowSeconds ||
-    expiresAt <= nowSeconds ||
+    issuedAt > nowSeconds + CLOCK_SKEW_SECONDS ||
+    expiresAt <= nowSeconds - CLOCK_SKEW_SECONDS ||
     expiresAt <= issuedAt ||
-    expiresAt - issuedAt > 30 ||
-    nowSeconds - issuedAt > 30
+    expiresAt - issuedAt > MAX_ASSERTION_LIFETIME_SECONDS ||
+    nowSeconds - issuedAt > MAX_ASSERTION_LIFETIME_SECONDS + CLOCK_SKEW_SECONDS
   ) {
     throw new Error("invalid_assertion_time");
   }
