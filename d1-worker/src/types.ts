@@ -1,10 +1,10 @@
-type User = {
+export type User = {
   id: string; username: string | null; display_name: string;
   email: string | null; phone: string | null; email_verified: number;
   phone_verified: number; role: string; account_status: string;
   banned: number; password_hash: string | null; onboarding_completed?: number;
 };
-interface Env {
+export interface Env {
   DB: D1Database;
   ALLOWED_ORIGINS: string;
   OTP_PEPPER: string;
