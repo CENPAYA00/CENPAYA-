@@ -154,6 +154,32 @@ function onlyKeys(body: Record<string, unknown>, allowed: string[]): boolean {
   const keys = new Set(allowed);
   return Object.keys(body).every((key) => keys.has(key));
 }
+async function enforceMarketplaceCheckoutRateLimit(env: Env, userId: string): Promise<Response | null> {
+  if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) {
+    return jsonResponse({ success: false, error: "marketplace_rate_limit_unavailable" }, 503);
+  }
+  try {
+    const response = await env.D1_IDENTITY.fetch("https://d1-identity.internal/internal/v1/rate-limit/consume", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET,
+      },
+      body: JSON.stringify({ user_id: userId, action: "marketplace_checkout" }),
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (response.status === 429) {
+      return jsonResponse({ success: false, error: "marketplace_checkout_rate_limit_exceeded" }, 429);
+    }
+    if (!response.ok) {
+      return jsonResponse({ success: false, error: "marketplace_rate_limit_unavailable" }, 503);
+    }
+    return null;
+  } catch {
+    return jsonResponse({ success: false, error: "marketplace_rate_limit_unavailable" }, 503);
+  }
+}
+
 function normalizedAdminPath(pathname: string): string {
   return pathname.startsWith("/api/admin/") ? "/api/v1/admin/" + pathname.slice("/api/admin/".length) : pathname;
 }
@@ -208,6 +234,8 @@ export async function handleAuthenticatedApi(
         !env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) {
       return failure("invalid_checkout_request", 400, headers);
     }
+    const rateLimited = await enforceMarketplaceCheckoutRateLimit(env, userId);
+    if (rateLimited) return rateLimited;
     let listing: Record<string, unknown>;
     try {
       const quoteResponse = await env.D1_IDENTITY.fetch(
