@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { Search, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 
 export default function AdminLedger() {
@@ -10,13 +10,11 @@ export default function AdminLedger() {
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc('admin_list_ledger', {
-      p_limit: 200,
-      p_offset: 0,
-      p_flow: filter === 'all' ? null : filter,
-    });
-    if (error) console.error(error);
-    setRows(data?.ledger || []);
+    try {
+      const flow = filter === 'all' ? '' : `&flow=${encodeURIComponent(filter)}`;
+      const result = await supabaseWorkerRequest<{ data: { ledger?: any[] } }>(`/api/v1/admin/ledger?limit=200&offset=0${flow}`);
+      setRows(result.data?.ledger || []);
+    } catch (error) { console.error(error); setRows([]); }
     setLoading(false);
   };
 
