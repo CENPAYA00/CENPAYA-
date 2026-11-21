@@ -1,5 +1,17 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-node_modules/
-dist/
-dist/
+coverage/
+.test-build/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local tooling state
+.wrangler/
+.DS_Store
