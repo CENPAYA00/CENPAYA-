@@ -30,12 +30,12 @@ export default function Home() {
         setPosts(cached);
         setLoading(false);
       }
-      await fetchPosts(user?.id);
+      await fetchPosts();
     };
     init();
   }, []);
 
-  const fetchPosts = useCallback(async (currentUserId?: string) => {
+  const fetchPosts = useCallback(async () => {
     try {
       const { data } = await d1Request<{ data: any[] }>('/api/feed?limit=40');
       const feed = (data || []).map((post: any) => ({
@@ -59,7 +59,7 @@ export default function Home() {
   }, []);
 
   const handleRefresh = async () => {
-    await fetchPosts(userId || undefined);
+    await fetchPosts();
   };
 
   const handleLike = async (postId: string) => {
