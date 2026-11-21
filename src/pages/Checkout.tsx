@@ -23,6 +23,8 @@ export default function Checkout() {
   const [feePct, setFeePct] = useState<number>(0);
   const [feeFixed, setFeeFixed] = useState<number>(0);
   const [serverAmount, setServerAmount] = useState<number | null>(null);
+  const [serverPlatformFee, setServerPlatformFee] = useState(0);
+  const [serverTotal, setServerTotal] = useState<number | null>(null);
   const [quoteReady, setQuoteReady] = useState(false);
   const [method, setMethod] = useState<PaymentMethod>('wallet');
   const [payPhone, setPayPhone] = useState('');
@@ -74,15 +76,19 @@ export default function Checkout() {
 
       if (listingId) {
         try {
-          const quoteResponse = await supabaseWorkerRequest<{ data: { amount: number; fee_pct: number; fee_fixed: number } }>(`/api/v1/checkout/quote?listing_id=${encodeURIComponent(listingId)}`);
+          const quoteResponse = await supabaseWorkerRequest<{ data: { amount: number; fee_pct: number; fee_fixed: number; platform_fee: number; total: number } }>(`/api/v1/checkout/quote?listing_id=${encodeURIComponent(listingId)}`);
           setServerAmount(Number(quoteResponse.data.amount));
           setFeePct(Number(quoteResponse.data.fee_pct));
           setFeeFixed(Number(quoteResponse.data.fee_fixed));
+          setServerPlatformFee(Number(quoteResponse.data.platform_fee));
+          setServerTotal(Number(quoteResponse.data.total));
           setQuoteReady(true);
         } catch { setQuoteReady(false); }
       } else if (serviceId) {
         setFeePct(0);
         setFeeFixed(0);
+        setServerPlatformFee(0);
+        setServerTotal(Number(serverAmount || item?.starting_price || 0));
         setQuoteReady(true);
       } else {
         setQuoteReady(false);
@@ -130,8 +136,8 @@ export default function Checkout() {
     ? Number(pkg?.price || item?.starting_price || 0)
     : (item?.price_is_range ? Number(item?.price_min || 0) : Number(item?.price || 0)));
 
-  const feePctAmount = Math.round(amount * feePct / 100);
-  const total = amount + feePctAmount + feeFixed;
+  const feePctAmount = serverPlatformFee;
+  const total = serverTotal ?? amount;
 
   // ⚠️ Renamed from 'confirm' to 'handleConfirmOrder' to avoid clashing with window.confirm
   const handleConfirmOrder = async () => {
