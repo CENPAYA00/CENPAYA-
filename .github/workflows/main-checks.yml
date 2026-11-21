@@ -43,3 +43,10 @@ jobs:
           name: main-build-diagnostics
           path: build.log
           if-no-files-found: ignore
+      - name: Upload production build for verification
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-production-build
+          path: dist/
+          if-no-files-found: error
