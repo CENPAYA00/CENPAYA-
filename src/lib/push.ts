@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { d1Request } from './d1Api';
 
 const urlB64 = (s: string): Uint8Array => {
   const raw = atob((s + "=".repeat((4 - (s.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
@@ -30,12 +30,12 @@ export async function enablePush(me: string): Promise<"granted" | "denied" | "un
     }));
 
   const j = sub.toJSON();
-  await supabase.from("push_subscriptions").upsert({ 
-    user_id: me, 
-    endpoint: j.endpoint, 
-    p256dh: j.keys?.p256dh, 
-    auth: j.keys?.auth 
-  }, { onConflict: "endpoint" });
+  await d1Request('/api/push/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify({
+      user_id: me, endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth,
+    }),
+  });
 
   return "granted";
 }
