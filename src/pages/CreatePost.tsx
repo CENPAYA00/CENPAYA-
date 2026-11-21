@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { getD1ApiUrl, d1Request } from '../lib/d1Api';
+import { getD1ApiUrl, getD1Token, d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { getCachedUser, setCached } from '../lib/cache';
 import { ArrowLeft, Image as ImageIcon, X, Palette, Smile, Video } from 'lucide-react';
@@ -96,8 +96,9 @@ export default function CreatePost() {
         const form = new FormData();
         form.append('file', compressed, compressed.name || 'post-image.jpg');
         form.append('folder', 'posts');
+        const token = getD1Token();
         const response = await fetch(getD1ApiUrl('/api/posts/media'), {
-          method: 'POST', credentials: 'include', body: form,
+          method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
         });
         const uploaded = await response.json().catch(() => ({}));
         if (!response.ok || !uploaded.url) throw new Error(uploaded.error || 'Image upload failed');
