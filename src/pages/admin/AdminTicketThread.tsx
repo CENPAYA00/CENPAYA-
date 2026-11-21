@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
+import { d1Request } from '../../lib/d1Api';
 import { ArrowLeft, Send, Check, XCircle, RotateCcw } from 'lucide-react';
 
 export default function AdminTicketThread() {
@@ -15,31 +15,19 @@ export default function AdminTicketThread() {
 
   const load = async () => {
     if (!id) return;
-    const { data } = await supabase.rpc('get_ticket_thread', { p_ticket_id: id });
-    if (data?.ok) {
-      setTicket(data.ticket);
-      setMessages(data.messages || []);
-      await supabase.rpc('mark_ticket_read', { p_ticket_id: id });
-    }
-    setLoading(false);
+    try {
+      const result = await d1Request<{ data: { ticket: any; messages: any[] } }>(`/api/support/tickets/${encodeURIComponent(id)}`);
+      setTicket(result.data?.ticket || null);
+      setMessages(result.data?.messages || []);
+      await d1Request(`/api/support/tickets/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
+    } catch (error) { console.warn('Could not load support ticket', error); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => {
-    const init = async () => {
-      await load();
-      if (!id) return;
-      const sub = supabase
-        .channel(`admin_ticket_${id}`)
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'ticket_messages',
-          filter: `ticket_id=eq.${id}`,
-        }, () => { load(); })
-        .subscribe();
-      return () => { supabase.removeChannel(sub); };
-    };
-    init();
+    void load();
+    const poll = window.setInterval(() => { void load(); }, 5000);
+    return () => window.clearInterval(poll);
   }, [id]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -47,22 +35,23 @@ export default function AdminTicketThread() {
   const send = async () => {
     if (!input.trim() || !id) return;
     setSending(true);
-    const { data, error } = await supabase.rpc('send_ticket_message', {
-      p_ticket_id: id,
-      p_body: input.trim(),
-    });
-    if (error || !data?.ok) alert(error?.message || data?.error || 'Send failed');
-    else { setInput(''); await load(); }
+    try {
+      await d1Request(`/api/support/tickets/${encodeURIComponent(id)}/messages`, {
+        method: 'POST', body: JSON.stringify({ body: input.trim() }),
+      });
+      setInput('');
+      await load();
+    } catch (error: any) { alert(error.message || 'Send failed'); }
     setSending(false);
   };
 
   const setStatus = async (status: 'open' | 'in_progress' | 'resolved' | 'closed') => {
-    const { data, error } = await supabase.rpc('set_ticket_status', {
-      p_ticket_id: id,
-      p_status: status,
-    });
-    if (error || !data?.ok) alert(error?.message || data?.error || 'Update failed');
-    else load();
+    try {
+      await d1Request(`/api/support/tickets/${encodeURIComponent(id || '')}`, {
+        method: 'PATCH', body: JSON.stringify({ status }),
+      });
+      load();
+    } catch (error: any) { alert(error.message || 'Update failed'); }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
