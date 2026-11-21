@@ -13,17 +13,17 @@ Do not import the export's CSV/JSON/SQL row data into Git. It includes personal 
 
 ## Worker module layout and internal services
 
-The Worker entry point in `src/index.ts` now delegates security primitives to `src/security.ts`, account/session verification and OTP helpers to `src/auth.ts`, session creation to `src/sessions.ts`, and Google OAuth flows to `src/oauth.ts`. Shared request and environment types live in `src/types.ts`. Existing route behavior remains in the entry point while it is progressively separated into domain route modules.
+The Worker entry point in `src/index.ts` now delegates security primitives to `src/security.ts`, account/session verification and OTP helpers to `src/auth.ts`, session creation to `src/sessions.ts`, and Google OAuth flows to `src/oauth.ts`. Shared request and environment types live in `src/types.ts`; AI Search and result verification now live in `src/search.ts`. Remaining route groups are still being separated from the entry point.
 
 The D1 Worker implements three private service-binding endpoints used by the Supabase financial Worker:
 
 - `POST /internal/v1/identity/assert`: requires the shared `D1_INTERNAL_CALL_SECRET` header and a valid D1 bearer session. It returns a signed HS256 identity assertion with a 120-second lifetime and a unique `jti`.
 - `POST /internal/v1/identity/consume`: atomically records each verified assertion `jti` in the existing rate-limit table; a repeated `jti` receives HTTP 409.
-- `POST /internal/v1/rate-limit/consume`: requires the same internal secret and accepts only a valid user UUID plus `topup` or `withdrawal`. It enforces 5 top-up or 3 withdrawal initiation attempts per user per 60 seconds.
+- `POST /internal/v1/rate-limit/consume`: requires the same internal secret and accepts only a valid user UUID plus `topup` or `withdrawal`. It enforces 5 top-up, 3 withdrawal, 5 marketplace checkout, or 30 payment-status requests per user per 60 seconds.
 
 Configure `D1_INTERNAL_CALL_SECRET` and `D1_TO_SUPABASE_HMAC_SECRET` as Worker secrets. They must match the corresponding secrets on the Supabase Worker. Never commit secret values. The Supabase Worker uses the existing `D1_IDENTITY` service binding to reach these routes; do not expose the internal secret to browser clients.
 
-The rate limiter uses Upstash Redis when configured and the existing D1 `rate_limits` table as its fallback. The D1 fallback now uses a single atomic `INSERT ... ON CONFLICT ... RETURNING count` operation, avoiding a separate read-after-write race. Monitor fallback usage under sustained traffic because the D1 fallback still adds database writes to request handling.
+The rate limiter uses Upstash Redis when configured and the existing D1 `rate_limits` table as its fallback. It fails closed when the D1-backed consumer cannot complete the limit decision. The D1 fallback now uses a single atomic `INSERT ... ON CONFLICT ... RETURNING count` operation, avoiding a separate read-after-write race. Monitor fallback usage under sustained traffic because the D1 fallback still adds database writes to request handling.
 
 ## Browser session security
 
