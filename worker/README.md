@@ -50,9 +50,9 @@ All routes below, except liveness and DB health, require a valid D1 session and 
 | GET | `/api/v1/ledger` | Current user's ledger under RLS |
 | GET | `/api/v1/orders` | Orders where current user is buyer or seller |\n| GET | `/api/v1/orders/:id` | User-scoped order detail |\n| POST | `/api/v1/orders/:id/action` | Typed seller delivery, buyer receipt, or dispute action |\n| GET | `/api/v1/checkout/quote?listing_id=:id` | D1-verified listing price and server-calculated membership fee quote |\n| POST | `/api/v1/checkout/orders` | Server-validated XAF wallet marketplace order creation with balance and idempotency checks |\n| POST | `/api/v1/checkout/service-orders` | Explicitly unavailable until the service-order schema exists in the financial database (501) |\n| GET | `/api/v1/subscriptions/options` | Configured Fapshi/Campay membership payment options and database plan price |\n| POST | `/api/v1/subscriptions` | Atomic wallet membership activation or Fapshi/Campay mobile-money initiation |\n| GET | `/api/v1/subscriptions/:id` | User-scoped membership payment status with provider reconciliation |
 | POST | `/api/v1/wallet/topups` | Idempotent XAF top-up initiation (Fapshi/Campay) |
-| GET | `/api/v1/wallet/topups/:id` | Current user's top-up status |
+| GET | `/api/v1/wallet/topups/:id` | User-scoped top-up status with provider polling and idempotent settlement |
 | POST | `/api/v1/wallet/withdrawals` | Idempotent XAF withdrawal request |
-| GET | `/api/v1/wallet/withdrawals/:id` | Current user's withdrawal status |
+| GET | `/api/v1/wallet/withdrawals/:id` | User-scoped withdrawal status with provider polling and idempotent finalization |
 | GET | `/api/v1/admin/ledger` | Existing `admin_list_ledger` RPC |
 | GET | `/api/v1/admin/escrows` | Existing `admin_list_open_escrows` RPC |
 | GET | `/api/v1/admin/finance` | Existing gains and money-circulation RPCs |
@@ -121,7 +121,7 @@ npm test
 npm run build
 ```
 
-Wrangler build is a dry run; it does not deploy. GitHub Actions runs typecheck, tests, and dry-run build on branch pushes. There is no Worker-specific lockfile, so CI uses `npm install`, not `npm ci`.
+Wrangler build is a dry run; it does not deploy. Run typecheck, tests, and the dry-run build before deployment. These commands have not been executed from this chat. There is no Worker-specific lockfile, so use `npm install`, not `npm ci`.
 
 ## Not production-ready until
 
