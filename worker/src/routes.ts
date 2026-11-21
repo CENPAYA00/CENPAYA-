@@ -320,7 +320,7 @@ export async function handleAuthenticatedApi(
     const amount = body?.amount;
     const momo = typeof body?.momo_number === "string" ? body.momo_number.trim() : "";
     const provider = typeof body?.provider === "string" ? body.provider.toLowerCase() : "";
-    if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0 || momo.length < 7 || momo.length > 32 ||
+    if (!body || !Number.isSafeInteger(amount) || Number(amount) < 1000 || momo.length < 8 || momo.length > 32 ||
         !["mtn_momo", "orange_money", "airtel_money", "moov_money"].includes(provider)) {
       return failure("invalid_admin_wallet_withdrawal", 400, headers);
     }
