@@ -7,7 +7,7 @@ This Worker is the API boundary for CenPaya's Supabase financial database and fi
 - D1 remains the account/session identity authority. The browser receives a D1 bearer only in memory; D1 also issues an HttpOnly Secure SameSite cookie for browser session restoration. The bearer is never treated as a Supabase token.
 - The Worker calls D1 through the private `D1_IDENTITY` service binding, verifies a short-lived HMAC assertion, atomically consumes its `jti` to prevent replay, mints a short-lived Supabase user JWT, and checks the same UUID exists in `public.users.id`.
 - Normal user and finance/admin database requests use `SUPABASE_ANON_KEY` plus that verified user JWT. Existing Supabase RLS and financial permission functions remain authoritative.
-- Payment operations use a separate, 60-second JWT for the restricted `cenpaya_payment_worker` Postgres role, signed with the project's active Supabase signing key. This role has no direct table or sequence privileges; its functions are restricted to provider credential retrieval and protected payment/withdrawal operations. The service-role key is not used by this Worker.
+- Payment operations use a separate 60-second JWT with the existing `authenticated` Postgres role and a private signed `app_metadata.cenpaya_payment_worker` claim. Protected RPCs validate the claim internally. No custom Postgres role or service-role key is used.
 - D1 roles do not grant financial admin permissions. Caller-supplied actor IDs and roles are not trusted.
 - No Supabase Auth, login/password, OTP, email verification, OAuth, auth/signup migrations, or Supabase Edge Functions are added.
 - No arbitrary table access or arbitrary Postgres RPC execution is exposed.
@@ -39,7 +39,7 @@ The Worker also fails closed if the D1 subject is not a UUID, the active Supabas
 
 ## API routes
 
-All routes below, except liveness, DB health, and provider callbacks, require a valid D1 session and a matching Supabase financial user.
+All routes below, except liveness and DB health, require a valid D1 session and a matching Supabase financial user. No provider webhook/callback routes are exposed.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -71,8 +71,6 @@ All routes below, except liveness, DB health, and provider callbacks, require a 
 | POST | `/api/v1/admin/gains/withdraw-to-wallet` | Typed platform-gains-to-wallet operation |
 | POST | `/api/v1/admin/gateway-credentials` or `/remove` | Typed gateway credential configuration |
 | POST | `/api/v1/admin/rpc/:name` | Strict per-RPC schemas; generic gateway is limited to explicitly approved lower-risk operations |
-| POST | `/api/v1/webhooks/fapshi` | Verify Fapshi webhook secret and query provider status |
-| POST | `/api/v1/webhooks/campay` | Verify Campay HS256 callback token and query provider status |
 
 The legacy `/api/admin/...` prefix is accepted as an alias for implemented admin paths. Pagination is bounded to 200 rows. Responses use `Cache-Control: no-store`. No endpoint returns the D1 assertion or Supabase user JWT.
 
@@ -80,21 +78,21 @@ The legacy `/api/admin/...` prefix is accepted as an alias for implemented admin
 
 - The existing Edge Function code only provided initiation adapters for Fapshi and Campay. Those are the only two providers implemented here. Other active rows in `system_providers` do not automatically imply a working Worker adapter.
 - Fapshi top-ups use the hosted Initiate Pay flow and status verification. The provider requires a valid customer email and the Worker reads it from that user's existing `public.users` row. [Fapshi payment guidance](https://www.fapshi.com/en/help-and-support/topics/payments).
-- Campay top-ups use the existing project's Token-authenticated collect flow. The callback verifier currently expects an HS256 JWT signature; confirm that exact callback contract with Campay before production enablement.
-- Top-up settlement checks the stored provider reference, exact amount, currency, and pending status in a database transaction. Repeated callbacks cannot credit the same top-up twice.
+- Campay top-ups use the existing project's Token-authenticated collect flow. Provider status is checked by authenticated status polling; this Worker does not implement payment webhooks.
+- Top-up settlement checks the stored provider reference, exact amount, currency, and pending status through idempotent database RPCs. Authenticated status polling queries the gateway and safely finalizes confirmed outcomes.
 - Withdrawals reserve funds through the existing `create_withdrawal` function with a new idempotency wrapper. The Worker does **not** mark a payout completed merely because an initiation endpoint returned HTTP 200. It requires a provider transaction reference and a verifiable status response; uncertain requests remain pending for reconciliation rather than being blindly retried or refunded.
-- Top-up initiation is limited to 5 requests per user per 60 seconds; withdrawal initiation is limited to 3 per user per 60 seconds. The Supabase Worker calls the D1 Worker through its private service binding for this limiter and fails closed if the limiter is unavailable. Redis/Upstash is used when configured, with the existing D1 rate-limit table as fallback.
+- Top-up initiation is limited to 5 requests per user per 60 seconds; withdrawal initiation to 3; marketplace wallet checkout to 5; and payment-status polling to 30. The Supabase Worker calls the D1 Worker through its private service binding and fails closed if the limiter is unavailable. Redis/Upstash is used when configured, with the existing D1 rate-limit table as fallback.
 - When a provider definitively rejects an initiation with HTTP 4xx, the Worker retries the separate database failure transition up to three times. If it cannot confirm that transition, it logs a structured critical event for Cloudflare observability and returns an uncertain-support response; it does not claim the reserved funds were released.
 - Confirm the Fapshi/Campay payout status/reference contracts with the provider accounts before enabling live withdrawals. If a provider does not return a usable reference or verifiable status, the Worker leaves the withdrawal pending.
-- Webhooks are notifications only. The Worker verifies the configured webhook credential and independently queries provider status before changing financial state.
+- No payment webhook implementation or callback endpoint is included. Top-up and withdrawal status routes independently query the gateway and preserve pending/reserved state whenever the provider result is uncertain.
 - No production provider credentials are currently configured in `platform_api_vault`. Configure them through the super-admin gateway credential flow after applying the SQL migration.
 
 
 ## Checkout security and supported payment scope
 
-Marketplace checkout now obtains the authoritative listing price from the D1 Worker through the private service binding. The Supabase Worker calculates member/non-member percentage and fixed fees, checks the authenticated user's XAF wallet balance, consumes a one-time idempotency key through D1, and inserts the order using the verified user's Supabase JWT and existing RLS. The browser only displays the quote; the Worker recalculates seller-specific fees with `cenpaya_calculate_platform_fee` before creating the order. The database migration in `worker/migrations/20261121_attach_order_escrow_hold.sql` must be applied before deployment: the existing `hold_escrow_on_order_insert()` function was present in the live database but had no trigger attached to `public.orders`. That trigger performs the atomic wallet debit and escrow-ledger write.
+Marketplace checkout now obtains the authoritative listing price from the D1 Worker through the private service binding. The Supabase Worker calculates member/non-member percentage and fixed fees, checks the authenticated user's XAF wallet balance, consumes a one-time idempotency key through D1, and inserts the order using the verified user's Supabase JWT and existing RLS. The browser only displays the quote; the Worker recalculates seller-specific fees with `cenpaya_calculate_platform_fee` before creating the order. The database migration `worker/sql/migrations/0002_attach_order_escrow_hold.sql` is applied in the live project: it attaches the existing `hold_escrow_on_order_insert()` function to `public.orders`. The trigger performs the atomic wallet debit and escrow-ledger write. Marketplace checkout also has a fail-closed D1-backed rate limit.
 
-At present marketplace checkout is wallet-only. Mobile Money marketplace checkout returns HTTP 501 because the Worker has no verified marketplace collection/escrow settlement flow. Do not enable that UI option until provider initiation, callback settlement, and escrow creation are implemented and tested end-to-end. Wallet membership activation uses the existing atomic `cenpaya_activate_membership` database function. Fapshi/Campay membership payments use the existing membership payment ledger, signed provider webhooks, and `cenpaya_momo_membership_confirm` settlement function. Service-order settlement remains fail-closed because the live database does not contain the required `service_orders` table. Wallet top-ups and withdrawals continue to use the existing Fapshi/Campay payment routes.
+Marketplace product checkout is wallet-only. Mobile Money marketplace checkout remains explicitly blocked with HTTP 501. Service-order checkout remains fail-closed (HTTP 501) because the live financial database does not contain the required service-order schema; do not enable Mobile Money service checkout. Wallet membership activation uses the existing atomic `cenpaya_activate_membership` database function. Fapshi/Campay membership payments use the existing membership payment ledger and authenticated provider-status polling. Wallet top-ups and withdrawals use the Fapshi/Campay routes and provider-status polling; uncertain outcomes remain pending/reserved.
 
 ## Database migration required
 
@@ -102,9 +100,9 @@ At present marketplace checkout is wallet-only. Mobile Money marketplace checkou
 - repairs gateway credential storage to use the project's existing Supabase Vault and `platform_api_vault.secret_id` metadata (the live table does not have the old API-key columns referenced by the current credential RPC);
 - adds idempotency and provider-attempt metadata;
 - adds user-scoped top-up intent/status functions;
-- creates the restricted `cenpaya_payment_worker` database role and adds its protected provider reference, settlement, and withdrawal finalization functions.
+- adds protected provider-reference, settlement, and withdrawal-finalization functions. They use the existing `authenticated` role plus the signed private `app_metadata.cenpaya_payment_worker` claim; no custom Postgres role is created.
 
-This migration is committed as a file only. It has **not** been applied to the live Supabase database. Review and apply it through the project's normal migration process before deployment. No live schema or data was changed by this GitHub work.
+Migrations 0001, 0002, and 0003 are committed and have been applied to the connected live Supabase database. They add Worker RPCs and attach the escrow-hold trigger; they do not create users or move existing wallet balances.
 
 ## Features intentionally not hosted here
 
@@ -131,7 +129,7 @@ Wrangler build is a dry run; it does not deploy. GitHub Actions runs typecheck, 
 2. The active Supabase JWT algorithm/key is confirmed and configured in Cloudflare.
 3. The SQL migration is reviewed and applied.
 4. D1 user UUIDs are confirmed to match existing `public.users.id` values.
-5. Fapshi/Campay credentials and webhook secrets are configured in Vault.
+5. Fapshi/Campay API credentials are configured in Vault; no webhook secret is required by this Worker.
 6. Provider payout status/reference contracts are confirmed and live end-to-end top-up/withdrawal tests pass.
 7. Cloudflare binding, origins, and secrets are configured and CI passes.
 
