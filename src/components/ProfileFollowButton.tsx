@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { UserPlus, Check } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 
 export default function PostFollowButton({ 
   authorId, 
@@ -17,18 +17,12 @@ export default function PostFollowButton({
   const toggle = async () => {
     setBusy(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setBusy(false); return; }
-      
-      if (following) {
-        await supabase.from('user_follows').delete().eq('follower_id', user.id).eq('followed_id', authorId);
-        setFollowing(false);
-        if (onFollowToggle) onFollowToggle(false);
-      } else {
-        await supabase.from('user_follows').insert({ follower_id: user.id, followed_id: authorId });
-        setFollowing(true);
-        if (onFollowToggle) onFollowToggle(true);
-      }
+      const nextFollowing = !following;
+      await d1Request(`/api/profiles/${encodeURIComponent(authorId)}/follow`, {
+        method: nextFollowing ? 'POST' : 'DELETE',
+      });
+      setFollowing(nextFollowing);
+      onFollowToggle?.(nextFollowing);
     } catch (e) {
       console.error(e);
     }
