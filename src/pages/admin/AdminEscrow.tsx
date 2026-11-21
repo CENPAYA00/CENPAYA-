@@ -36,7 +36,7 @@ export default function AdminEscrow() {
 
     setBusy(row.id);
     try {
-      await supabaseWorkerRequest(`/api/v1/admin/escrows/${encodeURIComponent(row.id)}/action`, { method: 'POST', body: JSON.stringify({ action, reason: reason.trim() }) });
+      await supabaseWorkerRequest(`/api/v1/admin/escrows/${encodeURIComponent(row.id)}/action`, { method: 'POST', body: JSON.stringify({ kind: row.kind, action, reason: reason.trim() }) });
     } catch (error: unknown) { alert(error instanceof Error ? error.message : 'Action failed'); }
     setBusy(null);
     load();
