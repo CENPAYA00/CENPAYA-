@@ -4,8 +4,7 @@ import {
   Heart, MessageCircle, Share2, X, MoreHorizontal,
   Bookmark, EyeOff, Flag, Download, Link as LinkIcon, Crown, AtSign, Globe
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { getCachedUser } from '../lib/cache';
+import { d1Request } from '../lib/d1Api';
 import ImageGrid from './ImageGrid';
 import DocumentCard from './DocumentCard';
 import ReportSheet from './ReportSheet';
@@ -83,8 +82,7 @@ export default function FeedPostCard({
     setIsInterested(true);
     showToast('Marked as interested');
     try {
-      const me = await getCachedUser();
-      if (me) await supabase.from('not_interested_posts').upsert({ user_id: me.id, post_id: post.id });
+      await d1Request(`/api/posts/${encodeURIComponent(post.id)}/not-interested`, { method: 'POST' });
     } catch {}
   };
 
@@ -94,8 +92,7 @@ export default function FeedPostCard({
     showToast("You won't see this again");
     onHide?.(post.id);
     try {
-      const me = await getCachedUser();
-      if (me) await supabase.from('not_interested_posts').upsert({ user_id: me.id, post_id: post.id });
+      await d1Request(`/api/posts/${encodeURIComponent(post.id)}/not-interested`, { method: 'POST' });
     } catch {}
   };
 
