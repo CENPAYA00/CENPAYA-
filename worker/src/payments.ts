@@ -136,6 +136,41 @@ async function finalizeProviderRejection(
   }));
   return false;
 }
+
+async function enforcePaymentRateLimit(
+  userId: string,
+  action: "topup" | "withdrawal",
+  env: Env,
+  headers: Headers,
+): Promise<Response | null> {
+  if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) {
+    return jsonResponse({ success: false, error: "payment_rate_limit_unavailable" }, 503, headers);
+  }
+  try {
+    const response = await env.D1_IDENTITY.fetch(
+      "https://d1-identity.internal/internal/v1/rate-limit/consume",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET,
+        },
+        body: JSON.stringify({ user_id: userId, action }),
+        signal: AbortSignal.timeout(3_000),
+      },
+    );
+    if (response.status === 429) {
+      return jsonResponse({ success: false, error: "payment_rate_limit_exceeded" }, 429, headers);
+    }
+    if (!response.ok) {
+      return jsonResponse({ success: false, error: "payment_rate_limit_unavailable" }, 503, headers);
+    }
+    return null;
+  } catch {
+    // Fail closed for money-moving requests if the limiter cannot be reached.
+    return jsonResponse({ success: false, error: "payment_rate_limit_unavailable" }, 503, headers);
+  }
+}
 async function startTopup(
   provider: Gateway, creds: Credentials, env: Env, id: string, amountXaf: number,
   phoneNumber: string | null, email: string,
@@ -206,6 +241,8 @@ export async function handleAuthenticatedPaymentApi(
   const url = new URL(request.url), method = request.method.toUpperCase();
 
   if (method === "POST" && url.pathname === "/api/v1/wallet/topups") {
+    const limited = await enforcePaymentRateLimit(userId, "topup", env, headers);
+    if (limited) return limited;
     const body = await readJsonObject(request, BODY_LIMIT);
     if (!body) return jsonResponse({ success: false, error: "invalid_json_body" }, 400, headers);
     const value = amount(body.amount, 100);
@@ -288,6 +325,8 @@ export async function handleAuthenticatedPaymentApi(
   }
 
   if (method === "POST" && url.pathname === "/api/v1/wallet/withdrawals") {
+    const limited = await enforcePaymentRateLimit(userId, "withdrawal", env, headers);
+    if (limited) return limited;
     const body = await readJsonObject(request, BODY_LIMIT);
     if (!body) return jsonResponse({ success: false, error: "invalid_json_body" }, 400, headers);
     const value = amount(body.amount, 500);
