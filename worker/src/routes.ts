@@ -1,6 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { jsonResponse, readJsonObject } from "./http-utils.js";
 import { readUserProfile } from "./profile.js";
+import { Env } from "./env.js";
 
 type AdminRpcSchema = {
   required: string[];
@@ -158,12 +159,78 @@ function normalizedAdminPath(pathname: string): string {
 }
 
 export async function handleAuthenticatedApi(
-  request: Request, userId: string, supabase: SupabaseClient, headers: Headers,
+  request: Request, userId: string, supabase: SupabaseClient, headers: Headers, env: Env,
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = normalizedAdminPath(url.pathname);
   const method = request.method.toUpperCase();
 
+  if (method === "POST" && path === "/api/v1/checkout/orders") {
+    const body = await readJsonObject(request, 16_384);
+    const listingId = typeof body?.listing_id === "string" ? body.listing_id.trim() : "";
+    const paymentMethod = body?.payment_method === "momo" ? "momo" : body?.payment_method === "wallet" ? "wallet" : "";
+    if (!body || !listingId || listingId.length > 128 || !paymentMethod ||
+        !env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) {
+      return failure("invalid_checkout_request", 400, headers);
+    }
+    let listing: Record<string, unknown>;
+    try {
+      const quoteResponse = await env.D1_IDENTITY.fetch(
+        "https://d1.internal/internal/v1/market/listings/" + encodeURIComponent(listingId) + "/quote",
+        { method: "GET", headers: { "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET } },
+      );
+      const quote = await quoteResponse.json() as { success?: boolean; data?: Record<string, unknown> };
+      if (!quoteResponse.ok || !quote.success || !quote.data) {
+        return failure("listing_quote_unavailable", quoteResponse.status === 404 ? 404 : 503, headers);
+      }
+      listing = quote.data;
+    } catch {
+      return failure("listing_quote_unavailable", 503, headers);
+    }
+    const sellerId = typeof listing.seller_id === "string" ? listing.seller_id : "";
+    const isRange = listing.price_is_range === true;
+    const rawAmount = isRange ? listing.price_min : listing.price;
+    const amount = typeof rawAmount === "number" ? rawAmount : Number(rawAmount);
+    if (!sellerId || sellerId === userId || !Number.isFinite(amount) || amount <= 0 ||
+        amount > 1_000_000_000_000 || listing.status === "deleted" || listing.status === "inactive") {
+      return failure("listing_not_available", 409, headers);
+    }
+    const [{ data: feePctData, error: feePctError }, { data: feeFixedData, error: feeFixedError }] = await Promise.all([
+      supabase.rpc("setting", { p_key: "fee_pct_non_member" }),
+      supabase.rpc("setting", { p_key: "fee_fixed_non_member" }),
+    ]);
+    if (feePctError || feeFixedError) return failure("checkout_fee_unavailable", 503, headers);
+    const feePct = Number(feePctData);
+    const feeFixed = Number(feeFixedData);
+    if (!Number.isFinite(feePct) || feePct < 0 || feePct > 100 ||
+        !Number.isFinite(feeFixed) || feeFixed < 0 || feeFixed > 1_000_000) {
+      return failure("checkout_fee_configuration_invalid", 503, headers);
+    }
+    const cleanText = (value: unknown, max: number) =>
+      typeof value === "string" ? value.trim().slice(0, max) : "";
+    const payload = {
+      buyer_id: userId,
+      seller_id: sellerId,
+      listing_id: listingId,
+      listing_title: cleanText(listing.title, 200),
+      amount,
+      currency_code: "XAF",
+      fee_pct: feePct,
+      fee_fixed: feeFixed,
+      escrow_status: "hold",
+      escrow_created_at: new Date().toISOString(),
+      shipping_country: cleanText(body.shipping_country, 2) || "CM",
+      shipping_region: cleanText(body.shipping_region, 100) || null,
+      shipping_city: cleanText(body.shipping_city, 100) || null,
+      shipping_address: cleanText(body.shipping_address, 500) || null,
+      payment_method: paymentMethod,
+      payment_phone: paymentMethod === "momo" ? cleanText(body.payment_phone, 32) || null : null,
+    };
+    if (paymentMethod === "momo" && !payload.payment_phone) return failure("payment_phone_required", 400, headers);
+    const { data: order, error } = await supabase.from("orders").insert(payload).select("id").single();
+    if (error || !order?.id) return failure("order_creation_failed", 409, headers);
+    return success({ id: order.id, amount, fee_pct: feePct, fee_fixed: feeFixed }, headers);
+  }
   if (method === "GET" && path === "/api/v1/me/profile") {
     const profile = await readUserProfile(supabase, userId);
     return profile ? success(profile, headers) : failure("profile_not_found", 404, headers);
