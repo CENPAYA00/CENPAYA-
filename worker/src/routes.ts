@@ -297,7 +297,7 @@ export async function handleAuthenticatedApi(
     const gateway = typeof body?.gateway === "string" ? body.gateway.toUpperCase() : "";
     const destination = typeof body?.destination === "string" ? body.destination.trim() : "";
     if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0 ||
-        !["FAPSHI", "CAMPAY"].includes(gateway) || destination.length < 7 || destination.length > 80) {
+        ! /^[A-Z0-9_]{2,40}$/.test(gateway) || destination.length < 7 || destination.length > 80) {
       return failure("invalid_platform_gains_withdrawal", 400, headers);
     }
     const result = await rpc(supabase, "admin_withdraw_platform_gains", {
