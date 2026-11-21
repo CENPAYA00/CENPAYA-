@@ -116,9 +116,6 @@ function NewMessageSheet({ onClose, onSent }: { onClose: () => void; onSent: () 
       return;
     } catch (error: any) { setBusy(false); setErr(error.message || 'Could not send message'); return; }
 
-    setBusy(false);
-    if (error) { setErr(error.message); return; }
-    onSent();
   };
 
   return (
