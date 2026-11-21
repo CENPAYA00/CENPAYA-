@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
   MobileMoneyMethod,
   METHOD_LABELS,
-  availableMethods,
   payForSubscription,
 } from '../utils/payForSubscription';
 import { Check, X, Sparkles, Zap, Shield, Store, Crown, Wallet, Link2 } from 'lucide-react';
@@ -26,9 +25,11 @@ export default function Subscribe() {
   const [loading, setLoading] = useState<string | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
-  const [country, setCountry] = useState('CM');
-  const [methods, setMethods] = useState<MobileMoneyMethod[]>([]);
-  const SUBSCRIPTION_FEE = 3000;
+  const [methods, setMethods] = useState<MobileMoneyMethod[]>(['wallet']);
+  const [subscriptionFee, setSubscriptionFee] = useState(3000);
+  const [paymentPhone, setPaymentPhone] = useState('');
+  const [pendingPaymentId, setPendingPaymentId] = useState<string | null>(null);
+  const idempotencyKey = useRef<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -36,34 +37,73 @@ export default function Subscribe() {
       if (!user) return;
       setUserId(user.id);
 
-      const [userRes, walletRes, profileRes] = await Promise.all([
+      const [userRes, walletRes, profileRes, optionsRes] = await Promise.all([
         supabaseWorkerRequest<{ data: { is_subscribed: boolean } }>('/api/v1/me/profile'),
         supabaseWorkerRequest<{ data: { available_funds: number } | null }>('/api/v1/wallet'),
-        d1Request<{ data: any }>('/api/me/personal-details'),
+        d1Request<{ data: { phone?: string; momo_number?: string } }>('/api/me/personal-details'),
+        supabaseWorkerRequest<{ data: { plan_price?: number; options?: Array<{ payment_method: string }> } }>('/api/v1/subscriptions/options').catch(() => ({ data: { plan_price: 3000, options: [] } })),
       ]);
-      const countryCode = profileRes.data?.country_iso || 'CM';
 
       if (userRes.data) setIsSubscribed(userRes.data.is_subscribed);
       if (walletRes.data) setWalletBalance(walletRes.data.available_funds);
-      setCountry(countryCode);
-      setMethods(availableMethods(countryCode));
+      setPaymentPhone(profileRes.data?.momo_number || profileRes.data?.phone || '');
+      setSubscriptionFee(Number(optionsRes.data?.plan_price) || 3000);
+      const methodMap: Record<string, MobileMoneyMethod> = { MTN_MOMO: 'mtn', ORANGE_MONEY: 'orange', AIRTEL_MONEY: 'airtel', MOOV_MONEY: 'moov' };
+      const configured = (optionsRes.data?.options || []).map(option => methodMap[option.payment_method]).filter((method): method is MobileMoneyMethod => Boolean(method));
+      setMethods([...new Set<MobileMoneyMethod>([...configured, 'wallet'])]);
     };
     load();
   }, []);
 
   const handleSubscribe = async (method: MobileMoneyMethod) => {
     if (!userId) return alert('Please log in.');
+    if (method !== 'wallet' && !paymentPhone.trim()) return alert('Add a mobile money phone number to your profile before continuing.');
     setLoading(method);
-    const result = await payForSubscription(userId, method, SUBSCRIPTION_FEE, country);
+    const key = idempotencyKey.current || (idempotencyKey.current = crypto.randomUUID());
+    const result = await payForSubscription(method, paymentPhone, key);
     if (!result.success) {
       alert('Error: ' + result.error);
+      if (!/uncertain|already submitted/i.test(result.error || '')) idempotencyKey.current = null;
     } else if (result.paymentUrl) {
+      setPendingPaymentId(result.paymentId || null);
       window.location.href = result.paymentUrl;
+    } else if (result.pending) {
+      setPendingPaymentId(result.paymentId || null);
+      alert('Payment request sent. Approve it on your phone, then check the payment status here.');
     } else {
-      alert('Subscription successful!');
+      idempotencyKey.current = null;
+      setIsSubscribed(true);
+      alert('Premium membership activated successfully.');
       navigate('/home');
     }
     setLoading(null);
+  };
+
+  const checkSubscriptionStatus = async () => {
+    if (!pendingPaymentId) return;
+    setLoading('status');
+    try {
+      const result = await supabaseWorkerRequest<{ data: { status: string; activation_error?: string | null } }>('/api/v1/subscriptions/' + encodeURIComponent(pendingPaymentId));
+      if (result.data.status === 'succeeded' && !result.data.activation_error) {
+        setIsSubscribed(true);
+        setPendingPaymentId(null);
+        idempotencyKey.current = null;
+        alert('Payment confirmed. Premium membership is active.');
+        navigate('/home');
+      } else if (result.data.status === 'failed') {
+        setPendingPaymentId(null);
+        idempotencyKey.current = null;
+        alert('The provider reported that the payment failed. You can try again.');
+      } else if (result.data.status === 'needs_review' || result.data.activation_error) {
+        alert('Payment needs review. Please contact CenPaya support before trying again.');
+      } else {
+        alert('Payment is still pending. Approve the request on your phone and check again.');
+      }
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : 'Could not check payment status.');
+    } finally {
+      setLoading(null);
+    }
   };
 
   if (isSubscribed) {
@@ -115,7 +155,7 @@ export default function Subscribe() {
           <p className="text-[9px] font-bold text-accent-light uppercase tracking-widest">Premium Plan</p>
         </div>
         <p className="text-2xl font-black">
-          {SUBSCRIPTION_FEE.toLocaleString()} <span className="text-sm">XAF</span>
+          {subscriptionFee.toLocaleString()} <span className="text-sm">XAF</span>
         </p>
         <p className="text-[10px] text-white/70 mt-1">One-time yearly payment</p>
       </div>
@@ -199,6 +239,12 @@ export default function Subscribe() {
           );
         })}
       </div>
+
+      {pendingPaymentId && (
+        <button onClick={checkSubscriptionStatus} disabled={loading !== null} className="w-full mt-3 bg-brand text-white font-bold py-2.5 rounded-lg text-xs disabled:opacity-50">
+          {loading === 'status' ? 'Checking payment…' : 'Check mobile money payment status'}
+        </button>
+      )}
 
       <p className="text-[9px] text-gray-400 text-center mt-3">
         Subscription renews yearly. Cancel anytime from Settings.
