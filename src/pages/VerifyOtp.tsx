@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { d1ResendOtp, d1VerifyOtp, setD1Token } from '../lib/d1Api';
+import { d1ResendOtp, d1VerifyOtp } from '../lib/d1Api';
 import { ArrowLeft, Mail, Loader2, Phone } from 'lucide-react';
 
 export default function VerifyOtp() {
@@ -20,8 +20,8 @@ export default function VerifyOtp() {
     if (code.length !== 6) return setErrorMsg('Enter the 6-digit code');
     setLoading(true); setErrorMsg('');
     try {
-      const { token, user } = await d1VerifyOtp(userId, code, purpose);
-      setD1Token(token); setSuccess(true);
+      const { user } = await d1VerifyOtp(userId, code, purpose);
+      setSuccess(true);
       window.setTimeout(() => navigate(user.onboarding_completed ? '/home' : '/onboarding', { replace: true }), 800);
     } catch (error) { setErrorMsg(error instanceof Error ? error.message : 'Invalid code'); }
     finally { setLoading(false); }
