@@ -27,7 +27,7 @@ begin
 end;
 $function$;
 
-revoke all on function public.get_wallet_topup_status(uuid) from public, anon;
+revoke all on function public.get_wallet_topup_status(uuid) from public, anon, service_role;
 grant execute on function public.get_wallet_topup_status(uuid) to authenticated;
 
 create or replace function public.finalize_withdrawal_from_gateway(
