@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { Shield, Search, AlertTriangle, Check, XCircle } from 'lucide-react';
 
 export default function AdminEscrow() {
@@ -11,9 +11,10 @@ export default function AdminEscrow() {
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc('admin_list_open_escrows', { p_limit: 200 });
-    if (error) console.error(error);
-    setRows(data?.escrows || []);
+    try {
+      const result = await supabaseWorkerRequest<{ data: { escrows?: any[] } }>('/api/v1/admin/escrows?limit=200');
+      setRows(result.data?.escrows || []);
+    } catch (error) { console.error(error); setRows([]); }
     setLoading(false);
   };
 
@@ -34,13 +35,9 @@ export default function AdminEscrow() {
     if (!window.confirm(`${action.toUpperCase()} ${row.kind} ${row.id.slice(0, 8)} for ${Number(row.amount).toLocaleString()} XAF?`)) return;
 
     setBusy(row.id);
-    const { data, error } = await supabase.rpc('admin_escrow_action', {
-      p_kind: row.kind,
-      p_id: row.id,
-      p_action: action,
-      p_reason: reason.trim(),
-    });
-    if (error || !data?.ok) alert(error?.message || data?.error || 'Action failed');
+    try {
+      await supabaseWorkerRequest(`/api/v1/admin/escrows/${encodeURIComponent(row.id)}/action`, { method: 'POST', body: JSON.stringify({ kind: row.kind, action, reason: reason.trim() }) });
+    } catch (error: unknown) { alert(error instanceof Error ? error.message : 'Action failed'); }
     setBusy(null);
     load();
   };
