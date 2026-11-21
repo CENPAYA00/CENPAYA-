@@ -23,7 +23,7 @@ The D1 Worker implements three private service-binding endpoints used by the Sup
 
 Configure `D1_INTERNAL_CALL_SECRET` and `D1_TO_SUPABASE_HMAC_SECRET` as Worker secrets. They must match the corresponding secrets on the Supabase Worker. Never commit secret values. The Supabase Worker uses the existing `D1_IDENTITY` service binding to reach these routes; do not expose the internal secret to browser clients.
 
-The rate limiter uses Upstash Redis when configured and the existing D1 `rate_limits` table as its fallback. Monitor fallback usage under sustained traffic because the D1 fallback adds database writes to request handling.
+The rate limiter uses Upstash Redis when configured and the existing D1 `rate_limits` table as its fallback. The D1 fallback now uses a single atomic `INSERT ... ON CONFLICT ... RETURNING count` operation, avoiding a separate read-after-write race. Monitor fallback usage under sustained traffic because the D1 fallback still adds database writes to request handling.
 
 ## Local verification
 
