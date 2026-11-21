@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff, Check, X } from 'lucide-react';
 import { useI18n } from '../contexts/i18n';
@@ -23,7 +23,7 @@ export default function Signup() {
   const { t, lang, setLang } = useI18n();
 
   const passwordChecks = {
-    length: password.length >= 8,
+    length: password.length >= 12,
     letter: /[a-zA-Z]/.test(password),
     number: /[0-9]/.test(password),
   };
@@ -43,13 +43,11 @@ export default function Signup() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-
-    if (!firstName || !lastName) return setErrorMsg('Please enter your first and last name.');
-    if (!passwordValid) return setErrorMsg('Password does not meet requirements.');
+    if (!firstName.trim() || !lastName.trim()) return setErrorMsg('Please enter your first and last name.');
+    if (!passwordValid) return setErrorMsg('Password must be at least 12 characters and include a letter and number.');
     if (!passwordsMatch) return setErrorMsg('Passwords do not match.');
     if (!gender) return setErrorMsg('Please select your gender.');
     if (!dob) return setErrorMsg('Please select your date of birth.');
-
     const age = calculateAge(dob);
     if (age === null || age < 13) return setErrorMsg(t('must_be_13'));
     if (age > 120) return setErrorMsg('Please enter a valid date of birth.');
@@ -57,69 +55,31 @@ export default function Signup() {
 
     setLoading(true);
     const cleanEmail = email.trim().toLowerCase();
-
-    const { data: existing } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', cleanEmail)
-      .maybeSingle();
-
-    if (existing) {
-      setErrorMsg('An account with this email already exists. Please log in instead.');
-      setLoading(false);
-      return;
-    }
-
     const baseUsername = `${firstName.toLowerCase()}_${lastName.toLowerCase()}`
-      .replace(/\s+/g, '')
-      .slice(0, 24);
-    const suffix = Math.floor(Math.random() * 9000 + 1000).toString();
-    const username = `${baseUsername}_${suffix}`.slice(0, 30);
-
-    const { data: authData, error } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password,
-      options: {
-        data: {
+      .replace(/\\s+/g, '')
+      .replace(/[^a-z0-9_]/g, '')
+      .slice(0, 22) || 'cenpaya_user';
+    const username = `${baseUsername}_${Math.floor(Math.random() * 9000 + 1000)}`.slice(0, 30);
+    try {
+      const result = await d1Request<{ user_id: string }>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
           username,
-          first_name: firstName,
-          last_name: lastName,
+          display_name: `${firstName.trim()} ${lastName.trim()}`,
+          email: cleanEmail,
+          password,
           gender,
           date_of_birth: dob,
-          country_iso: 'CM',
           preferred_lang: lang,
-        },
-      },
-    });
-
-    if (error) {
-      setErrorMsg(error.message);
+          terms_accepted: true,
+        }),
+      });
+      navigate(`/verify-otp?email=${encodeURIComponent(cleanEmail)}&user_id=${encodeURIComponent(result.user_id)}&purpose=verify_email`);
+    } catch (error: any) {
+      setErrorMsg(error?.message || 'Unable to create your account. Please try again.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    if (authData.user) {
-      await supabase
-        .from('users')
-        .update({ gender, date_of_birth: dob, preferred_lang: lang })
-        .eq('id', authData.user.id);
-
-      await supabase.from('user_legal_acceptances').insert({
-        user_id: authData.user.id,
-        document_slug: 'terms-of-service',
-        version: 'v1.0',
-        accepted_at: new Date().toISOString(),
-      });
-
-      // Trigger OTP email
-      await supabase.functions.invoke('send-otp', {
-        body: { email: cleanEmail }
-      });
-
-      // Redirect to verification screen
-      navigate(`/verify-otp?email=${encodeURIComponent(cleanEmail)}`);
-    }
-    setLoading(false);
   };
 
   return (
@@ -257,7 +217,7 @@ export default function Signup() {
             </div>
 
             <div className="mt-3 space-y-2">
-              <PasswordCheck label={t('password_must_8')} ok={passwordChecks.length} />
+              <PasswordCheck label=Password must be at least 12 characters ok={passwordChecks.length} />
               <PasswordCheck label={t('password_must_letter')} ok={passwordChecks.letter} />
               <PasswordCheck label={t('password_must_number')} ok={passwordChecks.number} />
             </div>
