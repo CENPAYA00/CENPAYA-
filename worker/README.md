@@ -70,7 +70,7 @@ The legacy `/api/admin/...` prefix is accepted as an alias for implemented admin
 ## Payment behavior and limits
 
 - The existing Edge Function code only provided initiation adapters for Fapshi and Campay. Those are the only two providers implemented here. Other active rows in `system_providers` do not automatically imply a working Worker adapter.
-- Fapshi top-ups use the hosted Initiate Pay flow and status verification. The provider requires a valid customer email and the Worker reads it from that user's existing `public.users` row. <Link url="https://www.fapshi.com/en/help-and-support/topics/payments" title="Fapshi payment guidance"/>.
+- Fapshi top-ups use the hosted Initiate Pay flow and status verification. The provider requires a valid customer email and the Worker reads it from that user's existing `public.users` row. [Fapshi payment guidance](https://www.fapshi.com/en/help-and-support/topics/payments).
 - Campay top-ups use the existing project's Token-authenticated collect flow. The callback verifier currently expects an HS256 JWT signature; confirm that exact callback contract with Campay before production enablement.
 - Top-up settlement checks the stored provider reference, exact amount, currency, and pending status in a database transaction. Repeated callbacks cannot credit the same top-up twice.
 - Withdrawals reserve funds through the existing `create_withdrawal` function with a new idempotency wrapper. The Worker does **not** mark a payout completed merely because an initiation endpoint returned HTTP 200. It requires a provider transaction reference and a verifiable status response; uncertain requests remain pending for reconciliation rather than being blindly retried or refunded.
