@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Search, X, AtSign, Check } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 
 type Props = {
   selected: any[];
@@ -16,12 +16,8 @@ export default function TagPeople({ selected, onChange }: Props) {
     setQuery(q);
     if (q.trim().length < 2) { setResults([]); return; }
     setSearching(true);
-    const { data } = await supabase
-      .from('public_profiles')
-      .select('id, username, avatar_url')
-      .ilike('username', `%${q.trim()}%`)
-      .limit(15);
-    setResults(data || []);
+    try { const result = await d1Request<{ data: any[] }>(`/api/profiles/search?q=${encodeURIComponent(q.trim())}`); setResults((result.data || []).slice(0, 15)); }
+    catch { setResults([]); }
     setSearching(false);
   };
 
