@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { d1Request, getD1ApiUrl } from '../lib/d1Api';
+import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
   Share2, Settings, Camera, Calendar, MapPin, Briefcase,
@@ -66,8 +66,9 @@ export default function Profile() {
       const form = new FormData();
       form.append('file', compressed, compressed.name || `${kind}.jpg`);
       form.append('kind', kind);
+      const token = getD1Token();
       const response = await fetch(getD1ApiUrl('/api/me/media'), {
-        method: 'POST', credentials: 'include', body: form,
+        method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.url) throw new Error(result.error || 'Upload failed');
