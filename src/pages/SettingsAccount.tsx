@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, UserX, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Logout } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { useI18n } from '../contexts/i18n';
 
@@ -18,7 +19,7 @@ export default function SettingsAccount() {
     const { error } = await supabase.from('users').update({ is_deactivated: true }).eq('id', me.id);
     setBusy(false);
     if (error) { alert(error.message); return; }
-    await supabase.auth.signOut();
+    await d1Logout();
     navigate('/');
   };
 
