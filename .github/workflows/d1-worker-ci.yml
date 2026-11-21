@@ -11,6 +11,7 @@ on:
       - integration/main-d1-supabase-monolith
     paths:
       - "d1-worker/**"
+      - "database/d1/migrations/**"
       - ".github/workflows/d1-worker-ci.yml"
 
 jobs:
