@@ -394,11 +394,14 @@ export async function handleGatewayWebhook(request: Request, env: Env): Promise<
     : text(payload.reference, 200);
   if (!externalId || !reference) return jsonResponse({ ok: false, error: "missing_payment_reference" }, 400);
 
-  const { data: topup } = await db.from("wallet_topups")
-    .select("id,provider,transaction_id,amount,currency_code,status")
-    .eq("id", externalId).maybeSingle();
+  let topup: Record<string, unknown> = {};
+  try {
+    topup = asObject(await callRpc(db, "worker_get_topup_payment_details", { p_topup_id: externalId }));
+  } catch {
+    return jsonResponse({ ok: false, error: "payment_record_unavailable" }, 503);
+  }
 
-  if (topup && String(topup.provider).toUpperCase() === provider) {
+  if (topup.id && String(topup.provider).toUpperCase() === provider) {
     if (String(topup.transaction_id).startsWith("pending:") || String(topup.transaction_id).startsWith("initiating:")) {
       const recorded = await callRpc(db, "record_wallet_topup_provider_reference", {
         p_topup_id: topup.id, p_provider: provider, p_provider_transaction_id: reference, p_checkout_url: null,
@@ -429,10 +432,15 @@ export async function handleGatewayWebhook(request: Request, env: Env): Promise<
     return jsonResponse({ ok: true, status: "pending" }, 202);
   }
 
-  const { data: withdrawal } = await db.from("user_withdrawals")
-    .select("id,gateway_provider,gateway_reference,net_disbursement,currency_code,status")
-    .eq("id", externalId).maybeSingle();
-  if (!withdrawal || String(withdrawal.gateway_provider || "").toUpperCase() !== provider) {
+  let withdrawal: Record<string, unknown> = {};
+  try {
+    withdrawal = asObject(await callRpc(db, "worker_get_withdrawal_payment_details", {
+      p_withdrawal_id: externalId,
+    }));
+  } catch {
+    return jsonResponse({ ok: false, error: "withdrawal_record_unavailable" }, 503);
+  }
+  if (!withdrawal.id || String(withdrawal.gateway_provider || "").toUpperCase() !== provider) {
     return jsonResponse({ ok: false, error: "payment_reference_not_found" }, 404);
   }
   if (

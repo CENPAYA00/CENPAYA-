@@ -175,6 +175,47 @@ begin
 end;
 $function$;
 
+create or replace function public.worker_get_topup_payment_details(p_topup_id uuid)
+returns jsonb
+language plpgsql stable security definer
+set search_path = public
+as $function$
+declare
+  v_result jsonb;
+begin
+  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  select jsonb_build_object(
+    'id', id, 'user_id', user_id, 'provider', provider, 'transaction_id', transaction_id,
+    'amount', amount, 'currency_code', currency_code, 'status', status
+  ) into v_result
+    from public.wallet_topups
+   where id = p_topup_id
+     and (auth.uid() = '00000000-0000-4000-8000-000000000001'::uuid or user_id = auth.uid());
+  return v_result;
+end;
+$function$;
+
+create or replace function public.worker_get_withdrawal_payment_details(p_withdrawal_id uuid)
+returns jsonb
+language plpgsql stable security definer
+set search_path = public
+as $function$
+declare
+  v_result jsonb;
+begin
+  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  select jsonb_build_object(
+    'id', id, 'user_id', user_id, 'gateway_provider', gateway_provider,
+    'gateway_reference', gateway_reference, 'requested_amount', requested_amount,
+    'net_disbursement', net_disbursement, 'currency_code', currency_code, 'status', status
+  ) into v_result
+    from public.user_withdrawals
+   where id = p_withdrawal_id
+     and (auth.uid() = '00000000-0000-4000-8000-000000000001'::uuid or user_id = auth.uid());
+  return v_result;
+end;
+$function$;
+
 create or replace function public.create_wallet_topup_intent(
   p_amount bigint, p_provider text, p_idempotency_key text
 )
@@ -481,6 +522,14 @@ revoke all on function public.worker_upsert_vault_secret(uuid, text, text, text)
 revoke all on function public.worker_get_gateway_credentials(text, text)
   from public, anon, authenticated, service_role;
 grant execute on function public.worker_get_gateway_credentials(text, text) to cenpaya_payment_worker;
+
+revoke all on function public.worker_get_topup_payment_details(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.worker_get_topup_payment_details(uuid) to cenpaya_payment_worker;
+
+revoke all on function public.worker_get_withdrawal_payment_details(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.worker_get_withdrawal_payment_details(uuid) to cenpaya_payment_worker;
 
 revoke all on function public.create_wallet_topup_intent(bigint, text, text) from public, anon;
 grant execute on function public.create_wallet_topup_intent(bigint, text, text) to authenticated;
