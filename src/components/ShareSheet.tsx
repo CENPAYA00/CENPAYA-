@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { X, Search, Users, Send, Loader2 } from 'lucide-react';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
-import { logActivity } from '../lib/activityLog';
 
 type Target = {
   id: string;
@@ -63,7 +62,6 @@ export default function ShareSheet({ postId, onClose, onShared }: Props) {
         const result = await d1Request<{ id: string }>('/api/chat/direct', { method: 'POST', body: JSON.stringify({ user_id: target.id }) });
         await d1Request(`/api/chat/threads/${encodeURIComponent(result.id)}/messages`, { method: 'POST', body: JSON.stringify({ message_text: '📎 Shared a post', message_type: 'shared_post', shared_post_id: postId }) });
       }
-      await logActivity('post_shared', { post_id: postId, to: target.kind });
       onShared?.();
       onClose();
     } catch (error: any) { console.warn('share failed', error); alert(error.message || 'Could not share post'); }
