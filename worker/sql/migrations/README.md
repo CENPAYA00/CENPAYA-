@@ -1,6 +1,6 @@
 # Supabase database migrations
 
-These migrations are committed to the existing `migration/supabase-worker-api` branch. They are **not automatically applied by a Worker deployment**. Migrations 0001, 0002, and 0003 have now been applied to the connected live Supabase project.
+These migrations are committed to the existing `migration/supabase-worker-api` branch. They are **not automatically applied by a Worker deployment**. Migrations 0001, 0002, 0003, and 0004 have now been applied to the connected live Supabase project.
 
 Apply them in numeric order in the Supabase SQL Editor, after reviewing the SQL:
 
