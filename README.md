@@ -10,3 +10,7 @@ CenPaya is a CEMAC-focused commerce and fintech application.
 The D1 Worker is the source of user identity. Supabase Auth is not used for application login or email/phone verification. Keep authenticated API responses out of PWA caches.
 
 See ARCHITECTURE.md for the ownership and security rules. D1 schema notes and migrations are in database/d1/.
+
+## Local configuration
+
+Copy `.env.example` to `.env.local` and set the required frontend URLs and public keys. Never add Supabase service-role credentials to frontend environment variables. See ARCHITECTURE.md for the backend ownership and security rules.
