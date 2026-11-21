@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, ShoppingBag } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { useI18n } from '../contexts/i18n';
@@ -29,12 +29,7 @@ export default function MyOrders() {
       const me = await getCachedUser();
       if (!me) { setLoading(false); return; }
 
-      const { data } = await supabase
-        .from('orders')
-        .select('id, amount, escrow_status, escrow_created_at, buyer_id, seller_id, listing_id')
-        .or(`buyer_id.eq.${me.id},seller_id.eq.${me.id}`)
-        .order('escrow_created_at', { ascending: false })
-        .limit(50);
+      const { data } = await supabaseWorkerRequest<{ data: any[] }>('/api/v1/orders?limit=50');
 
       if (!data || data.length === 0) { setLoading(false); return; }
 
