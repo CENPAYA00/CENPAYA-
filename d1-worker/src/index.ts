@@ -205,10 +205,10 @@ async function handle(request:Request,env:Env):Promise<Response>{
   }
   if(path==="/api/auth/refresh"&&method==="POST"){
     const user=await auth(request,env);
-    const refreshToken=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);
-    if(!user||!refreshToken)return fail("Unauthorized",401);
-    const accessToken=await createSession(env.DB,user.id,request,env,900);
-    return json({success:true,token:accessToken,expires_in:900,user:safeUser(user)});
+    if(!user)return fail("Unauthorized",401);
+    // Authentication remains in the Secure, HttpOnly session cookie.
+    // Never return a bearer/session token to browser JavaScript.
+    return json({success:true,user:safeUser(user)});
   }
   const user=await auth(request,env);
   if(path==="/api/me"&&method==="GET"){
