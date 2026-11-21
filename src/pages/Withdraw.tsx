@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { d1Me } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Me, d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Smartphone, AlertCircle } from 'lucide-react';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
 import Select from '../components/Select';
 
-type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
-const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
+type Method = 'mtn_momo' | 'orange_money';
+const METHODS: Method[] = ['mtn_momo', 'orange_money'];
 
 export default function Withdraw() {
   const navigate = useNavigate();
@@ -58,19 +58,10 @@ export default function Withdraw() {
     if (!user) { setBusy(false); return; }
 
     try {
-      const { data, error } = await supabase.functions.invoke('initiate-withdrawal', {
-        body: {
-          user_id: user.id,
-          wallet: walletSource,
-          amount: Number(amount),
-          payment_method: provider,
-          phone_number: `${prefix} ${phone.trim()}`,
-          country_iso: selectedCountry,
-        },
+      await supabaseWorkerRequest<{ data: { id: string; status: string } }>('/api/v1/wallet/withdrawals', {
+        method: 'POST',
+        body: JSON.stringify({ amount: Number(amount), gateway_provider: 'FAPSHI', destination_provider: provider, source_bucket: walletSource === 'funds' ? 'available' : 'referral', destination_phone: `${prefix} ${phone.trim()}`, idempotency_key: crypto.randomUUID() }),
       });
-
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || 'Withdrawal failed');
 
       alert('Withdrawal successful!');
       navigate('/wallet');
