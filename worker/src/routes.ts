@@ -465,7 +465,7 @@ export async function handleAuthenticatedApi(
     const name = adminRpc[1];
     const body = await readJsonObject(request, 64_000);
     if (!body || !onlyKeys(body, ["args"])) return failure("invalid_json_body", 400, headers);
-    const args = body.args === undefined ? {}
+    const args = body.args === undefined ? {} :
       body.args && typeof body.args === "object" && !Array.isArray(body.args)
         ? body.args as Record<string, unknown> : null;
     if (!args || !validAdminRpcArgs(name, args)) {
