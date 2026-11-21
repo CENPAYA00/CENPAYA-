@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { d1Request } from '../../lib/d1Api';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { ArrowLeft, Send, Check, XCircle, RotateCcw } from 'lucide-react';
 
 export default function AdminTicketThread() {
@@ -16,10 +16,10 @@ export default function AdminTicketThread() {
   const load = async () => {
     if (!id) return;
     try {
-      const result = await d1Request<{ data: { ticket: any; messages: any[] } }>(`/api/support/tickets/${encodeURIComponent(id)}`);
+      const result = await supabaseWorkerRequest<{ data: { ticket: any; messages: any[] } }>(`/api/admin/support/tickets/${encodeURIComponent(id)}`);
       setTicket(result.data?.ticket || null);
       setMessages(result.data?.messages || []);
-      await d1Request(`/api/support/tickets/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
+      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
     } catch (error) { console.warn('Could not load support ticket', error); }
     finally { setLoading(false); }
   };
@@ -36,7 +36,7 @@ export default function AdminTicketThread() {
     if (!input.trim() || !id) return;
     setSending(true);
     try {
-      await d1Request(`/api/support/tickets/${encodeURIComponent(id)}/messages`, {
+      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id)}/messages`, {
         method: 'POST', body: JSON.stringify({ body: input.trim() }),
       });
       setInput('');
@@ -47,7 +47,7 @@ export default function AdminTicketThread() {
 
   const setStatus = async (status: 'open' | 'in_progress' | 'resolved' | 'closed') => {
     try {
-      await d1Request(`/api/support/tickets/${encodeURIComponent(id || '')}`, {
+      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id || '')}`, {
         method: 'PATCH', body: JSON.stringify({ status }),
       });
       load();
