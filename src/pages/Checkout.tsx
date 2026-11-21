@@ -156,6 +156,7 @@ export default function Checkout() {
           method: 'POST',
           body: JSON.stringify({
             listing_id: item.id,
+            idempotency_key: crypto.randomUUID(),
             payment_method: method,
             payment_phone: method === 'momo' ? payPhone : null,
             shipping_country: country,
