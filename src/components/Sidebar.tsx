@@ -7,6 +7,7 @@ import {
   MessageCircle, HeadphonesIcon, Globe, Link2, Network, Activity, Crown
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
@@ -20,15 +21,12 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from('users')
-        .select('username, is_subscribed')
-        .eq('id', user.id)
-        .single();
-      setUsername(data?.username || 'User');
-      setIsSubscribed(!!data?.is_subscribed);
+      try {
+        const { user } = await d1Me();
+        setUsername(user.username || 'User');
+        const { data } = await supabase.from('users').select('is_subscribed').eq('id', user.id).maybeSingle();
+        setIsSubscribed(!!data?.is_subscribed);
+      } catch { setUsername('User'); }
     };
     load();
     
