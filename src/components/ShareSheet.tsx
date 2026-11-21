@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, Search, Users, Send, Loader2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { logActivity } from '../lib/activityLog';
 
@@ -25,106 +25,49 @@ export default function ShareSheet({ postId, onClose, onShared }: Props) {
   const [sending, setSending] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
       setLoading(true);
-      const me = await getCachedUser();
-      if (!me) { setLoading(false); return; }
-
-      let list: Target[] = [];
-
-      if (tab === 'chats') {
-        const { data: myChannels } = await supabase
-          .from('chat_participants')
-          .select('channel_id')
-          .eq('user_id', me.id);
-
-        const ids = (myChannels || []).map((c: any) => c.channel_id);
-
-        if (ids.length > 0) {
-          const { data: others } = await supabase
-            .from('chat_participants')
-            .select('channel_id, user_id')
-            .in('channel_id', ids)
-            .neq('user_id', me.id);
-
-          const otherIds = [...new Set((others || []).map((o: any) => o.user_id))];
-
-          const { data: profiles } = await supabase
-            .from('public_profiles')
-            .select('id, username, avatar_url')
-            .in('id', otherIds);
-
-          const map: Record<string, any> = {};
-          (profiles || []).forEach((p: any) => { map[p.id] = { username: p.username, avatar: p.avatar_url }; });
-
-          list = (others || []).map((o: any) => ({
-            id: o.channel_id,
-            kind: 'chat' as const,
-            username: map[o.user_id]?.username || 'User',
-            avatar: map[o.user_id]?.avatar || null,
+      try {
+        let list: Target[] = [];
+        if (tab === 'chats') {
+          const result = await d1Request<{ data: any[] }>('/api/chat/threads');
+          list = (result.data || []).map((row: any) => ({
+            id: row.id, kind: 'chat' as const, username: row.other_username || row.title || 'Conversation', avatar: row.other_avatar,
           }));
+        } else if (tab === 'groups') {
+          const result = await d1Request<{ data: any[] }>('/api/groups');
+          list = (result.data || []).map((g: any) => ({ id: g.id, kind: 'group' as const, username: g.name, avatar: g.avatar_url }));
+        } else {
+          const result = await d1Request<{ data: any[] }>('/api/me/following');
+          list = (result.data || []).map((u: any) => ({ id: u.id, kind: 'user' as const, username: u.username, avatar: u.avatar_url }));
         }
-      } else if (tab === 'groups') {
-        const { data } = await supabase.rpc('list_my_groups');
-        list = (Array.isArray(data) ? data : []).map((g: any) => ({
-          id: g.id,
-          kind: 'group' as const,
-          username: g.name,
-          avatar: g.avatar_url,
-        }));
-      } else {
-        const { data } = await supabase.rpc('get_following', { p_user_id: me.id, p_limit: 200 });
-        list = (Array.isArray(data) ? data : []).map((u: any) => ({
-          id: u.id,
-          kind: 'user' as const,
-          username: u.username,
-          avatar: u.avatar_url,
-        }));
-      }
-
-      setTargets(list);
-      setLoading(false);
+        if (active) setTargets(list);
+      } catch (error: any) { if (active) console.warn(error.message || 'Could not load share targets'); }
+      finally { if (active) setLoading(false); }
     };
-    load();
+    void load();
+    return () => { active = false; };
   }, [tab]);
 
-  const send = async (t: Target) => {
-    setSending(t.id);
+  const send = async (target: Target) => {
+    setSending(target.id);
     const me = await getCachedUser();
     if (!me) { setSending(null); return; }
-
     try {
-      if (t.kind === 'chat' || t.kind === 'group') {
-        await supabase.from('chat_messages').insert({
-          channel_id: t.id,
-          sender_id: me.id,
-          body: '📎 Shared a post',
-          message_type: 'shared_post',
-          shared_post_id: postId,
-        });
+      if (target.kind === 'chat') {
+        await d1Request(`/api/chat/threads/${encodeURIComponent(target.id)}/messages`, { method: 'POST', body: JSON.stringify({ message_text: '📎 Shared a post', message_type: 'shared_post', shared_post_id: postId }) });
+      } else if (target.kind === 'group') {
+        await d1Request(`/api/groups/${encodeURIComponent(target.id)}/messages`, { method: 'POST', body: JSON.stringify({ message_text: '📎 Shared a post', message_type: 'shared_post', shared_post_id: postId }) });
       } else {
-        // DM: find or create a channel with this user
-        const { data } = await supabase.rpc('get_or_create_dm_channel', { p_other_user_id: t.id });
-        const channelId = data?.channel_id;
-        if (channelId) {
-          await supabase.from('chat_messages').insert({
-            channel_id: channelId,
-            sender_id: me.id,
-            body: '📎 Shared a post',
-            message_type: 'shared_post',
-            shared_post_id: postId,
-          });
-        }
+        const result = await d1Request<{ id: string }>('/api/chat/direct', { method: 'POST', body: JSON.stringify({ user_id: target.id }) });
+        await d1Request(`/api/chat/threads/${encodeURIComponent(result.id)}/messages`, { method: 'POST', body: JSON.stringify({ message_text: '📎 Shared a post', message_type: 'shared_post', shared_post_id: postId }) });
       }
-
-      await logActivity('post_shared', { post_id: postId, to: t.kind });
+      await logActivity('post_shared', { post_id: postId, to: target.kind });
       onShared?.();
       onClose();
-    } catch (e) {
-      console.warn('share failed', e);
-    } finally {
-      setSending(null);
-    }
+    } catch (error: any) { console.warn('share failed', error); alert(error.message || 'Could not share post'); }
+    finally { setSending(null); }
   };
 
   const filtered = targets.filter(t =>
