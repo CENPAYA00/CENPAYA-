@@ -172,3 +172,8 @@ Other direct financial writes that need server-side ownership include the direct
 - Keep `main` untouched until the integration PR is reviewed and approved.
 
 **Audit limitation:** this document maps the Supabase access patterns visible in the main-branch frontend and assigns intended ownership using the stated Cenpaya architecture and the D1 schema context supplied by the user. It does not claim that the target Worker routes already exist, that every RPC has been fully ported, or that live database state has been changed. Exact table columns, function bodies, triggers, and policies must be checked before each migration.
+
+
+## Product-scope update (integration branch)
+
+After the original main-branch audit, the product owner removed Communities, Social Groups, standalone Pages, and the user-facing Activity Log from Cenpaya's product scope. Their frontend pages, navigation entries, personal activity logging calls, and routes have been removed in the integration branch. Group conversation creation is also excluded; one-to-one chat remains. Existing database tables/records are intentionally retained pending a separate data-retention and dependency review. Administrative security audit logs and financial ledger records remain required and are not part of this removal.
