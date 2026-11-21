@@ -57,8 +57,6 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const rows=await env.DB.prepare("SELECT id,parent_id,name,slug,description,category_type,position,icon,section FROM marketplace_categories WHERE status='active' ORDER BY position,name").all();
     return json({success:true,data:rows.results});
   }
-  const searchResponse=await handleSearchRoute(request,env);
-  if(searchResponse)return searchResponse;
   if(path==="/api/market/search"&&method==="GET"){
     const q=str(url.searchParams.get("q"),100).replace(/[%_]/g,""),category=str(url.searchParams.get("category_id"),64),country=str(url.searchParams.get("country"),2).toUpperCase();
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||24),1),50),offset=Math.max(Number(url.searchParams.get("offset")||0),0);
