@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, Check, AlertCircle, Shield } from 'lucide-react';
 
@@ -17,7 +18,7 @@ export default function OrderDetail() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await d1Me();
       if (!user) return;
       setUserId(user.id);
       const { data } = await supabase.from('orders').select('*').eq('id', id).single();
