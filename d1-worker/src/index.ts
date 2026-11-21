@@ -251,9 +251,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const duplicate=await env.DB.prepare("SELECT id FROM users WHERE lower(username)=? OR (? IS NOT NULL AND lower(email)=?) OR (? IS NOT NULL AND phone=?)").bind(username,email,email,phone,phone).first();
     if(duplicate)return fail("Account details already in use",409);
     const id=uuid(),hash=await passwordHash(password);
-    await env.DB.prepare("INSERT INTO users(id,username,display_name,email,phone,password_hash) VALUES(?,?,?,?,?,?)").bind(id,username,display,email,phone,hash).run();
-    await env.DB.prepare("INSERT INTO user_onboarding_details(user_id,gender,date_of_birth,preferred_language,terms_accepted_at) VALUES(?,?,?,?, "+NOW+")")
-      .bind(id,gender,dob,preferredLanguage).run();
+    await env.DB.prepare("INSERT INTO users(id,username,display_name,email,phone,password_hash,gender,date_of_birth,preferred_language,terms_accepted_at) VALUES(?,?,?,?,?,?,?,?,?,"+NOW+")")
+      .bind(id,username,display,email,phone,hash,gender,dob,preferredLanguage).run();
     const channel=email?"email":"sms",purpose=email?"verify_email":"verify_phone";
     let delivered=false;
     try{delivered=await sendOtp(env,env.DB,id,channel,email||phone!,purpose);}catch{delivered=false;}
