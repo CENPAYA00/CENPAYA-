@@ -10,6 +10,15 @@ interface Env {
   OTP_PEPPER: string;
   OTP_DELIVERY?: Fetcher;
   SESSION_TTL_SECONDS?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
+  FRONTEND_URL?: string;
+  AI_SEARCH_NAME?: string;
+  AI?: { autorag: (name: string) => { search: (options: Record<string, unknown>) => Promise<unknown> } };
+  CACHE?: KVNamespace;
+  UPSTASH_REDIS_REST_URL?: string;
+  UPSTASH_REDIS_REST_TOKEN?: string;
 }
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -93,10 +102,17 @@ async function auth(request:Request,env:Env):Promise<User|null>{
     AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(hash).first<{id:string}>();
   return row?readUser(env.DB,row.id):null;
 }
-async function rateLimit(db:D1Database,key:string,max:number,windowSeconds:number):Promise<boolean>{
+async function rateLimit(env:Env,key:string,max:number,windowSeconds:number):Promise<boolean>{
+  if(env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN){
+    try{
+      const script="local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end; return n";
+      const response=await fetch(env.UPSTASH_REDIS_REST_URL,{method:"POST",headers:{Authorization:"Bearer "+env.UPSTASH_REDIS_REST_TOKEN,"Content-Type":"application/json"},body:JSON.stringify(["EVAL",script,"1","cenpaya:rl:"+key,String(windowSeconds)])});
+      if(response.ok){const result=await response.json() as {result?:number};if(typeof result.result==="number")return result.result<=max;}
+    }catch{ /* Redis is optional; D1 remains the fallback limiter. */ }
+  }
   const now=Math.floor(Date.now()/1000), window=Math.floor(now/windowSeconds)*windowSeconds;
-  await db.prepare("INSERT INTO rate_limits(key,window_start,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window_start=excluded.window_start,count=CASE WHEN rate_limits.window_start=excluded.window_start THEN rate_limits.count+1 ELSE 1 END").bind(key,window).run();
-  const row=await db.prepare("SELECT count FROM rate_limits WHERE key=?").bind(key).first<{count:number}>();
+  await env.DB.prepare("INSERT INTO rate_limits(key,window_start,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window_start=excluded.window_start,count=CASE WHEN rate_limits.window_start=excluded.window_start THEN rate_limits.count+1 ELSE 1 END").bind(key,window).run();
+  const row=await env.DB.prepare("SELECT count FROM rate_limits WHERE key=?").bind(key).first<{count:number}>();
   return (row?.count||0)<=max;
 }
 async function createSession(db:D1Database,userId:string,request:Request,env:Env):Promise<string>{
@@ -132,9 +148,86 @@ async function verifyOtp(env:Env,db:D1Database,userId:string,purpose:"verify_ema
   return true;
 }
 function safeUser(u:User){return {id:u.id,username:u.username,display_name:u.display_name,email:u.email,phone:u.phone,email_verified:!!u.email_verified,phone_verified:!!u.phone_verified,role:u.role};}
+async function randomToken(bytes=32):Promise<string>{
+  const data=crypto.getRandomValues(new Uint8Array(bytes));
+  return btoa(String.fromCharCode(...data)).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/g,"");
+}
+async function sha256Base64Url(value:string):Promise<string>{
+  const hash=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)));
+  return btoa(String.fromCharCode(...hash)).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/g,"");
+}
+async function cacheGet(env:Env,key:string):Promise<unknown|null>{
+  if(!env.CACHE)return null;
+  try{const value=await env.CACHE.get(key,"json");return value??null;}catch{return null;}
+}
+async function cachePut(env:Env,key:string,value:unknown,ttl=300):Promise<void>{
+  if(!env.CACHE)return;
+  try{await env.CACHE.put(key,JSON.stringify(value),{expirationTtl:ttl});}catch{/* cache failures never block D1 reads */}
+}
 async function handle(request:Request,env:Env):Promise<Response>{
   const pre=cors(request,env); if(pre)return pre;
   const url=new URL(request.url), path=url.pathname.replace(/\/$/,"")||"/", method=request.method.toUpperCase();
+  if(path==="/api/auth/google/start"&&method==="GET"){
+    if(!env.GOOGLE_CLIENT_ID||!env.GOOGLE_REDIRECT_URI)return fail("Google sign-in is not configured",503);
+    const returnTo=url.searchParams.get("return_to")||env.FRONTEND_URL||"";
+    if(!returnTo||!allowedOrigins(env).includes(returnTo))return fail("Invalid sign-in return address",400);
+    const state=await randomToken(),verifier=await randomToken(48),challenge=await sha256Base64Url(verifier);
+    await env.DB.prepare("INSERT INTO oauth_states(state_hash,code_verifier,return_to,expires_at) VALUES(?,?,?,?)")
+      .bind(await digest(state),verifier,returnTo,new Date(Date.now()+10*60*1000).toISOString()).run();
+    const target=new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    target.search=new URLSearchParams({client_id:env.GOOGLE_CLIENT_ID,redirect_uri:env.GOOGLE_REDIRECT_URI,response_type:"code",scope:"openid email profile",state,code_challenge:challenge,code_challenge_method:"S256",prompt:"select_account"}).toString();
+    return Response.redirect(target.toString(),302);
+  }
+  if(path==="/api/auth/google/callback"&&method==="GET"){
+    const state=str(url.searchParams.get("state"),256),code=str(url.searchParams.get("code"),4096);
+    const oauthError=url.searchParams.get("error");
+    const fallback=env.FRONTEND_URL||allowedOrigins(env)[0]||"/";
+    if(oauthError||!state||!code)return Response.redirect(new URL("/?google_error=cancelled",fallback).toString(),302);
+    const pending=await env.DB.prepare("SELECT code_verifier,return_to,expires_at FROM oauth_states WHERE state_hash=?").bind(await digest(state)).first<{code_verifier:string;return_to:string;expires_at:string}>();
+    await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash=?").bind(await digest(state)).run();
+    if(!pending||pending.expires_at<=new Date().toISOString()||!allowedOrigins(env).includes(pending.return_to))return Response.redirect(new URL("/?google_error=invalid_state",fallback).toString(),302);
+    try{
+      if(!env.GOOGLE_CLIENT_ID||!env.GOOGLE_CLIENT_SECRET||!env.GOOGLE_REDIRECT_URI)throw new Error("Google OAuth is not configured");
+      const tokenResponse=await fetch("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({code,client_id:env.GOOGLE_CLIENT_ID,client_secret:env.GOOGLE_CLIENT_SECRET,redirect_uri:env.GOOGLE_REDIRECT_URI,grant_type:"authorization_code",code_verifier:pending.code_verifier})});
+      if(!tokenResponse.ok)throw new Error("Google token exchange failed");
+      const tokenData=await tokenResponse.json() as {id_token?:string};
+      if(!tokenData.id_token)throw new Error("Google did not return an identity token");
+      const infoResponse=await fetch("https://oauth2.googleapis.com/tokeninfo?id_token="+encodeURIComponent(tokenData.id_token));
+      if(!infoResponse.ok)throw new Error("Google identity validation failed");
+      const info=await infoResponse.json() as {aud?:string;iss?:string;exp?:string;sub?:string;email?:string;email_verified?:string|boolean;name?:string;picture?:string};
+      if(info.aud!==env.GOOGLE_CLIENT_ID||!["accounts.google.com","https://accounts.google.com"].includes(info.iss||"")||Number(info.exp||0)<=Math.floor(Date.now()/1000)||String(info.email_verified)!=="true"||!info.sub||!info.email)throw new Error("Google identity could not be verified");
+      const email=info.email.toLowerCase();
+      let identity=await env.DB.prepare("SELECT user_id FROM oauth_identities WHERE provider='google' AND provider_user_id=?").bind(info.sub).first<{user_id:string}>();
+      let userId=identity?.user_id;
+      if(!userId){
+        const existing=await env.DB.prepare("SELECT id FROM users WHERE lower(email)=? AND deleted_at IS NULL").bind(email).first<{id:string}>();
+        if(existing)userId=existing.id;
+        else{
+          const base=(email.split("@")[0]||"google_user").toLowerCase().replace(/[^a-z0-9_]/g,"_").replace(/^_+|_+$/g,"").slice(0,22)||"google_user";
+          let username=base+"_"+(await randomToken(4)).replace(/[^a-zA-Z0-9]/g,"").slice(0,6).toLowerCase();
+          for(let i=0;i<5;i++){
+            const taken=await env.DB.prepare("SELECT 1 FROM users WHERE lower(username)=?").bind(username).first();
+            if(!taken)break;
+            username=base+"_"+(await randomToken(5)).replace(/[^a-zA-Z0-9]/g,"").slice(0,8).toLowerCase();
+          }
+          userId=uuid();
+          await env.DB.prepare("INSERT INTO users(id,username,display_name,email,email_verified) VALUES(?,?,?,?,1)")
+            .bind(userId,username,str(info.name,100)||base,email).run();
+        }
+        await env.DB.prepare("INSERT INTO oauth_identities(id,user_id,provider,provider_user_id,email) VALUES(?,?,'google',?,?)")
+          .bind(uuid(),userId,info.sub,email).run();
+      }
+      const user=await readUser(env.DB,userId);
+      if(!user||user.banned||user.account_status!=="active")throw new Error("CenPaya account is unavailable");
+      const session=await createSession(env.DB,userId,request,env);
+      const destination=new URL("/",pending.return_to);
+      destination.hash=new URLSearchParams({d1_token:session,auth_provider:"google"}).toString();
+      return Response.redirect(destination.toString(),302);
+    }catch(error){
+      console.error("Google OAuth callback failed",error instanceof Error?error.message:"unknown");
+      return Response.redirect(new URL("/?google_error=sign_in_failed",pending.return_to).toString(),302);
+    }
+  }
   if(path==="/health"&&method==="GET"){
     try{await env.DB.prepare("SELECT 1").first();return json({success:true,service:"cenpaya-d1-worker",database:"connected"});}
     catch{return fail("D1 unavailable",503);}
@@ -144,7 +237,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const username=str(b.username,30).toLowerCase(),display=str(b.display_name,100),email=str(b.email,254).toLowerCase()||null,phone=str(b.phone,32)||null,password=str(b.password,128);
     if(!/^[a-z0-9_]{3,30}$/.test(username)||!display||password.length<12||(!email&&!phone))return fail("Valid username, display name, email or phone, and password (12+ characters) required");
     if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return fail("Invalid email address");
-    if(!await rateLimit(env.DB,"register:"+await digest(email||phone||username),5,3600))return fail("Too many registration attempts",429);
+    if(!await rateLimit(env,"register:"+await digest(email||phone||username),5,3600))return fail("Too many registration attempts",429);
     const duplicate=await env.DB.prepare("SELECT id FROM users WHERE lower(username)=? OR (? IS NOT NULL AND lower(email)=?) OR (? IS NOT NULL AND phone=?)").bind(username,email,email,phone,phone).first();
     if(duplicate)return fail("Account details already in use",409);
     const id=uuid(),hash=await passwordHash(password);
@@ -159,7 +252,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const identifier=str(b.identifier,254).toLowerCase(),purpose=str(b.purpose,20);
     if(!identifier||!["verify_email","verify_phone"].includes(purpose))return fail("Identifier and valid verification purpose required");
-    if(!await rateLimit(env.DB,"otp-resend:"+await digest(identifier+":"+purpose),3,600))return fail("Too many OTP requests",429);
+    if(!await rateLimit(env,"otp-resend:"+await digest(identifier+":"+purpose),3,600))return fail("Too many OTP requests",429);
     const account=await env.DB.prepare("SELECT id,email,phone,email_verified,phone_verified FROM users WHERE (lower(email)=? OR lower(username)=? OR phone=?) AND deleted_at IS NULL AND banned=0").bind(identifier,identifier,identifier).first<{id:string;email:string|null;phone:string|null;email_verified:number;phone_verified:number}>();
     if(account){
       const emailPurpose=purpose==="verify_email"&&!account.email_verified&&!!account.email;
@@ -175,7 +268,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const userId=str(b.user_id,64),code=str(b.code,6),purpose=str(b.purpose,20);
     if(!UUID.test(userId)||!/^\d{6}$/.test(code)||!["verify_email","verify_phone"].includes(purpose))return fail("Invalid verification request");
-    if(!await rateLimit(env.DB,"verify:"+userId,10,600))return fail("Too many verification attempts",429);
+    if(!await rateLimit(env,"verify:"+userId,10,600))return fail("Too many verification attempts",429);
     if(!await verifyOtp(env,env.DB,userId,purpose as "verify_email"|"verify_phone",code))return fail("Invalid or expired verification code",400);
     const user=await readUser(env.DB,userId);if(!user)return fail("Account not found",404);
     const token=await createSession(env.DB,userId,request,env);
@@ -185,7 +278,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const identifier=str(b.identifier,254).toLowerCase();
     if(!identifier)return fail("Identifier required");
-    if(!await rateLimit(env.DB,"password-reset:"+await digest(identifier),4,3600))return fail("Too many reset attempts",429);
+    if(!await rateLimit(env,"password-reset:"+await digest(identifier),4,3600))return fail("Too many reset attempts",429);
     const account=await env.DB.prepare("SELECT id,email,phone,email_verified,phone_verified FROM users WHERE (lower(email)=? OR lower(username)=? OR phone=?) AND deleted_at IS NULL AND banned=0").bind(identifier,identifier,identifier).first<{id:string;email:string|null;phone:string|null;email_verified:number;phone_verified:number}>();
     if(account){
       const channel=account.email_verified&&account.email?"email":account.phone_verified&&account.phone?"sms":null;
@@ -198,7 +291,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const userId=str(b.user_id,64),code=str(b.code,6),password=str(b.new_password,128);
     if(!UUID.test(userId)||!/^\d{6}$/.test(code)||password.length<12)return fail("Valid user, six-digit code, and new password (12+ characters) required");
-    if(!await rateLimit(env.DB,"password-reset-verify:"+userId,8,900))return fail("Too many reset attempts",429);
+    if(!await rateLimit(env,"password-reset-verify:"+userId,8,900))return fail("Too many reset attempts",429);
     if(!await verifyOtp(env,env.DB,userId,"password_reset",code))return fail("Invalid or expired reset code",400);
     const hash=await passwordHash(password);
     await env.DB.prepare("UPDATE users SET password_hash=?,password_updated_at="+NOW+",updated_at="+NOW+" WHERE id=? AND deleted_at IS NULL").bind(hash,userId).run();
@@ -211,7 +304,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const identifier=str(b.identifier,254).toLowerCase(),password=str(b.password,128);
     if(!identifier||!password)return fail("Identifier and password required");
-    if(!await rateLimit(env.DB,"login:"+await digest(identifier),8,900))return fail("Too many sign-in attempts",429);
+    if(!await rateLimit(env,"login:"+await digest(identifier),8,900))return fail("Too many sign-in attempts",429);
     const user=await env.DB.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,role,account_status,banned,password_hash FROM users WHERE (lower(email)=? OR lower(username)=? OR phone=?) AND deleted_at IS NULL").bind(identifier,identifier,identifier).first<User>();
     if(!user||!user.password_hash||!(await verifyPassword(password,user.password_hash)))return fail("Invalid credentials",401);
     if(user.banned||user.account_status!=="active")return fail("Account is unavailable",403);
@@ -246,11 +339,17 @@ async function handle(request:Request,env:Env):Promise<Response>{
   const publicProfile=path.match(/^\/api\/profiles\/([^/]+)$/);
   if(publicProfile&&method==="GET"){
     const key=decodeURIComponent(publicProfile[1]);
+    const cached=await cacheGet(env,"public-profile:"+key.toLowerCase());
+    if(cached)return json({success:true,data:cached,source:"cache"});
     const profile=await env.DB.prepare("SELECT id,username,display_name,avatar_url,cover_url,bio,country_code,location_city,is_premium,followers_count,sales_count,reputation_score,created_at FROM public_profiles WHERE id=? OR lower(username)=lower(?)").bind(key,key).first();
+    if(profile)await cachePut(env,"public-profile:"+key.toLowerCase(),profile,300);
     return profile?json({success:true,data:profile}):fail("Profile not found",404);
   }
   if(path==="/api/countries"&&method==="GET"){
+    const cached=await cacheGet(env,"supported-countries");
+    if(cached)return json({success:true,data:cached,source:"cache"});
     const rows=await env.DB.prepare("SELECT country_code,name,currency_code,phone_prefix,status FROM supported_countries WHERE status IN ('active','coming_soon') ORDER BY name").all();
+    await cachePut(env,"supported-countries",rows.results,3600);
     return json({success:true,data:rows.results});
   }
   const publicListing=path.match(/^\/api\/market\/listings\/([^/]+)$/);
@@ -280,6 +379,27 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(path==="/api/market/categories"&&method==="GET"){
     const rows=await env.DB.prepare("SELECT id,parent_id,name,slug,description,category_type,position,icon,section FROM marketplace_categories WHERE status='active' ORDER BY position,name").all();
     return json({success:true,data:rows.results});
+  }
+  if(path==="/api/search"&&method==="GET"){
+    const q=str(url.searchParams.get("q"),200),kind=str(url.searchParams.get("type"),20)||"all";
+    const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||30),1),50);
+    if(!q)return json({success:true,data:[]});
+    if(!env.AI||!env.AI_SEARCH_NAME)return fail("Cloudflare AI Search is not configured on this Worker",503);
+    const cacheKey="search:"+await digest(kind+":"+q.toLowerCase()+":"+limit);
+    const cached=await cacheGet(env,cacheKey);
+    if(cached)return json({success:true,data:cached,source:"cache"});
+    const index=env.AI.autorag(env.AI_SEARCH_NAME);
+    const raw=await index.search({query:q,rewrite_query:true,max_num_results:limit});
+    const root=raw as {data?:unknown[];results?:unknown[]};
+    const results=Array.isArray(root?.data)?root.data:Array.isArray(root?.results)?root.results:[];
+    const normalized=results.map((item:any)=>{
+      const metadata=item?.metadata||item?.attributes||item?.meta||{};
+      const content=typeof item?.content==="string"?item.content:typeof item?.text==="string"?item.text:typeof item?.snippet==="string"?item.snippet:"";
+      const entityKind=String(metadata.kind||metadata.entity_type||metadata.type||"post").toLowerCase();
+      return {id:String(metadata.id||metadata.entity_id||item?.id||""),kind:entityKind,title:String(metadata.title||metadata.name||content.slice(0,100)||"Search result"),subtitle:String(metadata.subtitle||metadata.username||metadata.location||""),cover:metadata.cover_url||metadata.image_url||metadata.thumbnail_url||null,meta:metadata.meta||"",is_demo:!!metadata.is_demo,score:item?.score??null,snippet:content.slice(0,320)};
+    }).filter((item:any)=>item.id&& (kind==="all"||item.kind===kind|| (kind==="market"&&item.kind==="listing") || (kind==="services"&&item.kind==="service") || (kind==="home"&&item.kind==="post")));
+    await cachePut(env,cacheKey,normalized,60);
+    return json({success:true,data:normalized,source:"ai-search"});
   }
   if(path==="/api/market/search"&&method==="GET"){
     const q=str(url.searchParams.get("q"),100).replace(/[%_]/g,""),category=str(url.searchParams.get("category_id"),64),country=str(url.searchParams.get("country"),2).toUpperCase();
