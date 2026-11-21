@@ -94,10 +94,10 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
     if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
     const b=await body(request);
-    const userId=str(b?.user_id,64),action=str(b?.action,20);
-    if(!UUID.test(userId)||!["topup","withdrawal"].includes(action))return fail("Invalid rate-limit request",400);
+    const userId=str(b?.user_id,64),action=str(b?.action,32);
+    if(!UUID.test(userId)||!["topup","withdrawal","marketplace_checkout"].includes(action))return fail("Invalid rate-limit request",400);
     try{
-      const max=action==="topup"?5:3;
+      const max=action==="topup"?5:action==="withdrawal"?3:5;
       const allowed=await rateLimit(env,"financial:"+action+":"+userId,max,60);
       return json({success:true,allowed},allowed?200:429);
     }catch{
