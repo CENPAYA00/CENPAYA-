@@ -103,16 +103,17 @@ async function callRpc(db: SupabaseClient, name: string, args: Record<string, un
   return data;
 }
 async function startTopup(
-  provider: Gateway, creds: Credentials, env: Env, id: string, amountXaf: number, phoneNumber: string | null,
+  provider: Gateway, creds: Credentials, env: Env, id: string, amountXaf: number,
+  phoneNumber: string | null, email: string,
 ): Promise<{ reference: string; checkoutUrl: string | null }> {
   const base = baseUrl(provider, environment(env));
   if (provider === "FAPSHI") {
     const { response, data } = await providerFetch(base + "/initiate-pay", {
       method: "POST",
       headers: { "Content-Type": "application/json", apiuser: creds.api_public_key!, apikey: creds.api_secret_key! },
-      body: JSON.stringify({ amount: amountXaf, userId: id, externalId: id, message: "CenPaya wallet top-up" }),
+      body: JSON.stringify({ amount: amountXaf, email, userId: id, externalId: id, message: "CenPaya wallet top-up" }),
     });
-    if (!response.ok) throw new Error("provider_rejected");
+    if (!response.ok) throw new Error("provider_rejected_" + response.status);
     const reference = text(data.transId);
     if (!reference) throw new Error("provider_reference_missing");
     return { reference, checkoutUrl: text(data.link, 2000) || null };
@@ -126,14 +127,14 @@ async function startTopup(
       description: "CenPaya wallet top-up", external_reference: id,
     }),
   });
-  if (!response.ok) throw new Error("provider_rejected");
+  if (!response.ok) throw new Error("provider_rejected_" + response.status);
   const reference = text(data.reference);
   if (!reference) throw new Error("provider_reference_missing");
   return { reference, checkoutUrl: text(data.link, 2000) || null };
 }
 async function startPayout(
   provider: Gateway, creds: Credentials, env: Env, id: string, amountXaf: number,
-  phoneNumber: string, destinationProvider: string,
+  phoneNumber: string, destinationProvider: string, recipientName: string,
 ): Promise<string> {
   const base = baseUrl(provider, environment(env));
   if (provider === "FAPSHI") {
@@ -141,12 +142,12 @@ async function startPayout(
       method: "POST",
       headers: { "Content-Type": "application/json", apiuser: creds.api_public_key!, apikey: creds.api_secret_key! },
       body: JSON.stringify({
-        amount: amountXaf, phone: phoneNumber,
+        amount: amountXaf, phone: phoneNumber, name: recipientName,
         medium: destinationProvider === "orange_money" ? "orange money" : "mobile money",
         userId: id, externalId: id, message: "CenPaya wallet withdrawal",
       }),
     });
-    if (!response.ok) throw new Error("provider_rejected");
+    if (!response.ok) throw new Error("provider_rejected_" + response.status);
     const reference = text(data.transId);
     if (!reference) throw new Error("provider_reference_missing");
     return reference;
@@ -159,7 +160,7 @@ async function startPayout(
       description: "CenPaya wallet withdrawal", external_reference: id,
     }),
   });
-  if (!response.ok) throw new Error("provider_rejected");
+  if (!response.ok) throw new Error("provider_rejected_" + response.status);
   const reference = text(data.reference);
   if (!reference) throw new Error("provider_reference_missing");
   return reference;
@@ -193,13 +194,31 @@ export async function handleAuthenticatedPaymentApi(
     if (existing.status === "completed" || existing.status === "failed" || existing.provider_reference) {
       return jsonResponse({ success: true, data: existing }, 200, headers);
     }
+    if (existing.initiation_in_progress === true) {
+      return jsonResponse({ success: false, error: "topup_initiation_in_progress_check_status" }, 409, headers);
+    }
+
+    let email = "";
+    if (providerName === "FAPSHI") {
+      const { data: userInfo, error: userInfoError } = await userDb.from("users")
+        .select("email").eq("id", userId).maybeSingle();
+      email = typeof userInfo?.email === "string" ? userInfo.email.trim() : "";
+      if (userInfoError || !email) {
+        return jsonResponse({ success: false, error: "verified_email_required_for_fapshi" }, 400, headers);
+      }
+    }
 
     let db: SupabaseClient, creds: Credentials;
     try { db = service(env); creds = await credentials(db, providerName, env); }
     catch { return jsonResponse({ success: false, error: "payment_provider_not_configured" }, 503, headers); }
 
+    const claimed = await callRpc(db, "claim_wallet_topup_initiation", { p_topup_id: topupId });
+    if (claimed !== true) {
+      return jsonResponse({ success: false, error: "topup_initiation_already_claimed_check_status" }, 409, headers);
+    }
+
     try {
-      const started = await startTopup(providerName, creds, env, topupId, value, mobile);
+      const started = await startTopup(providerName, creds, env, topupId, value, mobile, email);
       const recorded = await callRpc(db, "record_wallet_topup_provider_reference", {
         p_topup_id: topupId, p_provider: providerName,
         p_provider_transaction_id: started.reference, p_checkout_url: started.checkoutUrl,
@@ -209,8 +228,15 @@ export async function handleAuthenticatedPaymentApi(
         id: topupId, provider: providerName, amount: value, currency_code: "XAF",
         status: "pending", provider_reference: started.reference, checkout_url: started.checkoutUrl,
       } }, 200, headers);
-    } catch {
-      return jsonResponse({ success: false, error: "payment_initiation_uncertain_check_status_before_retry" }, 502, headers);
+    } catch (error) {
+      if (error instanceof Error && /^provider_rejected_4\\d\\d$/.test(error.message)) {
+        await callRpc(db, "fail_wallet_topup_from_gateway", {
+          p_topup_id: topupId, p_provider: providerName,
+          p_provider_transaction_id: "initiating:" + topupId,
+        }).catch(() => null);
+        return jsonResponse({ success: false, error: "payment_provider_rejected_request" }, 400, headers);
+      }
+      return jsonResponse({ success: false, error: "payment_initiation_uncertain_contact_support" }, 502, headers);
     }
   }
 
@@ -256,11 +282,27 @@ export async function handleAuthenticatedPaymentApi(
       .eq("id", withdrawalId).eq("user_id", userId).maybeSingle();
     if (lookupError || !current) return jsonResponse({ success: false, error: "withdrawal_status_unavailable" }, 502, headers);
     if (current.status !== "pending" || current.gateway_reference) {
-      return jsonResponse({ success: true, data: current }, 200, headers);
+      const visible = {
+        ...current,
+        gateway_reference: String(current.gateway_reference || "").startsWith("initiating:")
+          ? null : current.gateway_reference,
+      };
+      return jsonResponse({ success: true, data: visible }, 200, headers);
     }
 
+    const claimed = await callRpc(db, "claim_withdrawal_provider_payout", {
+      p_withdrawal_id: withdrawalId, p_gateway_provider: gateway,
+    });
+    if (claimed !== true) {
+      return jsonResponse({ success: true, data: { id: withdrawalId, status: "pending" } }, 200, headers);
+    }
+
+    const { data: userInfo } = await userDb.from("users").select("username").eq("id", userId).maybeSingle();
+    const recipientName = typeof userInfo?.username === "string" && userInfo.username.trim()
+      ? userInfo.username.trim() : "CenPaya user";
+
     try {
-      const reference = await startPayout(gateway, creds, env, withdrawalId, value, mobile, destination);
+      const reference = await startPayout(gateway, creds, env, withdrawalId, value, mobile, destination, recipientName);
       const recorded = await callRpc(db, "record_withdrawal_provider_reference", {
         p_withdrawal_id: withdrawalId, p_gateway_provider: gateway, p_gateway_reference: reference,
       });
@@ -285,8 +327,16 @@ export async function handleAuthenticatedPaymentApi(
         }
       } catch { /* Keep funds reserved while the provider result is uncertain. */ }
       return jsonResponse({ success: true, data: { id: withdrawalId, status: state, gateway_reference: reference } }, 200, headers);
-    } catch {
-      return jsonResponse({ success: false, error: "withdrawal_initiation_uncertain_check_status" }, 502, headers);
+    } catch (error) {
+      if (error instanceof Error && /^provider_rejected_4\\d\\d$/.test(error.message)) {
+        await callRpc(db, "finalize_withdrawal_from_gateway", {
+          p_withdrawal_id: withdrawalId, p_gateway_provider: gateway,
+          p_outcome: "failed", p_gateway_reference: null,
+          p_failure_reason: "Provider rejected payout request",
+        }).catch(() => null);
+        return jsonResponse({ success: false, error: "payment_provider_rejected_request" }, 400, headers);
+      }
+      return jsonResponse({ success: false, error: "withdrawal_initiation_uncertain_contact_support" }, 502, headers);
     }
   }
 
@@ -297,7 +347,12 @@ export async function handleAuthenticatedPaymentApi(
       .eq("id", withdrawalStatus[1]).eq("user_id", userId).maybeSingle();
     if (error) return jsonResponse({ success: false, error: "withdrawal_status_unavailable" }, 502, headers);
     if (!data) return jsonResponse({ success: false, error: "withdrawal_not_found" }, 404, headers);
-    return jsonResponse({ success: true, data }, 200, headers);
+    const visible = {
+      ...data,
+      gateway_reference: String(data.gateway_reference || "").startsWith("initiating:")
+        ? null : data.gateway_reference,
+    };
+    return jsonResponse({ success: true, data: visible }, 200, headers);
   }
 
   return null;
@@ -342,7 +397,7 @@ export async function handleGatewayWebhook(request: Request, env: Env): Promise<
     .eq("id", externalId).maybeSingle();
 
   if (topup && String(topup.provider).toUpperCase() === provider) {
-    if (String(topup.transaction_id).startsWith("pending:")) {
+    if (String(topup.transaction_id).startsWith("pending:") || String(topup.transaction_id).startsWith("initiating:")) {
       const recorded = await callRpc(db, "record_wallet_topup_provider_reference", {
         p_topup_id: topup.id, p_provider: provider, p_provider_transaction_id: reference, p_checkout_url: null,
       });
