@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { d1Me } from "../lib/d1Api";
 
 type Wallet = {
   user_id: string;
@@ -16,12 +17,7 @@ type Wallet = {
 export async function getMyWallet(
   supabase: SupabaseClient
 ): Promise<Wallet | null> {
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError) throw authError;
+  const { user } = await d1Me();
   if (!user) return null;
 
   const { data, error } = await supabase
