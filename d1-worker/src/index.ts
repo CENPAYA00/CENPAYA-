@@ -44,7 +44,9 @@ async function body(request: Request): Promise<Record<string,unknown>|null> {
   const length=Number(request.headers.get("Content-Length")||0);
   if(length>64_000) return null;
   try {
-    const value: unknown=await request.json();
+    const raw=await request.text();
+    if(new TextEncoder().encode(raw).byteLength>64_000)return null;
+    const value: unknown=JSON.parse(raw);
     return value && typeof value==="object" && !Array.isArray(value) ? value as Record<string,unknown> : null;
   } catch { return null; }
 }
@@ -105,7 +107,7 @@ async function createSession(db:D1Database,userId:string,request:Request,env:Env
     .bind(uuid(),userId,await digest(raw),null,request.headers.get("User-Agent")?.slice(0,300)||null,expires,new Date().toISOString()).run();
   return raw;
 }
-async function sendOtp(env:Env,db:D1Database,userId:string,channel:"email"|"sms",destination:string,purpose:"verify_email"|"verify_phone"):Promise<boolean>{
+async function sendOtp(env:Env,db:D1Database,userId:string,channel:"email"|"sms",destination:string,purpose:"verify_email"|"verify_phone"|"password_reset"):Promise<boolean>{
   if(!env.OTP_DELIVERY || !env.OTP_PEPPER)return false;
   const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,"0");
   const id=uuid(), codeHash=await hmac(userId+":"+purpose+":"+code,env.OTP_PEPPER);
@@ -117,7 +119,7 @@ async function sendOtp(env:Env,db:D1Database,userId:string,channel:"email"|"sms"
   if(!response.ok){await db.prepare("DELETE FROM otp_codes WHERE id=?").bind(id).run();return false;}
   return true;
 }
-async function verifyOtp(env:Env,db:D1Database,userId:string,purpose:"verify_email"|"verify_phone",code:string):Promise<boolean>{
+async function verifyOtp(env:Env,db:D1Database,userId:string,purpose:"verify_email"|"verify_phone"|"password_reset",code:string):Promise<boolean>{
   const row=await db.prepare("SELECT id,code_hash,attempts,expires_at FROM otp_codes WHERE user_id=? AND purpose=? AND verified_at IS NULL ORDER BY created_at DESC LIMIT 1").bind(userId,purpose).first<{id:string;code_hash:string;attempts:number;expires_at:string}>();
   if(!row||row.attempts>=5||row.expires_at<=new Date().toISOString())return false;
   await db.prepare("UPDATE otp_codes SET attempts=attempts+1 WHERE id=?").bind(row.id).run();
@@ -125,7 +127,7 @@ async function verifyOtp(env:Env,db:D1Database,userId:string,purpose:"verify_ema
   if(expected!==row.code_hash)return false;
   await db.prepare("UPDATE otp_codes SET verified_at="+NOW+" WHERE id=?").bind(row.id).run();
   if(purpose==="verify_email") await db.prepare("UPDATE users SET email_verified=1,email_verified_at="+NOW+",updated_at="+NOW+" WHERE id=?").bind(userId).run();
-  else await db.prepare("UPDATE users SET phone_verified=1,phone_verified_at="+NOW+",updated_at="+NOW+" WHERE id=?").bind(userId).run();
+  else if(purpose==="verify_phone") await db.prepare("UPDATE users SET phone_verified=1,phone_verified_at="+NOW+",updated_at="+NOW+" WHERE id=?").bind(userId).run();
   return true;
 }
 function safeUser(u:User){return {id:u.id,username:u.username,display_name:u.display_name,email:u.email,phone:u.phone,email_verified:!!u.email_verified,phone_verified:!!u.phone_verified,role:u.role};}
@@ -147,7 +149,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const id=uuid(),hash=await passwordHash(password);
     await env.DB.prepare("INSERT INTO users(id,username,display_name,email,phone,password_hash) VALUES(?,?,?,?,?,?)").bind(id,username,display,email,phone,hash).run();
     const channel=email?"email":"sms",purpose=email?"verify_email":"verify_phone";
-    const delivered=await sendOtp(env,env.DB,id,channel,email||phone!,purpose);
+    let delivered=false;
+    try{delivered=await sendOtp(env,env.DB,id,channel,email||phone!,purpose);}catch{delivered=false;}
     if(!delivered){await env.DB.prepare("DELETE FROM users WHERE id=?").bind(id).run();return fail("Verification delivery is not configured or unavailable",503);}
     return json({success:true,user_id:id,verification_required:true,channel},201);
   }
@@ -160,6 +163,32 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const user=await readUser(env.DB,userId);if(!user)return fail("Account not found",404);
     const token=await createSession(env.DB,userId,request,env);
     return json({success:true,user:safeUser(user),token});
+  }
+  if(path==="/api/auth/password/request"&&method==="POST"){
+    const b=await body(request);if(!b)return fail("Valid JSON body required");
+    const identifier=str(b.identifier,254).toLowerCase();
+    if(!identifier)return fail("Identifier required");
+    if(!await rateLimit(env.DB,"password-reset:"+await digest(identifier),4,3600))return fail("Too many reset attempts",429);
+    const account=await env.DB.prepare("SELECT id,email,phone,email_verified,phone_verified FROM users WHERE (lower(email)=? OR lower(username)=? OR phone=?) AND deleted_at IS NULL AND banned=0").bind(identifier,identifier,identifier).first<{id:string;email:string|null;phone:string|null;email_verified:number;phone_verified:number}>();
+    if(account){
+      const channel=account.email_verified&&account.email?"email":account.phone_verified&&account.phone?"sms":null;
+      const destination=channel==="email"?account.email:channel==="sms"?account.phone:null;
+      if(channel&&destination){try{await sendOtp(env,env.DB,account.id,channel,destination,"password_reset");}catch{}}
+    }
+    return json({success:true,message:"If the account is eligible, a password reset code has been sent."});
+  }
+  if(path==="/api/auth/password/reset"&&method==="POST"){
+    const b=await body(request);if(!b)return fail("Valid JSON body required");
+    const userId=str(b.user_id,64),code=str(b.code,6),password=str(b.new_password,128);
+    if(!UUID.test(userId)||!/^\\d{6}$/.test(code)||password.length<12)return fail("Valid user, six-digit code, and new password (12+ characters) required");
+    if(!await rateLimit(env.DB,"password-reset-verify:"+userId,8,900))return fail("Too many reset attempts",429);
+    if(!await verifyOtp(env,env.DB,userId,"password_reset",code))return fail("Invalid or expired reset code",400);
+    const hash=await passwordHash(password);
+    await env.DB.prepare("UPDATE users SET password_hash=?,password_updated_at="+NOW+",updated_at="+NOW+" WHERE id=? AND deleted_at IS NULL").bind(hash,userId).run();
+    await env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at="+NOW+" WHERE user_id=? AND status='active'").bind(userId).run();
+    const token=await createSession(env.DB,userId,request,env);
+    const updated=await readUser(env.DB,userId);
+    return json({success:true,user:updated?safeUser(updated):null,token});
   }
   if(path==="/api/auth/login"&&method==="POST"){
     const b=await body(request);if(!b)return fail("Valid JSON body required");
@@ -257,7 +286,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(!user)return fail("Unauthorized",401);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const subject=str(b.subject,160),description=str(b.description,5000),category=str(b.category,40)||"general";
-    if(!subject||!description)return fail("Subject and description required");
+    if(!subject||!description||!["general","account","technical","marketplace","payments","security","privacy","other"].includes(category))return fail("Valid subject, description and category required");
     const id=uuid(),number="CP-"+Date.now().toString(36).toUpperCase();
     await env.DB.prepare("INSERT INTO support_tickets(id,user_id,ticket_number,subject,description,category) VALUES(?,?,?,?,?,?)").bind(id,user.id,number,subject,description,category).run();
     return json({success:true,id,ticket_number:number},201);
