@@ -262,6 +262,16 @@ async function handle(request:Request,env:Env):Promise<Response>{
     await cachePut(env,"supported-countries",rows.results,3600);
     return json({success:true,data:rows.results});
   }
+  if(path==="/internal/v1/admin/overview"&&method==="GET"){
+    const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
+    const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
+    if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
+    try{
+      const users=await env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE deleted_at IS NULL AND banned=0").first<{total:number}>();
+      const listings=await env.DB.prepare("SELECT COUNT(*) AS total FROM public_marketplace_search").first<{total:number}>();
+      return json({success:true,data:{total_users:Number(users?.total||0),total_listings:Number(listings?.total||0)}});
+    }catch{return fail("Overview unavailable",503);}
+  }
   if(path==="/internal/v1/idempotency/consume"&&method==="POST"){
     const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
     const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
