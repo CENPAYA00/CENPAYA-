@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { Wallet, TrendingUp, Lock, ArrowDownToLine, ArrowRight } from 'lucide-react';
 
 export default function SuperAdminDashboard() {
@@ -16,22 +16,18 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     const fetch = async () => {
-      const [users, listings, orders, gains, circulation] = await Promise.all([
-        supabase.from('users').select('id', { count: 'exact', head: true }),
-        supabase.from('listings').select('id', { count: 'exact', head: true }),
-        supabase.from('orders').select('id', { count: 'exact', head: true }),
-        supabase.from('system_gains').select('amount_earned'),
-        supabase.rpc('admin_money_circulation_full'),
-      ]);
-
-      const totalGains = (gains.data || []).reduce((s, g: any) => s + (g.amount_earned || 0), 0);
-      setStats({
-        totalUsers: users.count || 0,
-        totalListings: listings.count || 0,
-        totalOrders: orders.count || 0,
-        platformGains: totalGains,
-      });
-      if (circulation.data?.ok) setCirc(circulation.data);
+      try {
+        const result = await supabaseWorkerRequest<{ data: { total_users: number; total_listings: number; total_orders: number; platform_gains: number; money_circulation: any } }>('/api/v1/admin/overview');
+        setStats({
+          totalUsers: result.data.total_users || 0,
+          totalListings: result.data.total_listings || 0,
+          totalOrders: result.data.total_orders || 0,
+          platformGains: result.data.platform_gains || 0,
+        });
+        setCirc(result.data.money_circulation);
+      } catch (error) {
+        console.error(error);
+      }
       setLoading(false);
     };
     fetch();
