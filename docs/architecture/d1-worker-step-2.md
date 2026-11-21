@@ -10,7 +10,7 @@ Based on the private `cenpaya-d1-export-2026-11-20.zip` supplied for this projec
 
 ## Changes in this integration branch
 
-- Adds migration 47 for D1-owned password hashes and login lookup indexes.
+- Adds migration 47 for D1-owned password hashes, password update timestamps, and unique account-identifier indexes.
 - Adds a D1 Worker with registration, OTP verification, password sign-in, session revocation, profile read/update, public feed read/post creation, marketplace category/search/listing creation, notifications, and support ticket list/create.
 - Keeps financial truth in Supabase. The D1 Worker does not create wallets, debit balances, settle orders, release escrow, activate boosts, or mark monetary referrals paid.
 - Marketplace listing creation starts in `draft`; publication/moderation remains a separate controlled workflow.
@@ -18,11 +18,11 @@ Based on the private `cenpaya-d1-export-2026-11-20.zip` supplied for this projec
 
 ## Required deployment configuration
 
-- Apply `d1-worker/migrations/00047_d1_password_auth.sql` to the D1 database before deploying this Worker.
+- Apply `d1-worker/migrations/00047_d1_password_auth.sql` to D1 only after checking the live database has no duplicate usernames, emails, or phone numbers.
 - Set `ALLOWED_ORIGINS` to the exact CenPaya frontend origins.
 - Set `OTP_PEPPER` as a Worker secret.
 - Bind `OTP_DELIVERY` to the approved email/SMS delivery Worker. The auth registration and verification endpoints fail closed when that binding is unavailable; they do not pretend an OTP was sent.
-- Existing accounts have a NULL `password_hash` after migration and need a password setup/reset process before password sign-in.
+- Existing accounts have a NULL `password_hash` after migration and need to use password setup/reset before password sign-in.
 
 ## Deliberately not claimed as complete
 
