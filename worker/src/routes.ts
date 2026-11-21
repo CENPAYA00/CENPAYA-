@@ -400,6 +400,21 @@ export async function handleAuthenticatedApi(
     const result = await rpc(supabase, "admin_set_app_setting", { p_key: adminSetting[1], p_value: String(body.value) });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
+  if (method === "GET" && path === "/api/v1/admin/overview") {
+    if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) return failure("overview_service_unavailable", 503, headers);
+    try {
+      const [d1Response, orders, gains, circulation] = await Promise.all([
+        env.D1_IDENTITY.fetch("https://d1.internal/internal/v1/admin/overview", { headers: { "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET } }),
+        supabase.from("orders").select("id", { count: "exact", head: true }).abortSignal(AbortSignal.timeout(5_000)),
+        supabase.from("system_gains").select("amount_earned").abortSignal(AbortSignal.timeout(5_000)),
+        rpc(supabase, "admin_money_circulation_full", {}),
+      ]);
+      const d1 = await d1Response.json() as { success?: boolean; data?: { total_users?: number; total_listings?: number } };
+      if (!d1Response.ok || !d1.success || orders.error || gains.error || circulation.error) return failure("overview_lookup_failed", 502, headers);
+      const platformGains = (gains.data || []).reduce((sum, row) => sum + Number(row.amount_earned || 0), 0);
+      return success({ total_users: Number(d1.data?.total_users || 0), total_listings: Number(d1.data?.total_listings || 0), total_orders: orders.count || 0, platform_gains: platformGains, money_circulation: circulation.data }, headers);
+    } catch { return failure("overview_lookup_failed", 503, headers); }
+  }
   if (method === "GET" && path === "/api/v1/admin/finance") {
     const names = ["admin_available_gains", "admin_gains_breakdown", "admin_money_circulation_full"] as const;
     const results = await Promise.all(names.map((name) => rpc(supabase, name, {})));
