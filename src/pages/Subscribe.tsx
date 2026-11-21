@@ -57,7 +57,6 @@ export default function Subscribe() {
 
   const handleSubscribe = async (method: MobileMoneyMethod) => {
     if (!userId) return alert('Please log in.');
-    if (method !== 'wallet' && !paymentPhone.trim()) return alert('Add a mobile money phone number to your profile before continuing.');
     setLoading(method);
     const key = idempotencyKey.current || (idempotencyKey.current = crypto.randomUUID());
     const result = await payForSubscription(method, paymentPhone, key);
