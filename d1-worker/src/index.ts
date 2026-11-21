@@ -273,6 +273,21 @@ async function handle(request:Request,env:Env):Promise<Response>{
       return fail("Identity service unavailable",503);
     }
   }
+  if(path==="/internal/v1/rate-limit/consume"&&method==="POST"){
+    const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
+    const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
+    if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
+    const b=await body(request);
+    const userId=str(b?.user_id,64),action=str(b?.action,20);
+    if(!UUID.test(userId)||!["topup","withdrawal"].includes(action))return fail("Invalid rate-limit request",400);
+    try{
+      const max=action==="topup"?5:3;
+      const allowed=await rateLimit(env,"financial:"+action+":"+userId,max,60);
+      return json({success:true,allowed},allowed?200:429);
+    }catch{
+      return fail("Rate-limit service unavailable",503);
+    }
+  }
   if(path==="/api/auth/register"&&method==="POST"){
     const b=await body(request); if(!b)return fail("Valid JSON body required");
     const username=str(b.username,30).toLowerCase(),display=str(b.display_name,100),email=str(b.email,254).toLowerCase()||null,phone=str(b.phone,32)||null,password=str(b.password,128);
