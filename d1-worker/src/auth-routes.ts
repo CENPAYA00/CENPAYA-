@@ -11,7 +11,7 @@ async function body(request:Request):Promise<Record<string,unknown>|null>{const 
 
 function sessionJson(data:unknown,token:string,env:Env,status=200){const ttl=Math.max(300,Math.min(2592000,Number(env.SESSION_TTL_SECONDS||2592000)));return json(data,status,{"Set-Cookie":`cenpaya_session=${encodeURIComponent(token)}; Path=/; Max-Age=${ttl}; HttpOnly; Secure; SameSite=None`});}
 function clearSessionCookie(){return "cenpaya_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None";}
-function requestSessionToken(request:Request){const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\\s+(.+)$/i)?.[1];const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);return (cookie?decodeURIComponent(cookie):"")||bearer||"";}
+function requestSessionToken(request:Request){const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);return (cookie?decodeURIComponent(cookie):"")||bearer||"";}
 export async function handleAuthRoutes(request:Request,env:Env,url:URL,path:string,method:string):Promise<Response|null>{
   if(path==="/api/auth/register"&&method==="POST"){
     const b=await body(request); if(!b)return fail("Valid JSON body required");
