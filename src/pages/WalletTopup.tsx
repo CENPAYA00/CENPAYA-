@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { d1Me } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Me, d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Smartphone, AlertCircle, Check } from 'lucide-react';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
 import Select from '../components/Select';
 
-type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
-const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
+type Method = 'mtn_momo' | 'orange_money';
+const METHODS: Method[] = ['mtn_momo', 'orange_money'];
 
 export default function WalletTopup() {
   const navigate = useNavigate();
@@ -54,20 +54,12 @@ export default function WalletTopup() {
       const { user } = await d1Me();
       if (!user) throw new Error('Please log in to top up your wallet.');
 
-      const { data, error } = await supabase.functions.invoke('initiate-payment', {
-        body: {
-          topup: true,
-          user_id: user.id,
-          amount: parsedAmount,
-          phone_number: `${prefix} ${phone.trim()}`,
-          payment_method: provider,
-          country_iso: selectedCountry,
-        },
+      const response = await supabaseWorkerRequest<{ data: { checkout_url?: string | null; status?: string } }>('/api/v1/wallet/topups', {
+        method: 'POST',
+        body: JSON.stringify({ amount: parsedAmount, provider: 'CAMPAY', phone: `${prefix} ${phone.trim()}`, idempotency_key: crypto.randomUUID() }),
       });
-
-      if (error) throw error;
-      // Request acceptance is not proof of payment; the provider callback must credit the wallet.
-      if (data?.ok !== true) throw new Error(data?.error || 'The payment provider did not accept the top-up request.');
+      // A pending request is not proof of payment; the provider callback credits the wallet.
+      if (response.data.checkout_url) window.location.href = response.data.checkout_url;
 
       setSuccess(true);
       setTimeout(() => navigate('/wallet'), 1800);
