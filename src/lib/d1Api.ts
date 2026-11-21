@@ -64,7 +64,7 @@ export async function d1VerifyOtp(user_id: string, code: string, purpose: 'verif
   const result = await d1Request<{ user: D1User }>('/api/auth/verify', {
     method: 'POST', body: JSON.stringify({ user_id, code, purpose }),
   });
-  await refreshD1Session(true); return result;
+  return result;
 }
 
 export function d1ResendOtp(identifier: string, purpose: 'verify_email' | 'verify_phone' = 'verify_email') {
