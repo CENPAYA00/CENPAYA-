@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { getD1ApiUrl, getD1Token, d1Request } from '../lib/d1Api';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { getCachedUser, setCached } from '../lib/cache';
@@ -36,9 +36,7 @@ export default function CreatePost() {
   useEffect(() => {
     let mounted = true;
     getCachedUser().then(u => { if (mounted) setUser(u); });
-    supabase.from('app_settings').select('value').eq('key', 'video_posts_enabled').maybeSingle().then(({ data }) => {
-      if (mounted) setVideoEnabled(data?.value === 'true');
-    });
+    d1Request<{ value?: string }>('/api/app-settings/video_posts_enabled').then(result => { if (mounted) setVideoEnabled(result.value === 'true'); }).catch(() => { if (mounted) setVideoEnabled(false); });
     return () => { mounted = false; };
   }, []);
 
@@ -93,55 +91,37 @@ export default function CreatePost() {
 
     setLoading(true);
     try {
-      // The current D1 Worker supports text-only public posts. Rich posts still
-      // use the existing path until D1 media/tag/feeling endpoints are available.
-      if (images.length === 0 && !isColorActive && !feeling && taggedUsers.length === 0) {
-        await d1Request<{ id: string }>('/api/posts', {
-          method: 'POST',
-          body: JSON.stringify({ content: content.trim(), post_type: 'text', visibility: 'public' }),
-        });
-        setCached('home_posts', null);
-        setLoading(false);
-        navigate('/home');
-        return;
-      }
-
       const urls: string[] = [];
       for (const img of images) {
         const compressed = await compressImage(img);
-        const ext = compressed.name.split('.').pop();
-        const path = `posts/${me.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('listings').upload(path, compressed);
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('listings').getPublicUrl(path);
-        urls.push(urlData.publicUrl);
+        const form = new FormData();
+        form.append('file', compressed, compressed.name || 'post-image.jpg');
+        form.append('folder', 'posts');
+        const token = getD1Token();
+        const response = await fetch(getD1ApiUrl('/api/posts/media'), {
+          method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
+        });
+        const uploaded = await response.json().catch(() => ({}));
+        if (!response.ok || !uploaded.url) throw new Error(uploaded.error || 'Image upload failed');
+        urls.push(uploaded.url as string);
       }
 
-      let postType: 'text' | 'colored' | 'image' = 'text';
-      if (urls.length > 0) postType = 'image';
-      else if (isColorActive) postType = 'colored';
-
-      const payload: any = {
-        user_id: me.id, content: content.trim() || null,
-        image_url: urls.length > 0 ? urls.join(',') : null,
-        post_type: postType, bg_color: postType === 'colored' ? bg.id : null,
-        moderation_status: 'approved', privacy: 'public',
-        likes_count: 0, comments_count: 0, shares_count: 0,
-      };
-
-      if (feeling) {
-        payload.feeling = feeling.option.label;
-        payload.feeling_emoji = feeling.option.emoji;
-        payload.feeling_kind = feeling.kind;
-      }
-
-      const { data: createdPost, error } = await supabase.from('posts').insert(payload).select().single();
-      if (error) throw error;
-
-      for (const tagged of taggedUsers) {
-        await supabase.rpc('tag_user_on_post', { p_post_id: createdPost.id, p_tagged_user_id: tagged.id });
-      }
-
+      const postType = urls.length > 0 ? 'image' : 'text';
+      const result = await d1Request<{ id: string }>('/api/posts', {
+        method: 'POST',
+        body: JSON.stringify({
+          content: content.trim(),
+          post_type: postType,
+          visibility: 'public',
+          media_urls: urls,
+          image_url: urls.join(','),
+          background_id: isColorActive ? bg.id : null,
+          feeling: feeling?.option.label || null,
+          feeling_emoji: feeling?.option.emoji || null,
+          feeling_kind: feeling?.kind || null,
+          tagged_user_ids: taggedUsers.map((tagged: any) => tagged.id),
+        }),
+      });
       setCached('home_posts', null);
       navigate('/home');
     } catch (e: any) {
