@@ -1,6 +1,6 @@
 /* src/hooks/useReadReceipts.ts */
 import { useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 
 export function useReadReceipts(
   channelId: string | undefined,
@@ -12,18 +12,9 @@ export function useReadReceipts(
     const mark = async (): Promise<void> => {
       if (document.hidden) return;
       try {
-        await supabase
-          .from('chat_messages')
-          .update({ read_at: new Date().toISOString() })
-          .eq('channel_id', channelId)
-          .neq('sender_id', myUserId)
-          .is('read_at', null);
-
-        await supabase
-          .from('chat_participants')
-          .update({ last_read_at: new Date().toISOString() })
-          .eq('channel_id', channelId)
-          .eq('user_id', myUserId);
+        await d1Request(`/api/chat/threads/${encodeURIComponent(channelId)}/read`, {
+          method: 'POST',
+        });
       } catch (e: unknown) {
         console.warn('read receipt failed', e);
       }
