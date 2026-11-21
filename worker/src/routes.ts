@@ -307,7 +307,7 @@ export async function handleAuthenticatedApi(
     // The live financial RPCs still mutate wallets (the XAF legacy wallet).
     // user_balances is currently an empty multi-currency table, so expose its
     // rows alongside the active wallet without silently replacing XAF values.
-    const [{ data: balances, error: balancesError }, { data: legacy, error: legacyError }] = await Promise.all([
+    const [{ data: balances, error: balancesError }, { data: legacy, error: legacyError }, { data: escrow, error: escrowError }] = await Promise.all([
       supabase.from("user_balances")
         .select("currency_code,available_funds,referral_earnings_available,referral_pending_lock,referral_received_locked")
         .eq("user_id", userId).order("currency_code", { ascending: true })
@@ -315,8 +315,10 @@ export async function handleAuthenticatedApi(
       supabase.from("wallets")
         .select("available_funds,referral_earnings_available,referral_pending_lock,referral_received_locked")
         .eq("user_id", userId).abortSignal(AbortSignal.timeout(5_000)).maybeSingle(),
+      supabase.from("buyer_escrow_summary").select("*").eq("user_id", userId)
+        .abortSignal(AbortSignal.timeout(5_000)).maybeSingle(),
     ]);
-    if (balancesError || legacyError) return failure("wallet_lookup_failed", 502, headers);
+    if (balancesError || legacyError || escrowError) return failure("wallet_lookup_failed", 502, headers);
     // XAF remains backed by wallets until every financial RPC is migrated.
     // Keep other currency rows from user_balances and replace any duplicate XAF row.
     const allBalances = (balances || []).filter((balance) => !legacy || balance.currency_code !== "XAF");
@@ -327,6 +329,7 @@ export async function handleAuthenticatedApi(
     return success(primary ? {
       ...primary,
       balances: allBalances,
+      escrow_summary: escrow || null,
       source: legacy ? "wallets_xaf_with_user_balances" : "user_balances",
     } : null, headers);
   }
