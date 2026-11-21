@@ -1,8 +1,9 @@
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 import { MyReferralsDashboard, ReferralDashboardItem } from '../types/ReferralDashboard';
 
 export async function getMyReferralDashboard(): Promise<MyReferralsDashboard | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { user } = await d1Me();
   if (!user) return null;
 
   // Fetch the flat dashboard rows from the view
