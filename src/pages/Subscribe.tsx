@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
   MobileMoneyMethod,
@@ -35,18 +36,17 @@ export default function Subscribe() {
       if (!user) return;
       setUserId(user.id);
 
-      const [userRes, walletRes] = await Promise.all([
-        supabase.from('users').select('is_subscribed, country_iso').eq('id', user.id).single(),
+      const [userRes, walletRes, profileRes] = await Promise.all([
+        supabase.from('users').select('is_subscribed').eq('id', user.id).single(),
         supabase.from('wallets').select('available_funds').eq('user_id', user.id).single(),
+        d1Request<{ data: any }>('/api/me/personal-details'),
       ]);
+      const countryCode = profileRes.data?.country_iso || 'CM';
 
-      if (userRes.data) {
-        setIsSubscribed(userRes.data.is_subscribed);
-        setCountry(userRes.data.country_iso || 'CM');
-      }
+      if (userRes.data) setIsSubscribed(userRes.data.is_subscribed);
       if (walletRes.data) setWalletBalance(walletRes.data.available_funds);
-
-      setMethods(availableMethods(userRes.data?.country_iso || 'CM'));
+      setCountry(countryCode);
+      setMethods(availableMethods(countryCode));
     };
     load();
   }, []);
