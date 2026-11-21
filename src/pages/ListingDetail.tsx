@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Shield, MessageCircle, ShoppingCart, MapPin, Package, Zap } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import ImageViewer from '../components/ImageViewer';
@@ -22,23 +22,20 @@ export default function ListingDetail() {
   useEffect(() => {
     const load = async () => {
       if (!id) return;
-      const me = await getCachedUser();
-      setMeId(me?.id || null);
-
-      const { data } = await supabase.from('listings').select('*').eq('id', id).single();
-      setListing(data);
-
-      if (data?.seller_id) {
-        const { data: profile } = await supabase
-          .from('public_profiles')
-          .select('id, username, avatar_url')
-          .eq('id', data.seller_id)
-          .maybeSingle();
-        setSeller(profile);
-      }
-      setLoading(false);
+      try {
+        const me = await getCachedUser();
+        setMeId(me?.id || null);
+        const result = await d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(id)}`);
+        const row = result.data;
+        setListing(row);
+        if (row?.seller_id) {
+          const profile = await d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(row.seller_id)}`);
+          setSeller(profile.data);
+        }
+      } catch (error: any) { alert(error.message || 'Could not load listing'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, [id]);
 
   const handleBuy = () => {
@@ -54,45 +51,13 @@ export default function ListingDetail() {
 
     setStartingChat(true);
     try {
-      const { data: mine } = await supabase
-        .from('chat_participants')
-        .select('channel_id')
-        .eq('user_id', me.id);
-
-      const myChannelIds = (mine || []).map((c: any) => c.channel_id);
-
-      let channelId: string | null = null;
-      if (myChannelIds.length > 0) {
-        const { data: match } = await supabase
-          .from('chat_participants')
-          .select('channel_id')
-          .in('channel_id', myChannelIds)
-          .eq('user_id', listing.seller_id)
-          .maybeSingle();
-        channelId = match?.channel_id || null;
-      }
-
-      if (!channelId) {
-        const { data: ch, error: chErr } = await supabase
-          .from('chat_channels')
-          .insert({ channel_type: 'P2P_MARKETPLACE' })
-          .select()
-          .single();
-        if (chErr || !ch) throw chErr || new Error('Could not create channel');
-        channelId = ch.id;
-
-        await supabase.from('chat_participants').insert([
-          { channel_id: channelId, user_id: me.id },
-          { channel_id: channelId, user_id: listing.seller_id },
-        ]);
-      }
-
-      navigate(`/chat/${channelId}`);
-    } catch (e: any) {
-      alert(e.message || 'Could not start chat');
-    } finally {
-      setStartingChat(false);
-    }
+      const result = await d1Request<{ id: string }>('/api/chat/direct', {
+        method: 'POST', body: JSON.stringify({ user_id: listing.seller_id }),
+      });
+      if (!result.id) throw new Error('Conversation was not created');
+      navigate(`/chat/${result.id}`);
+    } catch (e: any) { alert(e.message || 'Could not start chat'); }
+    finally { setStartingChat(false); }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
