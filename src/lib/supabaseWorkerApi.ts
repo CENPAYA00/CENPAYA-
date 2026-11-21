@@ -1,3 +1,5 @@
+import { getD1Token, refreshD1Session } from './d1Api';
+
 const API_BASE = String(import.meta.env.VITE_SUPABASE_WORKER_URL ?? '').trim().replace(/\/$/, '');
 
 type ApiResult<T> = T & { success?: boolean; error?: string };
@@ -26,6 +28,8 @@ export function getSupabaseWorkerUrl(path: string): string {
 export async function supabaseWorkerRequest<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const token = getD1Token() || await refreshD1Session();
+  if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
 
   let response: Response;
   try {
