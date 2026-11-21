@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { X, Search, Users, Send, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getCachedUser } from '../lib/cache';
-import { logActivity } from '../lib/activityLog';
 
 type Target = {
   id: string;
@@ -117,7 +116,6 @@ export default function ShareSheet({ postId, onClose, onShared }: Props) {
         }
       }
 
-      await logActivity('post_shared', { post_id: postId, to: t.kind });
       onShared?.();
       onClose();
     } catch (e) {
