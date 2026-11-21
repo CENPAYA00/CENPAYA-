@@ -2,6 +2,7 @@ import type { Env, User } from "./types.js";
 import { uuid } from "./security.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
 const fail=(message:string,status=400)=>json({success:false,error:message},status);
 const str=(v:unknown,max=500)=>typeof v==="string"?v.trim().slice(0,max):"";
