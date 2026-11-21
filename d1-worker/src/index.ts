@@ -433,8 +433,35 @@ async function handle(request:Request,env:Env):Promise<Response>{
       const entityKind=rawKind.includes("listing")?"listing":rawKind.includes("service")?"service":rawKind.includes("post")?"post":rawKind;
       return {id:String(metadata.id||metadata.entity_id||item?.id||item?._id||""),kind:entityKind,title:String(metadata.title||metadata.name||content.slice(0,100)||"Search result"),subtitle:String(metadata.subtitle||metadata.username||metadata.location||""),cover:metadata.cover_url||metadata.image_url||metadata.thumbnail_url||null,meta:metadata.meta||"",is_demo:!!metadata.is_demo,score:item?.score??item?._score??null,snippet:content.slice(0,320)};
     }).filter((item:any)=>item.id&& (kind==="all"||item.kind===kind|| (kind==="market"&&item.kind==="listing") || (kind==="services"&&item.kind==="service") || (kind==="home"&&item.kind==="post")));
-    await cachePut(env,cacheKey,normalized,60);
-    return json({success:true,data:normalized,source:"ai-search"});
+    const ids=[...new Set(normalized.map((item:any)=>item.id))].slice(0,limit);
+    if(!ids.length)return json({success:true,data:[],source:"ai-search"});
+    const placeholders=ids.map(()=>"?").join(",");
+    let verified:any[]=[];
+    if(kind==="post"||kind==="home"){
+      const rows=await env.DB.prepare(`SELECT p.id,p.content,p.post_type,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url
+        FROM posts p JOIN users u ON u.id=p.author_id
+        WHERE p.id IN (${placeholders}) AND p.status='published' AND p.deleted_at IS NULL AND p.visibility='public'
+        AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(...ids).all();
+      const hitMap=new Map(normalized.map((item:any)=>[item.id,item]));
+      verified=rows.results.map((row:any)=>{
+        const hit:any=hitMap.get(row.id)||{};
+        return {id:row.id,kind:"post",title:String(row.content||hit.title||"Post").slice(0,100),subtitle:row.username?"@"+row.username:hit.subtitle,cover:hit.cover||null,meta:row.created_at?new Date(row.created_at).toLocaleDateString():"",is_demo:!!hit.is_demo,score:hit.score,snippet:hit.snippet};
+      });
+    }else{
+      const rows=await env.DB.prepare(`SELECT * FROM public_marketplace_search WHERE listing_id IN (${placeholders})`).bind(...ids).all();
+      const hitMap=new Map(normalized.map((item:any)=>[item.id,item]));
+      verified=rows.results.map((row:any)=>{
+        const hit:any=hitMap.get(String(row.listing_id))||{};
+        const listingType=String(row.listing_type||hit.kind||"listing").toLowerCase();
+        const entityKind=listingType.includes("service")?"service":"listing";
+        const images=Array.isArray(row.images)?row.images:typeof row.images==="string"?row.images.split(","):[];
+        const price=row.price_amount??row.price??null;
+        const currency=row.currency_code||"XAF";
+        return {id:String(row.listing_id),kind:entityKind,title:String(row.product_title||row.title||hit.title||"Marketplace item"),subtitle:String(row.location_city||row.location_region||row.country_code||hit.subtitle||""),cover:row.image_url||images[0]||hit.cover||null,meta:price===null?String(hit.meta||""):`${Number(price).toLocaleString()} ${currency}`,is_demo:!!row.is_demo||!!hit.is_demo,score:hit.score,snippet:hit.snippet};
+      }).filter((item:any)=>kind==="all"||kind==="market"||kind==="services"&&item.kind==="service"||kind==="listing"&&item.kind==="listing"||kind==="service"&&item.kind==="service");
+    }
+    await cachePut(env,cacheKey,verified,60);
+    return json({success:true,data:verified,source:"ai-search"});
   }
   if(path==="/api/market/search"&&method==="GET"){
     const q=str(url.searchParams.get("q"),100).replace(/[%_]/g,""),category=str(url.searchParams.get("category_id"),64),country=str(url.searchParams.get("country"),2).toUpperCase();
