@@ -586,6 +586,31 @@ export async function handleGatewayWebhook(request: Request, env: Env): Promise<
     : text(payload.reference, 200);
   if (!externalId || !reference) return jsonResponse({ ok: false, error: "missing_payment_reference" }, 400);
 
+  if (/^[0-9a-f-]{36}$/i.test(externalId)) {
+    let membership: Record<string, unknown> = {};
+    try { membership = object(await callRpc(db, "cenpaya_momo_membership_get", { p_payment_id: externalId })); }
+    catch { return jsonResponse({ ok: false, error: "membership_payment_record_unavailable" }, 503); }
+    if (membership.id) {
+      if (String(membership.provider).toUpperCase() !== provider) return jsonResponse({ ok: false, error: "membership_provider_mismatch" }, 409);
+      if (membership.provider_reference && membership.provider_reference !== reference) return jsonResponse({ ok: false, error: "membership_reference_mismatch" }, 409);
+      if (!membership.provider_reference) {
+        const attached = object(await callRpc(db, "cenpaya_momo_membership_attach", { p_payment_id: externalId, p_provider_reference: reference }));
+        if (attached.ok !== true) return jsonResponse({ ok: false, error: "membership_reference_mismatch" }, 409);
+      }
+      let verified: ProviderStatus;
+      try { verified = await providerStatus(provider, creds, env, reference); }
+      catch { return jsonResponse({ ok: false, error: "membership_payment_status_unavailable" }, 503); }
+      if (verified.status === "SUCCESSFUL" || verified.status === "FAILED") {
+        const result = object(await callRpc(db, "cenpaya_momo_membership_confirm", {
+          p_payment_id: externalId, p_provider_reference: reference,
+          p_success: verified.status === "SUCCESSFUL", p_paid_amount: verified.amount, p_currency: verified.currency,
+          p_reason: verified.status === "FAILED" ? "Provider reported failed payment" : null,
+        }));
+        return jsonResponse({ ok: result.ok === true, status: result.status || (result.ok === true ? "succeeded" : "needs_review") }, result.ok === true ? 200 : 409);
+      }
+      return jsonResponse({ ok: true, status: "pending" }, 202);
+    }
+  }
   let topup: Record<string, unknown> = {};
   try {
     topup = object(await callRpc(db, "worker_get_topup_payment_details", { p_topup_id: externalId }));
