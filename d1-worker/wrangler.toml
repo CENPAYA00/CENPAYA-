@@ -24,6 +24,8 @@ database_id = "68b307af-935e-45ca-933f-2e4cf6db8ee2"
 #
 # Configure these Worker secrets:
 # OTP_PEPPER
+# D1_INTERNAL_CALL_SECRET (must match the Supabase Worker's D1_INTERNAL_CALL_SECRET)
+# D1_TO_SUPABASE_HMAC_SECRET (must match the Supabase Worker's D1_TO_SUPABASE_HMAC_SECRET)
 # GOOGLE_CLIENT_ID
 # GOOGLE_CLIENT_SECRET
 # UPSTASH_REDIS_REST_TOKEN (optional)
