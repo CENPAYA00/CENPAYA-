@@ -182,9 +182,9 @@ export async function handleAuthenticatedApi(
       const amountValue = isRange ? listing.price_min : listing.price;
       const amount = typeof amountValue === "number" ? amountValue : Number(amountValue);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000_000) return failure("listing_price_invalid", 409, headers);
-      const { data: member, error: memberError } = await supabase.from("users").select("is_subscribed").eq("id", userId).maybeSingle();
-      if (memberError) return failure("checkout_membership_unavailable", 503, headers);
-      const suffix = member?.is_subscribed ? "member" : "non_member";
+      const member = await readUserProfile(supabase, userId);
+      if (!member) return failure("checkout_membership_unavailable", 503, headers);
+      const suffix = member.is_subscribed ? "member" : "non_member";
       const [{ data: pct, error: pctError }, { data: fixed, error: fixedError }] = await Promise.all([
         supabase.rpc("setting", { p_key: "fee_pct_" + suffix }),
         supabase.rpc("setting", { p_key: "fee_fixed_" + suffix }),
@@ -232,9 +232,9 @@ export async function handleAuthenticatedApi(
         amount > 1_000_000_000_000 || listing.status === "deleted" || listing.status === "inactive") {
       return failure("listing_not_available", 409, headers);
     }
-    const { data: member, error: memberError } = await supabase.from("users").select("is_subscribed").eq("id", userId).maybeSingle();
-    if (memberError) return failure("checkout_membership_unavailable", 503, headers);
-    const suffix = member?.is_subscribed ? "member" : "non_member";
+    const member = await readUserProfile(supabase, userId);
+    if (!member) return failure("checkout_membership_unavailable", 503, headers);
+    const suffix = member.is_subscribed ? "member" : "non_member";
     const [{ data: feePctData, error: feePctError }, { data: feeFixedData, error: feeFixedError }] = await Promise.all([
       supabase.rpc("setting", { p_key: "fee_pct_" + suffix }),
       supabase.rpc("setting", { p_key: "fee_fixed_" + suffix }),
