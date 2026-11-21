@@ -337,46 +337,76 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(cached)return json({success:true,data:cached,source:"cache"});
     const index=env.AI.autorag(env.AI_SEARCH_NAME);
     const raw=await index.search({query:q,rewrite_query:true,max_num_results:limit});
-    const root=raw as {data?:unknown[];results?:unknown[];hits?:{hits?:unknown[]}};
-    const results=Array.isArray(root?.data)?root.data:Array.isArray(root?.results)?root.results:Array.isArray(root?.hits?.hits)?root.hits.hits:[];
-    const normalized=results.map((item:any)=>{
-      const metadata=item?.metadata||item?.attributes||item?.meta||item?._source||{};
-      const content=typeof item?.content==="string"?item.content:typeof item?.text==="string"?item.text:typeof item?.snippet==="string"?item.snippet:typeof metadata?.content==="string"?metadata.content:"";
-      const rawKind=String(metadata.kind||metadata.entity_type||metadata.type||"post").toLowerCase();
+    type SearchHit = {
+      id: string; kind: string; title: string; subtitle: string; cover: string | null;
+      meta: string; is_demo: boolean; score: unknown; snippet: string;
+    };
+    const asRecord=(value:unknown):Record<string,unknown> =>
+      value!==null&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
+    const firstString=(...values:unknown[]):string=>{
+      const value=values.find(item=>typeof item==="string"&&item.length>0);
+      return typeof value==="string"?value:"";
+    };
+    const root=asRecord(raw),hits=asRecord(root.hits);
+    const rawResults=Array.isArray(root.data)?root.data:Array.isArray(root.results)?root.results:Array.isArray(hits.hits)?hits.hits:[];
+    const normalized:SearchHit[]=rawResults.map((rawItem:unknown)=>{
+      const item=asRecord(rawItem);
+      const metadata=asRecord(item.metadata??item.attributes??item.meta??item._source);
+      const content=firstString(item.content,item.text,item.snippet,metadata.content);
+      const rawKind=firstString(metadata.kind,metadata.entity_type,metadata.type,"post").toLowerCase();
       const entityKind=rawKind.includes("listing")?"listing":rawKind.includes("service")?"service":rawKind.includes("post")?"post":rawKind;
-      return {id:String(metadata.id||metadata.entity_id||item?.id||item?._id||""),kind:entityKind,title:String(metadata.title||metadata.name||content.slice(0,100)||"Search result"),subtitle:String(metadata.subtitle||metadata.username||metadata.location||""),cover:metadata.cover_url||metadata.image_url||metadata.thumbnail_url||null,meta:metadata.meta||"",is_demo:!!metadata.is_demo,score:item?.score??item?._score??null,snippet:content.slice(0,320)};
-    }).filter((item:any)=>item.id&& (kind==="all"||item.kind===kind|| (kind==="market"&&item.kind==="listing") || (kind==="services"&&item.kind==="service") || (kind==="home"&&item.kind==="post")));
-    const ids=[...new Set(normalized.map((item:any)=>item.id))].slice(0,limit);
+      const cover=firstString(metadata.cover_url,metadata.image_url,metadata.thumbnail_url)||null;
+      return {
+        id:firstString(metadata.id,metadata.entity_id,item.id,item._id),
+        kind:entityKind,
+        title:firstString(metadata.title,metadata.name,content.slice(0,100),"Search result"),
+        subtitle:firstString(metadata.subtitle,metadata.username,metadata.location),
+        cover,meta:firstString(metadata.meta),is_demo:metadata.is_demo===true||metadata.is_demo===1,
+        score:item.score??item._score??null,snippet:content.slice(0,320),
+      };
+    }).filter((item)=>item.id.length>0&&(kind==="all"||item.kind===kind||
+      (kind==="market"&&item.kind==="listing")||(kind==="services"&&item.kind==="service")||
+      (kind==="home"&&item.kind==="post")));
+    const ids=[...new Set(normalized.map((item)=>item.id))].slice(0,limit);
     if(!ids.length)return json({success:true,data:[],source:"ai-search"});
     const placeholders=ids.map(()=>"?").join(",");
-    let verified:any[]=[];
+    let verified:SearchHit[]=[];
+    const hitMap=new Map(normalized.map((item)=>[item.id,item]));
     if(kind==="post"||kind==="home"){
       const rows=await env.DB.prepare(`SELECT p.id,p.content,p.post_type,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url
         FROM posts p JOIN users u ON u.id=p.author_id
         WHERE p.id IN (${placeholders}) AND p.status='published' AND p.deleted_at IS NULL AND p.visibility='public'
         AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(...ids).all();
-      const hitMap=new Map(normalized.map((item:any)=>[item.id,item]));
-      verified=rows.results.map((row:any)=>{
-        const hit:any=hitMap.get(row.id)||{};
-        return {id:row.id,kind:"post",title:String(row.content||hit.title||"Post").slice(0,100),subtitle:row.username?"@"+row.username:hit.subtitle,cover:hit.cover||null,meta:row.created_at?new Date(row.created_at).toLocaleDateString():"",is_demo:!!hit.is_demo,score:hit.score,snippet:hit.snippet};
+      verified=(rows.results as Array<Record<string,unknown>>).map((row)=>{
+        const hit=hitMap.get(String(row.id));
+        const content=firstString(row.content,hit?.title,"Post");
+        return {id:String(row.id),kind:"post",title:content.slice(0,100),
+          subtitle:firstString(row.username? "@"+String(row.username):"",hit?.subtitle),
+          cover:hit?.cover??null,meta:row.created_at?new Date(String(row.created_at)).toLocaleDateString():"",
+          is_demo:hit?.is_demo??false,score:hit?.score??null,snippet:hit?.snippet??""};
       });
     }else{
       const rows=await env.DB.prepare(`SELECT * FROM public_marketplace_search WHERE listing_id IN (${placeholders})`).bind(...ids).all();
-      const hitMap=new Map(normalized.map((item:any)=>[item.id,item]));
-      verified=rows.results.map((row:any)=>{
-        const hit:any=hitMap.get(String(row.listing_id))||{};
-        const listingType=String(row.listing_type||hit.kind||"listing").toLowerCase();
+      verified=(rows.results as Array<Record<string,unknown>>).map((row)=>{
+        const hit=hitMap.get(String(row.listing_id));
+        const listingType=firstString(row.listing_type,hit?.kind,"listing").toLowerCase();
         const entityKind=listingType.includes("service")?"service":"listing";
-        let images:any[]=[];
-        if(Array.isArray(row.images))images=row.images;
+        let images:string[]=[];
+        if(Array.isArray(row.images))images=row.images.filter((value):value is string=>typeof value==="string");
         else if(typeof row.images==="string"){
-          try{const parsed=JSON.parse(row.images);images=Array.isArray(parsed)?parsed:row.images.split(",");}
+          try{const parsed:unknown=JSON.parse(row.images);images=Array.isArray(parsed)?parsed.filter((value):value is string=>typeof value==="string"):row.images.split(",");}
           catch{images=row.images.split(",");}
         }
         const price=row.price_amount??row.price??null;
-        const currency=row.currency_code||"XAF";
-        return {id:String(row.listing_id),kind:entityKind,title:String(row.product_title||row.title||hit.title||"Marketplace item"),subtitle:String(row.location_city||row.location_region||row.country_code||hit.subtitle||""),cover:row.image_url||images[0]||hit.cover||null,meta:price===null?String(hit.meta||""):`${Number(price).toLocaleString()} ${currency}`,is_demo:!!row.is_demo||!!hit.is_demo,score:hit.score,snippet:hit.snippet};
-      }).filter((item:any)=>kind==="all"||kind==="market"||kind==="services"&&item.kind==="service"||kind==="listing"&&item.kind==="listing"||kind==="service"&&item.kind==="service");
+        const currency=firstString(row.currency_code,"XAF");
+        const image=firstString(row.image_url,images[0],hit?.cover)||null;
+        return {id:String(row.listing_id),kind:entityKind,
+          title:firstString(row.product_title,row.title,hit?.title,"Marketplace item"),
+          subtitle:firstString(row.location_city,row.location_region,row.country_code,hit?.subtitle),
+          cover:image,meta:price===null?firstString(hit?.meta):`${Number(price).toLocaleString()} ${currency}`,
+          is_demo:row.is_demo===true||row.is_demo===1||hit?.is_demo===true,score:hit?.score??null,snippet:hit?.snippet??""};
+      }).filter((item)=>kind==="all"||kind==="market"||(kind==="services"&&item.kind==="service")||
+        (kind==="listing"&&item.kind==="listing")||(kind==="service"&&item.kind==="service"));
     }
     await cachePut(env,cacheKey,verified,60);
     return json({success:true,data:verified,source:"ai-search"});
