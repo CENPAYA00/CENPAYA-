@@ -201,8 +201,10 @@ async function handle(request:Request,env:Env):Promise<Response>{
       let userId=identity?.user_id;
       if(!userId){
         const existing=await env.DB.prepare("SELECT id FROM users WHERE lower(email)=? AND deleted_at IS NULL").bind(email).first<{id:string}>();
-        if(existing)userId=existing.id;
-        else{
+        if(existing){
+          userId=existing.id;
+          await env.DB.prepare("UPDATE users SET email_verified=1,email_verified_at="+NOW+",updated_at="+NOW+" WHERE id=?").bind(userId).run();
+        }else{
           const base=(email.split("@")[0]||"google_user").toLowerCase().replace(/[^a-z0-9_]/g,"_").replace(/^_+|_+$/g,"").slice(0,22)||"google_user";
           let username=base+"_"+(await randomToken(4)).replace(/[^a-zA-Z0-9]/g,"").slice(0,6).toLowerCase();
           for(let i=0;i<5;i++){
@@ -211,7 +213,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
             username=base+"_"+(await randomToken(5)).replace(/[^a-zA-Z0-9]/g,"").slice(0,8).toLowerCase();
           }
           userId=uuid();
-          await env.DB.prepare("INSERT INTO users(id,username,display_name,email,email_verified) VALUES(?,?,?,?,1)")
+          await env.DB.prepare("INSERT INTO users(id,username,display_name,email,email_verified,email_verified_at) VALUES(?,?,?,?,1,"+NOW+")")
             .bind(userId,username,str(info.name,100)||base,email).run();
         }
         await env.DB.prepare("INSERT INTO oauth_identities(id,user_id,provider,provider_user_id,email) VALUES(?,?,'google',?,?)")
