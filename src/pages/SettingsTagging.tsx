@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 
 type Tagging = 'everyone' | 'followers' | 'nobody';
@@ -14,33 +14,20 @@ export default function SettingsTagging() {
   const [mentioning, setMentioning] = useState<Tagging>('everyone');
 
   useEffect(() => {
-    const load = async () => {
-      const me = await getCachedUser();
-      if (!me) { setLoading(false); return; }
-      const { data } = await supabase
-        .from('users')
-        .select('allow_tagging, allow_mentioning')
-        .eq('id', me.id)
-        .maybeSingle();
-      if (data?.allow_tagging) setTagging(data.allow_tagging as Tagging);
-      if (data?.allow_mentioning) setMentioning(data.allow_mentioning as Tagging);
-      setLoading(false);
-    };
-    load();
+    d1Request<{ data?: { allow_tagging?: Tagging; allow_mentioning?: Tagging } }>('/api/me/tagging-settings')
+      .then(result => { if (result.data?.allow_tagging) setTagging(result.data.allow_tagging); if (result.data?.allow_mentioning) setMentioning(result.data.allow_mentioning); })
+      .catch((error: any) => alert(error.message || 'Could not load tagging settings'))
+      .finally(() => setLoading(false));
   }, []);
 
   const save = async () => {
     setSaving(true);
-    const me = await getCachedUser();
-    if (!me) { setSaving(false); return; }
-    const { error } = await supabase
-      .from('users')
-      .update({ allow_tagging: tagging, allow_mentioning: mentioning })
-      .eq('id', me.id);
-    setSaving(false);
-    if (error) { alert(error.message); return; }
-    alert('Saved');
-    navigate(-1);
+    try {
+      await d1Request('/api/me/tagging-settings', { method: 'PATCH', body: JSON.stringify({ allow_tagging: tagging, allow_mentioning: mentioning }) });
+      alert('Saved');
+      navigate(-1);
+    } catch (error: any) { alert(error.message || 'Could not save tagging settings'); }
+    finally { setSaving(false); }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
