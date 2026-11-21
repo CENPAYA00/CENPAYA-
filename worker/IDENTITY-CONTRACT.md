@@ -19,7 +19,7 @@
 5. The Supabase Worker verifies the assertion, checks that its subject is a valid UUID, creates a short-lived Supabase-compatible user JWT, and confirms that the same UUID exists in the existing `public.users` table using that user JWT.
 6. The Supabase Worker calls Supabase REST using the anon/publishable API key plus that user-scoped JWT. RLS and existing SQL functions therefore see the correct `auth.uid()`.
 
-If any identity step fails, reject the request. Never use a service-role key as an identity fallback or for user-scoped reads/writes. The separate payment module may use the service-role key only after this identity flow has succeeded, and only for provider credential retrieval and protected machine-to-machine settlement functions.
+If any identity step fails, reject the request. Never use a service-role key as an identity fallback or for user-scoped reads/writes. The separate payment module uses a short-lived JWT for the restricted `cenpaya_payment_worker` Postgres role, signed only inside the Worker after identity verification for user-initiated payment operations or with a fixed system subject for provider webhooks. The service-role key is not used.
 
 ## Internal identity assertion
 

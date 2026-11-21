@@ -15,7 +15,6 @@ service = "cenpaya-d1-worker"
 
 # Configure as Cloudflare Worker secrets, never commit values:
 # SUPABASE_ANON_KEY
-# SUPABASE_SERVICE_ROLE_KEY (server-side payment operations only)
 # D1_INTERNAL_CALL_SECRET
 # D1_TO_SUPABASE_HMAC_SECRET
 # HS256: SUPABASE_JWT_SECRET

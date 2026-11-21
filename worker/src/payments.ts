@@ -57,8 +57,10 @@ async function webhookBody(request: Request): Promise<Record<string, unknown> | 
     return null;
   }
 }
-function service(env: Env): SupabaseClient {
-  return createPaymentServiceClient(env);
+const SYSTEM_WORKER_SUBJECT = "00000000-0000-4000-8000-000000000001";
+
+async function serviceClient(env: Env, subject = SYSTEM_WORKER_SUBJECT): Promise<SupabaseClient> {
+  return createPaymentWorkerClient(env, subject);
 }
 async function credentials(db: SupabaseClient, provider: Gateway, env: Env): Promise<Credentials> {
   const { data, error } = await db.rpc("worker_get_gateway_credentials", {

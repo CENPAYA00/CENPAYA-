@@ -7,7 +7,7 @@ This Worker is the API boundary for CenPaya's Supabase financial database and fi
 - D1 remains the account/session identity authority. The browser's D1 session token is sent to the Worker; it is never treated as a Supabase token.
 - The Worker calls D1 through the private `D1_IDENTITY` service binding, verifies a short-lived HMAC assertion, mints a short-lived Supabase user JWT, and checks the same UUID exists in `public.users.id`.
 - Normal user and finance/admin database requests use `SUPABASE_ANON_KEY` plus that verified user JWT. Existing Supabase RLS and financial permission functions remain authoritative.
-- The service-role key is used only inside `payments.ts` for server-to-server Vault credential retrieval and service-role-only payment/withdrawal settlement RPCs. It is never used for normal user reads/writes or browser-facing admin requests.
+- Payment operations use a separate, 60-second JWT for the restricted `cenpaya_payment_worker` Postgres role, signed with the project's active Supabase signing key. This role has no direct table or sequence privileges; its functions are restricted to provider credential retrieval and protected payment/withdrawal operations. The service-role key is not used by this Worker.
 - D1 roles do not grant financial admin permissions. Caller-supplied actor IDs and roles are not trusted.
 - No Supabase Auth, login/password, OTP, email verification, OAuth, auth/signup migrations, or Supabase Edge Functions are added.
 - No arbitrary table access or arbitrary Postgres RPC execution is exposed.
@@ -22,7 +22,6 @@ Variables:
 
 Secrets:
 - `SUPABASE_ANON_KEY`: project anon/publishable API key.
-- `SUPABASE_SERVICE_ROLE_KEY`: server-only payment operations; never send to the browser.
 - `D1_INTERNAL_CALL_SECRET`: private D1-to-Supabase Worker service-binding secret.
 - `D1_TO_SUPABASE_HMAC_SECRET`: separate HMAC assertion-signing secret.
 - HS256: `SUPABASE_JWT_SECRET`, the project's active legacy JWT secret.
@@ -31,6 +30,8 @@ Secrets:
 Do not put secret values in Git, browser bundles, Wrangler vars, D1 rows, or logs. Use Cloudflare Worker secrets. `worker/.dev.vars.example` contains placeholders only.
 
 ## Identity integration blocker
+
+The payment role is minted only inside the Worker using the active Supabase JWT signing key, has a 60-second lifetime, and is never returned to the browser.
 
 The service binding targets the existing Worker name `cenpaya-d1-worker`. The Supabase Worker expects private `POST /internal/v1/identity/assert`, authenticated with `X-CenPaya-Internal-Secret`, returning `{ "assertion": "<short-lived-HS256-JWT>" }`. The inspected D1 Worker branch does not implement this endpoint. Until that endpoint is implemented and deployed with the two shared secrets, all authenticated routes intentionally fail closed with HTTP 503. This Supabase-only branch does not modify the D1 branch.
 
@@ -84,7 +85,7 @@ The legacy `/api/admin/...` prefix is accepted as an alias for implemented admin
 - repairs gateway credential storage to use the project's existing Supabase Vault and `platform_api_vault.secret_id` metadata (the live table does not have the old API-key columns referenced by the current credential RPC);
 - adds idempotency and provider-attempt metadata;
 - adds user-scoped top-up intent/status functions;
-- adds service-role-only provider reference, settlement, and withdrawal finalization functions.
+- creates the restricted `cenpaya_payment_worker` database role and adds its protected provider reference, settlement, and withdrawal finalization functions.
 
 This migration is committed as a file only. It has **not** been applied to the live Supabase database. Review and apply it through the project's normal migration process before deployment. No live schema or data was changed by this GitHub work.
 

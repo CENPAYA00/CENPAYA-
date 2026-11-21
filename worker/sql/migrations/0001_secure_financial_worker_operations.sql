@@ -61,7 +61,7 @@ end;
 $function$;
 
 revoke all on function public.worker_upsert_vault_secret(uuid, text, text, text)
-  from public, anon, authenticated, service_role;
+  from public, anon, authenticated, service_role, cenpaya_payment_worker;
 
 create or replace function public.admin_set_gateway_credentials(
   p_provider_name text,
@@ -484,8 +484,9 @@ grant execute on function public.worker_get_gateway_credentials(text, text) to c
 
 revoke all on function public.create_wallet_topup_intent(bigint, text, text) from public, anon;
 grant execute on function public.create_wallet_topup_intent(bigint, text, text) to authenticated;
-revoke all on function public.claim_wallet_topup_initiation(uuid) from public, anon, authenticated;
-grant execute on function public.claim_wallet_topup_initiation(uuid) to service_role;
+revoke all on function public.claim_wallet_topup_initiation(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.claim_wallet_topup_initiation(uuid) to cenpaya_payment_worker;
 revoke all on function public.get_wallet_topup_status(uuid) from public, anon;
 grant execute on function public.get_wallet_topup_status(uuid) to authenticated;
 revoke all on function public.record_wallet_topup_provider_reference(uuid, text, text, text)

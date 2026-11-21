@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   signHmacJwt,
   signSupabaseUserJwt,
+  signSupabasePaymentWorkerJwt,
   verifyD1IdentityAssertion,
   verifyHs256Jwt,
 } from "../.test-build/jwt.js";
@@ -92,5 +93,18 @@ void describe("provider callback JWT verification", () => {
     const parts = token.split(".");
     parts[2] = (parts[2][0] === "A" ? "B" : "A") + parts[2].slice(1);
     await assert.rejects(() => verifyHs256Jwt(parts.join("."), secret));
+  });
+});
+
+void describe("restricted payment-worker JWT", () => {
+  void it("uses the dedicated payment role and short expiry", async () => {
+    const token = await signSupabasePaymentWorkerJwt(userId, {
+      SUPABASE_JWT_ALGORITHM: "HS256",
+      SUPABASE_JWT_SECRET: secret,
+    }, now);
+    const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
+    assert.equal(claims.role, "cenpaya_payment_worker");
+    assert.equal(claims.sub, userId);
+    assert.equal(claims.exp - claims.iat, 60);
   });
 });
