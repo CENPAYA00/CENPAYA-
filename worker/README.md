@@ -33,7 +33,7 @@ Do not put secret values in Git, browser bundles, Wrangler vars, D1 rows, or log
 
 The payment role is minted only inside the Worker using the active Supabase JWT signing key, has a 60-second lifetime, and is never returned to the browser.
 
-The service binding targets the existing Worker name `cenpaya-d1-worker`. The Supabase Worker expects private `POST /internal/v1/identity/assert`, authenticated with `X-CenPaya-Internal-Secret`, returning `{ "assertion": "<short-lived-HS256-JWT>" }`. The inspected D1 Worker branch does not implement this endpoint. Until that endpoint is implemented and deployed with the two shared secrets, all authenticated routes intentionally fail closed with HTTP 503. This Supabase-only branch does not modify the D1 branch.
+The service binding targets the existing Worker name `cenpaya-d1-worker`. The existing D1 Worker branch now implements private `POST /internal/v1/identity/assert`, authenticated with `X-CenPaya-Internal-Secret`, returning `{ "assertion": "<short-lived-HS256-JWT>" }`. The D1 Worker also exposes a secret-protected internal rate-limit consumer used for financial initiation. These branch changes must be deployed to the D1 Worker and both shared secrets must match before authenticated Supabase routes can work; otherwise requests fail closed.
 
 The Worker also fails closed if the D1 subject is not a UUID, the active Supabase JWT signing key is not configured, or the same UUID does not exist in the existing `public.users.id` table. It never creates or maps users by email/phone.
 
@@ -62,7 +62,7 @@ All routes below, except liveness, DB health, and provider callbacks, require a 
 | GET | `/api/v1/admin/providers` | Provider metadata only; never secrets |
 | GET | `/api/v1/admin/users` | Existing admin user-list RPC |
 | POST | `/api/v1/admin/escrows/:id/action` | Existing escrow action RPC |
-| POST | `/api/v1/admin/rpc/:name` | Explicit allowlist of existing financial/admin RPCs |
+| POST | `/api/v1/admin/rpc/:name` | Read-only RPC allowlist with strict per-RPC argument schemas; mutations require dedicated typed routes |
 | POST | `/api/v1/webhooks/fapshi` | Verify Fapshi webhook secret and query provider status |
 | POST | `/api/v1/webhooks/campay` | Verify Campay HS256 callback token and query provider status |
 
@@ -75,6 +75,8 @@ The legacy `/api/admin/...` prefix is accepted as an alias for implemented admin
 - Campay top-ups use the existing project's Token-authenticated collect flow. The callback verifier currently expects an HS256 JWT signature; confirm that exact callback contract with Campay before production enablement.
 - Top-up settlement checks the stored provider reference, exact amount, currency, and pending status in a database transaction. Repeated callbacks cannot credit the same top-up twice.
 - Withdrawals reserve funds through the existing `create_withdrawal` function with a new idempotency wrapper. The Worker does **not** mark a payout completed merely because an initiation endpoint returned HTTP 200. It requires a provider transaction reference and a verifiable status response; uncertain requests remain pending for reconciliation rather than being blindly retried or refunded.
+- Top-up initiation is limited to 5 requests per user per 60 seconds; withdrawal initiation is limited to 3 per user per 60 seconds. The Supabase Worker calls the D1 Worker through its private service binding for this limiter and fails closed if the limiter is unavailable. Redis/Upstash is used when configured, with the existing D1 rate-limit table as fallback.
+- When a provider definitively rejects an initiation with HTTP 4xx, the Worker retries the separate database failure transition up to three times. If it cannot confirm that transition, it logs a structured critical event for Cloudflare observability and returns an uncertain-support response; it does not claim the reserved funds were released.
 - Confirm the Fapshi/Campay payout status/reference contracts with the provider accounts before enabling live withdrawals. If a provider does not return a usable reference or verifiable status, the Worker leaves the withdrawal pending.
 - Webhooks are notifications only. The Worker verifies the configured webhook credential and independently queries provider status before changing financial state.
 - No production provider credentials are currently configured in `platform_api_vault`. Configure them through the super-admin gateway credential flow after applying the SQL migration.
