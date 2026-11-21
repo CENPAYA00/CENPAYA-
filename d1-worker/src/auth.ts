@@ -18,7 +18,9 @@ export async function auth(request:Request,env:Env):Promise<User|null>{
   const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];
   const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);
   if(bearer){const user=await userForSessionToken(bearer,env);if(user)return user;}
-  return cookie?userForSessionToken(decodeURIComponent(cookie),env):null;
+  if(!cookie)return null;
+  try{return await userForSessionToken(decodeURIComponent(cookie),env);}
+  catch{return null;}
 }
 export async function rateLimit(env:Env,key:string,max:number,windowSeconds:number):Promise<boolean>{
   if(env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN){
