@@ -96,11 +96,24 @@ export async function handleAuthenticatedApi(
     return profile ? success(profile, headers) : failure("profile_not_found", 404, headers);
   }
   if (method === "GET" && path === "/api/v1/wallet") {
+    // user_balances is the multi-currency source of truth. Keep the legacy
+    // top-level balance fields for older clients, but include every currency.
+    const { data: balances, error: balancesError } = await supabase.from("user_balances")
+      .select("currency_code,available_funds,referral_earnings_available,referral_pending_lock,referral_received_locked")
+      .eq("user_id", userId).order("currency_code", { ascending: true })
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (balancesError) return failure("wallet_lookup_failed", 502, headers);
+    if (balances && balances.length > 0) {
+      const primary = balances.find((balance) => balance.currency_code === "XAF") || balances[0];
+      return success({ ...primary, balances, source: "user_balances" }, headers);
+    }
+
+    // Legacy fallback is only used for users not yet migrated to user_balances.
     const { data, error } = await supabase.from("wallets")
-      .select("available_funds,referral_earnings_available").eq("user_id", userId)
-      .abortSignal(AbortSignal.timeout(5_000)).maybeSingle();
+      .select("available_funds,referral_earnings_available,referral_pending_lock,referral_received_locked")
+      .eq("user_id", userId).abortSignal(AbortSignal.timeout(5_000)).maybeSingle();
     if (error) return failure("wallet_lookup_failed", 502, headers);
-    return success(data, headers);
+    return success(data ? { ...data, currency_code: null, balances: [], source: "wallets_legacy" } : null, headers);
   }
   if (method === "GET" && path === "/api/v1/ledger") {
     const flow = url.searchParams.get("flow");
