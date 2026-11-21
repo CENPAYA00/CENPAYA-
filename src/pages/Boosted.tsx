@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Zap, Store, FileText, Check, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 
 type Tier = { id: number; price: number; duration_days: number; scope: string; label: string; description: string };
@@ -62,20 +63,19 @@ export default function Boosted() {
       const [tiersRes, eligRes, listingsRes, postsRes] = await Promise.all([
         supabase.rpc('list_boost_tiers'),
         supabase.rpc('get_boost_eligibility'),
-        supabase.from('listings').select('id, title, images, boosted_until').eq('seller_id', me.id).eq('moderation_status', 'approved').order('created_at', { ascending: false }).limit(50),
-        // CHANGED: Added bg_color and post_type to the query
-        supabase.from('posts').select('id, content, image_url, boosted_until, post_type, bg_color').eq('user_id', me.id).eq('moderation_status', 'approved').order('created_at', { ascending: false }).limit(50),
+        d1Request<{ data: any[] }>('/api/market/my-listings?limit=50'),
+        d1Request<{ data: any[] }>('/api/posts/mine?limit=50'),
       ]);
 
       setTiers(tiersRes.data || []);
       setElig(eligRes.data);
 
-      setListings((listingsRes.data || []).map((l: any) => {
+      setListings((listingsRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
         let rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
         return { type: 'listing', id: l.id, title: l.title, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until };
       }));
 
-      setPosts((postsRes.data || []).map((p: any) => {
+      setPosts((postsRes.data || []).filter((p: any) => p.moderation_status === 'approved').map((p: any) => {
         let rawImg = p.image_url ? p.image_url.split(',')[0].trim() : null;
         return { 
           type: 'post', 
@@ -113,11 +113,11 @@ export default function Boosted() {
     try {
       const me = await getCachedUser();
       if (me) {
-        await supabase.from('notifications').insert({
-          user_id: me.id, kind: 'system', title: 'Boost activated',
+        await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
+          kind: 'system', title: 'Boost activated',
           body: `${selectedTier.label} — ${selected.type} boosted until ${new Date(data.until).toLocaleDateString()}`,
-          link_url: `/${selected.type}/${selected.id}`, actor_id: me.id,
-        });
+          link_url: `/${selected.type}/${selected.id}`,
+        }) });
       }
     } catch (e) { console.warn('boost notification failed', e); }
 
