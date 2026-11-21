@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Smartphone, AlertCircle } from 'lucide-react';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
@@ -22,7 +23,7 @@ export default function Withdraw() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await d1Me();
       if (!user) return;
       const [walletRes, userRes, countriesRes] = await Promise.all([
         supabase.from('wallets').select('*').eq('user_id', user.id).single(),
@@ -53,7 +54,7 @@ export default function Withdraw() {
     if (Number(amount) > available) return setErrorMsg('Amount exceeds available balance.');
 
     setBusy(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user } = await d1Me();
     if (!user) { setBusy(false); return; }
 
     try {
