@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Search, Briefcase, Zap, Plus, Eye, EyeOff, Store } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
@@ -19,20 +19,19 @@ export default function Services() {
 
   useEffect(() => {
     const load = async () => {
-      const me = await getCachedUser();
-      setMeId(me?.id || null);
-
-      const { data } = await supabase
-        .from('services')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      
-      setServices(data || []);
-      setLoading(false);
+      try {
+        const me = await getCachedUser();
+        setMeId(me?.id || null);
+        const result = await d1Request<{ data: any[] }>('/api/market/search?type=service&limit=50');
+        setServices((result.data || []).map((row: any) => ({
+          ...row, id: row.listing_id || row.id, title: row.product_title || row.title,
+          price: row.product_price ?? row.price_amount ?? row.price, seller_id: row.seller_id || row.merchant_id,
+          is_active: row.status === 'published' || row.status === 'active',
+        })));
+      } catch (error: any) { alert(error.message || 'Could not load services'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, []);
 
   const filtered = services.filter(s => 
