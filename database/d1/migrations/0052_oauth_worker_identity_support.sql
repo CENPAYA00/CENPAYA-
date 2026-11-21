@@ -5,6 +5,7 @@
 -- user_onboarding_details table is needed.
 
 ALTER TABLE users ADD COLUMN password_hash TEXT;
+ALTER TABLE users ADD COLUMN password_updated_at TEXT;
 
 CREATE TABLE IF NOT EXISTS oauth_states (
   state_hash TEXT PRIMARY KEY NOT NULL,
