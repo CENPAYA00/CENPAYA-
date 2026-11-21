@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Heart, MessageCircle, Share2, Bookmark, Send } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import { getBackground, backgroundStyle } from '../lib/postBackgrounds';
@@ -22,102 +22,68 @@ export default function PostView() {
   const [me, setMe] = useState<any>(null);
 
   const loadComments = async (postId: string) => {
-    const { data } = await supabase
-      .from('post_comments')
-      .select('id, body, user_id, created_at, moderation_status')
-      .eq('post_id', postId)
-      .order('created_at', { ascending: true });
-
-    if (!data) return;
-    setComments(data);
-    const ids = [...new Set(data.map((c: any) => c.user_id))];
-    if (ids.length > 0) {
-      const { data: profiles } = await supabase
-        .from('public_profiles')
-        .select('id, username')
-        .in('id', ids);
-      const map: Record<string, string> = {};
-      (profiles || []).forEach((p: any) => { map[p.id] = p.username; });
-      setCommentAuthors(map);
-    }
+    const result = await d1Request<{ data: any[] }>(`/api/posts/${encodeURIComponent(postId)}/comments`);
+    const rows = result.data || [];
+    setComments(rows);
+    const map: Record<string, string> = {};
+    rows.forEach((c: any) => { if (c.user_id) map[c.user_id] = c.username || 'User'; });
+    setCommentAuthors(map);
   };
 
   useEffect(() => {
     const load = async () => {
       if (!id) return;
-      const u = await getCachedUser();
-      setMe(u);
-
-      const { data } = await supabase.from('posts').select('*').eq('id', id).single();
-      setPost(data);
-
-      if (data?.user_id) {
-        const { data: profile } = await supabase
-          .from('public_profiles')
-          .select('id, username')
-          .eq('id', data.user_id)
-          .maybeSingle();
-        setAuthor(profile);
-      }
-
-      await loadComments(id);
-
-      if (u && data) {
-        const [likeRes, saveRes] = await Promise.all([
-          supabase.from('post_likes').select('id').eq('post_id', id).eq('user_id', u.id).maybeSingle(),
-          supabase.from('saved_posts').select('post_id').eq('post_id', id).eq('user_id', u.id).maybeSingle(),
+      try {
+        const u = await getCachedUser();
+        setMe(u);
+        const [postResult, stateResult] = await Promise.all([
+          d1Request<{ data: any }>(`/api/posts/${encodeURIComponent(id)}`),
+          d1Request<{ data?: { liked?: boolean; saved?: boolean } }>(`/api/posts/${encodeURIComponent(id)}/my-state`).catch(() => ({ data: undefined })),
         ]);
-        setLiked(!!likeRes.data);
-        setSaved(!!saveRes.data);
-      }
-      setLoading(false);
+        const row = postResult.data;
+        setPost(row);
+        if (row?.author_id || row?.user_id) {
+          const profile = await d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(row.author_id || row.user_id)}`);
+          setAuthor(profile.data);
+        }
+        await loadComments(id);
+        setLiked(!!stateResult.data?.liked);
+        setSaved(!!stateResult.data?.saved);
+      } catch (error: any) { alert(error.message || 'Could not load post'); }
+      finally { setLoading(false); }
     };
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void load();
   }, [id]);
 
   const toggleLike = async () => {
-    const u = me || await getCachedUser();
-    if (!u || !post) return;
-    if (liked) {
-      await supabase.from('post_likes').delete().eq('post_id', post.id).eq('user_id', u.id);
-      setPost({ ...post, likes_count: Math.max(0, (post.likes_count || 1) - 1) });
-    } else {
-      await supabase.from('post_likes').insert({ post_id: post.id, user_id: u.id });
-      setPost({ ...post, likes_count: (post.likes_count || 0) + 1 });
-    }
-    setLiked(!liked);
+    if (!post) return;
+    const next = !liked;
+    setLiked(next);
+    setPost({ ...post, likes_count: Math.max(0, (post.likes_count || 0) + (next ? 1 : -1)) });
+    try { await d1Request(`/api/posts/${encodeURIComponent(post.id)}/like`, { method: next ? 'POST' : 'DELETE' }); }
+    catch (error: any) { setLiked(!next); setPost((p: any) => ({ ...p, likes_count: Math.max(0, (p.likes_count || 0) + (next ? -1 : 1)) })); alert(error.message || 'Could not update like'); }
   };
 
   const toggleSave = async () => {
-    const u = me || await getCachedUser();
-    if (!u || !post) return;
-    if (saved) {
-      await supabase.from('saved_posts').delete().eq('post_id', post.id).eq('user_id', u.id);
-    } else {
-      await supabase.from('saved_posts').insert({ post_id: post.id, user_id: u.id });
-    }
-    setSaved(!saved);
+    if (!post) return;
+    const next = !saved;
+    setSaved(next);
+    try { await d1Request(`/api/posts/${encodeURIComponent(post.id)}/save`, { method: next ? 'POST' : 'DELETE' }); }
+    catch (error: any) { setSaved(!next); alert(error.message || 'Could not update saved post'); }
   };
 
   const submitComment = async () => {
     if (!commentInput.trim() || !id) return;
     setSending(true);
-    const u = me || await getCachedUser();
-    if (!u) { setSending(false); return alert('Please log in to comment.'); }
-
-    const { error } = await supabase
-      .from('post_comments')
-      .insert({ post_id: id, user_id: u.id, body: commentInput.trim() });
-
-    if (!error) {
+    try {
+      const u = me || await getCachedUser();
+      if (!u) throw new Error('Please log in to comment.');
+      await d1Request(`/api/posts/${encodeURIComponent(id)}/comments`, { method: 'POST', body: JSON.stringify({ body: commentInput.trim() }) });
       setCommentInput('');
       await loadComments(id);
       if (post) setPost({ ...post, comments_count: (post.comments_count || 0) + 1 });
-    } else {
-      alert(error.message);
-    }
-    setSending(false);
+    } catch (error: any) { alert(error.message || 'Could not post comment'); }
+    finally { setSending(false); }
   };
 
   const handleShare = async () => {
@@ -129,7 +95,7 @@ export default function PostView() {
       await navigator.clipboard.writeText(url);
       alert('Link copied');
     }
-    try { await supabase.rpc('track_post_share', { p_post_id: post.id, p_channel: 'external' }); } catch {}
+    try { await d1Request(`/api/posts/${encodeURIComponent(post.id)}/share`, { method: 'POST', body: JSON.stringify({ channel: 'external' }) }); } catch {}
   };
 
   if (loading) return <div className="p-4 text-center text-xs">{t('loading')}</div>;
@@ -150,7 +116,7 @@ export default function PostView() {
 
       <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm overflow-hidden">
         <div className="p-3 flex items-center gap-2">
-          <button onClick={() => navigate(`/seller/${post.user_id}`)} className="flex items-center gap-2 cursor-pointer">
+          <button onClick={() => navigate(`/seller/${(post.author_id || post.user_id)}`)} className="flex items-center gap-2 cursor-pointer">
             <div className="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center text-accent font-bold">
               {author?.username?.[0]?.toUpperCase() || 'U'}
             </div>
