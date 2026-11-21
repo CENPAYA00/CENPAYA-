@@ -49,7 +49,7 @@ async function webhookBody(request: Request): Promise<Record<string, unknown> | 
     if (new TextEncoder().encode(raw).byteLength > BODY_LIMIT) return null;
     if (request.headers.get("content-type")?.toLowerCase().includes("application/x-www-form-urlencoded")) {
       const result: Record<string, unknown> = {};
-      for (const [k, v] of new URLSearchParams(raw)) result[k] = v;
+      new URLSearchParams(raw).forEach((value, key) => { result[key] = value; });
       return result;
     }
     return object(JSON.parse(raw));
