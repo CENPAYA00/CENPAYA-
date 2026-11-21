@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
-import { d1Me } from '../../lib/d1Api';
+import { d1Request } from '../../lib/d1Api';
 import { TrendingUp, Wallet, Settings as Cog, Globe } from 'lucide-react';
 import AdminFinanceGains from './AdminFinanceGains';
 import AdminFinanceExtras from './AdminFinanceExtras';
@@ -27,15 +27,13 @@ export default function AdminFinance() {
 
   const load = async () => {
     setLoading(true);
-    const { user } = await d1Me();
-
     const [gainsRes, settingsRes, regionsRes, walletRes, financeRes, userRes] = await Promise.all([
       supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/gains'),
       supabaseWorkerRequest<{ data: Array<{ key: string; value: string }> }>('/api/v1/admin/settings'),
       supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/regions'),
-      user ? supabaseWorkerRequest<{ data: { available_funds?: number } | null }>('/api/v1/wallet') : Promise.resolve({ data: null }),
+      supabaseWorkerRequest<{ data: { available_funds?: number } | null }>('/api/v1/wallet'),
       supabaseWorkerRequest<{ data: { available_gains?: any; gains_breakdown?: any } }>('/api/v1/admin/finance'),
-      d1Me().then(result => d1Request<{ data: { momo_number?: string; momo_provider?: string } }>('/api/me/personal-details')).catch(() => ({ data: null })),
+      d1Request<{ data: { momo_number?: string; momo_provider?: string } }>('/api/me/personal-details').catch(() => ({ data: null })),
     ]);
 
     if (gainsRes.data) {
