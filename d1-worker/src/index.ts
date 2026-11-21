@@ -2,7 +2,8 @@ import type { Env, User } from "./types.js";
 import { uuid, constantTimeEqual, signD1IdentityAssertion, cacheGet, cachePut } from "./security.js";
 import { digest, passwordHash, verifyPassword } from "./security.js";
 import { handleGoogleOAuth } from "./oauth.js";
-import { rateLimit, readUser, auth, createSession, sendOtp, verifyOtp, safeUser } from "./auth.js";
+import { rateLimit, readUser, auth, sendOtp, verifyOtp, safeUser } from "./auth.js";
+import { createSession } from "./sessions.js";
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
