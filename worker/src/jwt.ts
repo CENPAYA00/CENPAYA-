@@ -58,6 +58,24 @@ export async function signHmacJwt(
   return signingInput + "." + base64UrlEncode(signature);
 }
 
+export async function verifyHs256Jwt(token: string, secret: string): Promise<Record<string, unknown>> {
+  if (token.length > 8192) throw new Error("invalid_signed_token");
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts.some((part) => !part)) throw new Error("invalid_signed_token");
+  const header = decodeJsonSegment<{ alg?: string; typ?: string }>(parts[0]);
+  if (header.alg !== "HS256" || header.typ !== "JWT") throw new Error("invalid_signed_token_algorithm");
+  const key = await hmacKey(secret, ["verify"]);
+  const valid = await crypto.subtle.verify(
+    "HMAC", key, asArrayBuffer(base64UrlDecode(parts[2])), encoder.encode(parts[0] + "." + parts[1]),
+  );
+  if (!valid) throw new Error("invalid_signed_token_signature");
+  const claims = decodeJsonSegment<Record<string, unknown>>(parts[1]);
+  if (typeof claims.exp === "number" && claims.exp <= Math.floor(Date.now() / 1000)) {
+    throw new Error("signed_token_expired");
+  }
+  return claims;
+}
+
 export async function verifyD1IdentityAssertion(
   token: string,
   secret: string,
