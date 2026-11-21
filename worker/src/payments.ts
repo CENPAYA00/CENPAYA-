@@ -104,6 +104,38 @@ async function callRpc(db: SupabaseClient, name: string, args: Record<string, un
   if (error) throw new Error("financial_operation_failed");
   return data;
 }
+
+/**
+ * A provider 4xx is a definitive rejection, but releasing a reservation is a
+ * separate database operation. Retry that idempotent state transition and emit
+ * a structured error for Cloudflare observability if it cannot be confirmed.
+ */
+async function finalizeProviderRejection(
+  db: SupabaseClient,
+  operation: "topup" | "withdrawal",
+  rpcName: string,
+  args: Record<string, unknown>,
+  operationId: string,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      if (await callRpc(db, rpcName, args) === true) return true;
+    } catch {
+      // The RPC may have failed before or after committing. The SQL transition
+      // must remain idempotent; retrying must never create a second payment.
+    }
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+  }
+  console.error(JSON.stringify({
+    event: "payment_rejection_finalization_failed",
+    operation,
+    operation_id: operationId,
+    rpc: rpcName,
+    attempts: 3,
+    severity: "critical",
+  }));
+  return false;
+}
 async function startTopup(
   provider: Gateway, creds: Credentials, env: Env, id: string, amountXaf: number,
   phoneNumber: string | null, email: string,
@@ -232,10 +264,15 @@ export async function handleAuthenticatedPaymentApi(
       } }, 200, headers);
     } catch (error) {
       if (error instanceof Error && /^provider_rejected_4\d\d$/.test(error.message)) {
-        await callRpc(db, "fail_wallet_topup_from_gateway", {
-          p_topup_id: topupId, p_provider: providerName,
-          p_provider_transaction_id: "initiating:" + topupId,
-        }).catch(() => null);
+        const finalized = await finalizeProviderRejection(
+          db, "topup", "fail_wallet_topup_from_gateway", {
+            p_topup_id: topupId, p_provider: providerName,
+            p_provider_transaction_id: "initiating:" + topupId,
+          }, topupId,
+        );
+        if (!finalized) {
+          return jsonResponse({ success: false, error: "payment_initiation_uncertain_contact_support" }, 502, headers);
+        }
         return jsonResponse({ success: false, error: "payment_provider_rejected_request" }, 400, headers);
       }
       return jsonResponse({ success: false, error: "payment_initiation_uncertain_contact_support" }, 502, headers);
@@ -331,11 +368,16 @@ export async function handleAuthenticatedPaymentApi(
       return jsonResponse({ success: true, data: { id: withdrawalId, status: state, gateway_reference: reference } }, 200, headers);
     } catch (error) {
       if (error instanceof Error && /^provider_rejected_4\d\d$/.test(error.message)) {
-        await callRpc(db, "finalize_withdrawal_from_gateway", {
-          p_withdrawal_id: withdrawalId, p_gateway_provider: gateway,
-          p_outcome: "failed", p_gateway_reference: null,
-          p_failure_reason: "Provider rejected payout request",
-        }).catch(() => null);
+        const finalized = await finalizeProviderRejection(
+          db, "withdrawal", "finalize_withdrawal_from_gateway", {
+            p_withdrawal_id: withdrawalId, p_gateway_provider: gateway,
+            p_outcome: "failed", p_gateway_reference: null,
+            p_failure_reason: "Provider rejected payout request",
+          }, String(withdrawalId),
+        );
+        if (!finalized) {
+          return jsonResponse({ success: false, error: "withdrawal_initiation_uncertain_contact_support" }, 502, headers);
+        }
         return jsonResponse({ success: false, error: "payment_provider_rejected_request" }, 400, headers);
       }
       return jsonResponse({ success: false, error: "withdrawal_initiation_uncertain_contact_support" }, 502, headers);
