@@ -4,7 +4,6 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff, Check, X } from 'lucide-react';
 import { useI18n } from '../contexts/i18n';
 import DobPicker from '../components/DobPicker';
-import GoogleButton from '../components/GoogleButton'; // ADDED THIS LINE
 
 export default function Signup() {
   const [firstName, setFirstName] = useState('');
@@ -270,14 +269,6 @@ export default function Signup() {
             {loading ? t('creating_account') : t('create_account')}
           </button>
 
-          {/* ADDED: GOOGLE SIGNUP BUTTON AT THE BOTTOM */}
-          <div className="mt-6">
-            <div className="flex items-center gap-3 mb-4 text-[12px] text-gray-500">
-              <span className="flex-1 h-px bg-gray-200 dark:bg-darkline" /> or <span className="flex-1 h-px bg-gray-200 dark:bg-darkline" />
-            </div>
-            <GoogleButton label="Sign up with Google" />
-          </div>
-          {/* END OF GOOGLE SIGNUP BUTTON */}
 
           <div className="text-center mt-6 pt-5 border-t border-gray-100 dark:border-darkline">
             <p className="text-sm text-gray-500">
