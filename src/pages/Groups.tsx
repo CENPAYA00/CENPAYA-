@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { Plus, Users, Crown, Megaphone, X, LogIn } from 'lucide-react';
 
 export default function Groups() {
@@ -13,17 +13,15 @@ export default function Groups() {
 
   const load = async () => {
     setLoading(true);
-    const [groupsRes, userRes] = await Promise.all([
-      supabase.rpc('list_my_groups'),
-      supabase.auth.getUser().then(async ({ data }) => {
-        if (!data.user) return { data: null };
-        return supabase.from('users').select('is_subscribed, is_membership_exempt').eq('id', data.user.id).single();
-      }),
-    ]);
-    setGroups(Array.isArray(groupsRes.data) ? groupsRes.data : []);
-    const u = (userRes as any)?.data;
-    setIsPremium(!!(u?.is_subscribed || u?.is_membership_exempt));
-    setLoading(false);
+    try {
+      const [groupsResult, meResult] = await Promise.all([
+        d1Request<{ data: any[] }>('/api/groups'),
+        d1Request<{ user: any }>('/api/me'),
+      ]);
+      setGroups(groupsResult.data || []);
+      setIsPremium(!!(meResult.user?.is_premium || meResult.user?.membership_tier && meResult.user.membership_tier !== 'free'));
+    } catch (error: any) { alert(error.message || 'Could not load groups'); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
@@ -151,19 +149,17 @@ function CreateGroupSheet({ onClose, onCreated }: { onClose: () => void; onCreat
     setErr('');
     if (name.trim().length < 3) return setErr('Name must be at least 3 characters.');
     setBusy(true);
-    const { data, error } = await supabase.rpc('create_group', {
-      p_name: name.trim(),
-      p_description: description.trim() || null,
-      p_avatar_url: avatarUrl.trim() || null,
-      p_is_announcement: announcement,
-    });
-    if (error || !data?.ok) {
-      setErr(error?.message || data?.error || 'Could not create group.');
+    try {
+      const result = await d1Request<{ id: string }>('/api/groups', { method: 'POST', body: JSON.stringify({
+        name: name.trim(), description: description.trim() || null, avatar_url: avatarUrl.trim() || null, is_announcement: announcement,
+      }) });
+      onCreated(result.id);
+    } catch (error: any) {
+      setErr(error.message || 'Could not create group.');
       setBusy(false);
       return;
     }
-    onCreated(data.group_id);
-    setBusy(false);
+
   };
 
   return (
@@ -232,14 +228,15 @@ function JoinGroupSheet({ onClose, onJoined }: { onClose: () => void; onJoined: 
     setErr('');
     if (!code.trim()) return setErr('Enter an invite code.');
     setBusy(true);
-    const { data, error } = await supabase.rpc('join_group_by_code', { p_code: code.trim() });
-    if (error || !data?.ok) {
-      setErr(error?.message || data?.error || 'Could not join group.');
+    try {
+      const result = await d1Request<{ id: string }>('/api/groups/join', { method: 'POST', body: JSON.stringify({ code: code.trim() }) });
+      onJoined(result.id);
+    } catch (error: any) {
+      setErr(error.message || 'Could not join group.');
       setBusy(false);
       return;
     }
-    onJoined(data.group_id);
-    setBusy(false);
+
   };
 
   return (
