@@ -61,8 +61,12 @@ export default function WalletTopup() {
 
       setSuccess(true);
       setTimeout(() => navigate('/wallet'), 1800);
-    } catch (error: any) {
-      setErrorMsg('Top-up failed: ' + (error?.message || 'Please try again.'));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      if (/payment_provider_rejected_request/i.test(message)) setErrorMsg('The payment provider rejected this top-up. Check your phone number and try again.');
+      else if (/payment_initiation_uncertain_contact_support|network|timeout/i.test(message)) setErrorMsg('The top-up status is uncertain. Check your wallet transactions before retrying, or contact support.');
+      else if (/topup_initiation_in_progress/i.test(message)) setErrorMsg('Your top-up is already being initiated. Check its status before trying again.');
+      else setErrorMsg('Top-up failed: ' + message);
     } finally {
       setBusy(false);
     }
