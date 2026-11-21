@@ -243,6 +243,21 @@ async function handle(request:Request,env:Env):Promise<Response>{
     await env.DB.prepare("UPDATE users SET "+sets.join(",")+",updated_at="+NOW+" WHERE id=?").bind(...values).run();
     const updated=await readUser(env.DB,user.id);return json({success:true,user:updated?safeUser(updated):null});
   }
+  const publicProfile=path.match(/^\/api\/profiles\/([^/]+)$/);
+  if(publicProfile&&method==="GET"){
+    const key=decodeURIComponent(publicProfile[1]);
+    const profile=await env.DB.prepare("SELECT id,username,display_name,avatar_url,cover_url,bio,country_code,location_city,is_premium,followers_count,sales_count,reputation_score,created_at FROM public_profiles WHERE id=? OR lower(username)=lower(?)").bind(key,key).first();
+    return profile?json({success:true,data:profile}):fail("Profile not found",404);
+  }
+  if(path==="/api/countries"&&method==="GET"){
+    const rows=await env.DB.prepare("SELECT country_code,name,currency_code,phone_prefix,status FROM supported_countries WHERE status IN ('active','coming_soon') ORDER BY name").all();
+    return json({success:true,data:rows.results});
+  }
+  const publicListing=path.match(/^\/api\/market\/listings\/([^/]+)$/);
+  if(publicListing&&method==="GET"){
+    const row=await env.DB.prepare("SELECT * FROM public_marketplace_search WHERE listing_id=?").bind(publicListing[1]).first();
+    return row?json({success:true,data:row}):fail("Listing not found",404);
+  }
   if(path==="/api/feed"&&method==="GET"){
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||20),1),50),before=url.searchParams.get("before");
     const rows=await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.published_at,p.created_at,
@@ -291,6 +306,84 @@ async function handle(request:Request,env:Env):Promise<Response>{
     await env.DB.prepare("INSERT INTO marketplace_listings(id,seller_id,category_id,title,description,listing_type,price_type,price_amount,currency_code,country_code,status) VALUES(?,?,?,?,?,?,?,?,?,?,'draft')")
       .bind(id,user.id,category,title,description,type,priceType,priceType==="contact"?null:Number(priceAmount),priceType==="contact"?null:currency,country).run();
     return json({success:true,id,status:"draft"},201);
+  }
+  if(path==="/api/chat/threads"&&method==="GET"){
+    if(!user)return fail("Unauthorized",401);
+    const rows=await env.DB.prepare(`SELECT t.id,t.thread_type,t.title,t.created_by,t.last_message_at,t.created_at,
+      (SELECT m.message_text FROM chat_messages m WHERE m.thread_id=t.id ORDER BY m.created_at DESC LIMIT 1) AS last_message,
+      (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id=t.id AND m.sender_id<>? AND m.created_at>COALESCE(tm.last_read_at,'1970-01-01T00:00:00.000Z')) AS unread_count
+      FROM chat_thread_members tm JOIN chat_threads t ON t.id=tm.thread_id
+      WHERE tm.user_id=? AND tm.left_at IS NULL ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 100`).bind(user.id,user.id).all();
+    return json({success:true,data:rows.results});
+  }
+  if(path==="/api/chat/direct"&&method==="POST"){
+    if(!user)return fail("Unauthorized",401);
+    const b=await body(request);if(!b)return fail("Valid JSON body required");
+    const other=str(b.user_id,64);
+    if(!UUID.test(other)||other===user.id)return fail("A valid other user is required");
+    const target=await env.DB.prepare("SELECT id FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(other).first();
+    if(!target)return fail("User not found",404);
+    const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id,other,other,user.id).first();
+    if(blocked)return fail("Messaging is unavailable for this user",403);
+    const directKey=[user.id,other].sort().join(":");
+    const existing=await env.DB.prepare("SELECT id FROM chat_threads WHERE direct_key=?").bind(directKey).first<{id:string}>();
+    if(existing)return json({success:true,id:existing.id,existing:true});
+    const id=uuid();
+    try{
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO chat_threads(id,thread_type,direct_key,created_by) VALUES(?,'direct',?,?)").bind(id,directKey,user.id),
+        env.DB.prepare("INSERT INTO chat_thread_members(thread_id,user_id,role) VALUES(?,?, 'member'),(?,?, 'member')").bind(id,user.id,id,other)
+      ]);
+      return json({success:true,id},201);
+    }catch{
+      const raced=await env.DB.prepare("SELECT id FROM chat_threads WHERE direct_key=?").bind(directKey).first<{id:string}>();
+      return raced?json({success:true,id:raced.id,existing:true}):fail("Unable to create conversation",409);
+    }
+  }
+  if(path==="/api/chat/groups"&&method==="POST"){
+    if(!user)return fail("Unauthorized",401);
+    const b=await body(request);if(!b)return fail("Valid JSON body required");
+    const title=str(b.title,100),requested=Array.isArray(b.member_ids)?b.member_ids.map(x=>str(x,64)):[];
+    const ids=[...new Set([user.id,...requested])];
+    if(!title||ids.length<3||ids.length>50||ids.some(id=>!UUID.test(id)))return fail("A group title and 2–49 valid members are required");
+    const placeholders=ids.map(()=>"?").join(",");
+    const found=await env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE id IN ("+placeholders+") AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(...ids).first<{total:number}>();
+    if((found?.total||0)!==ids.length)return fail("One or more group members are unavailable",400);
+    const id=uuid(),statements=[env.DB.prepare("INSERT INTO chat_threads(id,thread_type,title,created_by) VALUES(?,'group',?,?)").bind(id,title,user.id)];
+    for(const memberId of ids)statements.push(env.DB.prepare("INSERT INTO chat_thread_members(thread_id,user_id,role) VALUES(?,?,?)").bind(id,memberId,memberId===user.id?"owner":"member"));
+    await env.DB.batch(statements);
+    return json({success:true,id},201);
+  }
+  const chatMessages=path.match(/^\/api\/chat\/threads\/([^/]+)\/messages$/);
+  if(chatMessages&&method==="GET"){
+    if(!user)return fail("Unauthorized",401);
+    const threadId=chatMessages[1];
+    const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id).first();
+    if(!member)return fail("Conversation not found",404);
+    const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||50),1),100),before=url.searchParams.get("before");
+    const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,m.message_text,m.status,m.created_at,
+      u.username,u.display_name,u.avatar_url FROM chat_messages m JOIN users u ON u.id=m.sender_id
+      WHERE m.thread_id=? ${before?"AND m.created_at < ?":""}
+      ORDER BY m.created_at DESC LIMIT ?`).bind(threadId,...(before?[before]:[]),limit).all();
+    return json({success:true,data:rows.results.reverse()});
+  }
+  if(chatMessages&&method==="POST"){
+    if(!user)return fail("Unauthorized",401);
+    const b=await body(request);if(!b)return fail("Valid JSON body required");
+    const message=str(b.message_text,4000),threadId=chatMessages[1];
+    if(!message)return fail("Message text is required");
+    const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id).first();
+    if(!member)return fail("Conversation not found",404);
+    const id=uuid();
+    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text) VALUES(?,?,?,?)").bind(id,threadId,user.id,message).run();
+    await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=?").bind(threadId,user.id).run();
+    return json({success:true,id},201);
+  }
+  const chatRead=path.match(/^\/api\/chat\/threads\/([^/]+)\/read$/);
+  if(chatRead&&method==="POST"){
+    if(!user)return fail("Unauthorized",401);
+    const r=await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatRead[1],user.id).run();
+    return r.meta.changes?json({success:true}):fail("Conversation not found",404);
   }
   if(path==="/api/notifications"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
