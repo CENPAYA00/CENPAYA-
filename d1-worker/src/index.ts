@@ -70,7 +70,7 @@ async function verifyPassword(password:string,stored:string):Promise<boolean>{
   try{
     const [kind,rounds,salt64,hash64]=stored.split("$"); const n=Number(rounds);
     if(kind!=="pbkdf2-sha256"||!Number.isInteger(n)||n<600000||n>1000000)return false;
-    const dec=(s:string)=>Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((s.length+3)%4)),c=>c.charCodeAt(0));
+    const dec=(s:string)=>{const b64=s.replace(/-/g,"+").replace(/_/g,"/");return Uint8Array.from(atob(b64+"=".repeat((4-b64.length%4)%4)),c=>c.charCodeAt(0));};
     const salt=dec(salt64),expected=dec(hash64);
     if(salt.length!==16||expected.length!==32)return false;
     const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(password),"PBKDF2",false,["deriveBits"]);
@@ -123,9 +123,9 @@ async function verifyOtp(env:Env,db:D1Database,userId:string,purpose:"verify_ema
   await db.prepare("UPDATE otp_codes SET attempts=attempts+1 WHERE id=?").bind(row.id).run();
   const expected=await hmac(userId+":"+purpose+":"+code,env.OTP_PEPPER||"");
   if(expected!==row.code_hash)return false;
-  await db.prepare("UPDATE otp_codes SET verified_at=${NOW} WHERE id=?").bind(row.id).run();
-  if(purpose==="verify_email") await db.prepare("UPDATE users SET email_verified=1,email_verified_at=${NOW},updated_at=${NOW} WHERE id=?").bind(userId).run();
-  else await db.prepare("UPDATE users SET phone_verified=1,phone_verified_at=${NOW},updated_at=${NOW} WHERE id=?").bind(userId).run();
+  await db.prepare("UPDATE otp_codes SET verified_at="+NOW+" WHERE id=?").bind(row.id).run();
+  if(purpose==="verify_email") await db.prepare("UPDATE users SET email_verified=1,email_verified_at="+NOW+",updated_at="+NOW+" WHERE id=?").bind(userId).run();
+  else await db.prepare("UPDATE users SET phone_verified=1,phone_verified_at="+NOW+",updated_at="+NOW+" WHERE id=?").bind(userId).run();
   return true;
 }
 function safeUser(u:User){return {id:u.id,username:u.username,display_name:u.display_name,email:u.email,phone:u.phone,email_verified:!!u.email_verified,phone_verified:!!u.phone_verified,role:u.role};}
@@ -175,7 +175,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
   }
   if(path==="/api/auth/logout"&&method==="POST"){
     const token=(request.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"");
-    if(token)await env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at=${NOW} WHERE session_token_hash=?").bind(await digest(token)).run();
+    if(token)await env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at="+NOW+" WHERE session_token_hash=?").bind(await digest(token)).run();
     return json({success:true});
   }
   const user=await auth(request,env);
