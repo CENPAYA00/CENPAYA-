@@ -143,7 +143,14 @@ export default function Checkout() {
 
     try {
       if (item._kind === 'service') {
-        throw new Error('Service checkout is not yet available through the financial Worker. No direct database or Edge Function call was made.');
+        if (method !== 'wallet') throw new Error('Mobile Money service checkout is not yet supported by the configured financial Worker.');
+        const response = await supabaseWorkerRequest<{ data: { order_id?: string; id?: string; ok?: boolean; error?: string } }>('/api/v1/checkout/service-orders', {
+          method: 'POST',
+          body: JSON.stringify({ service_id: item.id, package_id: packageId, requirements: requirements.trim() || null, payment_method: 'wallet' }),
+        });
+        const orderId = response.data.order_id || response.data.id;
+        if (!orderId) throw new Error(response.data.error || 'Service order was not created.');
+        navigate(`/service-order/${orderId}`);
       } else {
         const response = await supabaseWorkerRequest<{ data: { id: string } }>('/api/v1/checkout/orders', {
           method: 'POST',
