@@ -5,7 +5,7 @@ This Worker is the API boundary for CenPaya's Supabase financial database and fi
 ## Security boundaries
 
 - D1 remains the account/session identity authority. The browser's D1 session token is sent to the Worker; it is never treated as a Supabase token.
-- The Worker calls D1 through the private `D1_IDENTITY` service binding, verifies a short-lived HMAC assertion, mints a short-lived Supabase user JWT, and checks the same UUID exists in `public.users.id`.
+- The Worker calls D1 through the private `D1_IDENTITY` service binding, verifies a short-lived HMAC assertion, atomically consumes its `jti` to prevent replay, mints a short-lived Supabase user JWT, and checks the same UUID exists in `public.users.id`.
 - Normal user and finance/admin database requests use `SUPABASE_ANON_KEY` plus that verified user JWT. Existing Supabase RLS and financial permission functions remain authoritative.
 - Payment operations use a separate, 60-second JWT for the restricted `cenpaya_payment_worker` Postgres role, signed with the project's active Supabase signing key. This role has no direct table or sequence privileges; its functions are restricted to provider credential retrieval and protected payment/withdrawal operations. The service-role key is not used by this Worker.
 - D1 roles do not grant financial admin permissions. Caller-supplied actor IDs and roles are not trusted.
