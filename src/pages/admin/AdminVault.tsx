@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { CreditCard, MessageSquare, Mail, X, Check, Lock } from 'lucide-react';
 
 type Provider = {
@@ -28,39 +28,20 @@ export default function AdminVault() {
   const load = async () => {
     setLoading(true);
 
-    const { data: providersData } = await supabase
-      .from('system_providers')
-      .select('id, provider_name, display_name, provider_type, is_active, priority')
-      .in('provider_type', ['PAYMENT_GATEWAY', 'SMS_SERVICE', 'EMAIL_SERVICE'])
-      .order('provider_type')
-      .order('priority');
-
-    const { data: vaultData } = await supabase
-      .from('platform_api_vault')
-      .select('provider_id, environment, updated_at')
-      .eq('environment', 'production');
-
-    const vaultMap: Record<string, { environment: string; updated_at: string }> = {};
-    (vaultData || []).forEach((v: any) => {
-      vaultMap[v.provider_id] = { environment: v.environment, updated_at: v.updated_at };
-    });
-
-    setProviders((providersData || []).map((p: any) => ({
-      ...p,
-      has_key: !!vaultMap[p.id],
-      environment: vaultMap[p.id]?.environment || null,
-      updated_at: vaultMap[p.id]?.updated_at || null,
-    })));
+    try {
+      const result = await supabaseWorkerRequest<{ data: Provider[] }>('/api/v1/admin/providers');
+      setProviders(result.data || []);
+    } catch (error) {
+      console.error(error);
+      setProviders([]);
+    }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
   const toggleActive = async (p: Provider) => {
-    await supabase
-      .from('system_providers')
-      .update({ is_active: !p.is_active })
-      .eq('id', p.id);
+    await supabaseWorkerRequest('/api/v1/admin/rpc/admin_set_provider_active', { method: 'POST', body: JSON.stringify({ args: { p_provider_name: p.provider_name, p_active: !p.is_active } }) });
     load();
   };
 
@@ -173,15 +154,13 @@ function KeyEditor({
       return alert('Public key and secret key are required.');
     }
     setSaving(true);
-    const { error } = await supabase.rpc('admin_set_gateway_credentials', {
-      p_provider_name: provider.provider_name,
-      p_api_public_key: publicKey.trim(),
-      p_api_secret_key: secretKey.trim(),
-      p_webhook_secret: webhookSecret.trim() || null,
-      p_environment: 'production',
-    });
-    if (error) {
-      alert('Error: ' + error.message);
+    try {
+      await supabaseWorkerRequest('/api/v1/admin/gateway-credentials', { method: 'POST', body: JSON.stringify({
+        provider_name: provider.provider_name, api_public_key: publicKey.trim(), api_secret_key: secretKey.trim(),
+        webhook_secret: webhookSecret.trim() || null, environment: 'production',
+      }) });
+    } catch (error: unknown) {
+      alert('Error: ' + (error instanceof Error ? error.message : 'Could not save credentials.'));
       setSaving(false);
       return;
     }
@@ -191,12 +170,10 @@ function KeyEditor({
 
   const removeKeys = async () => {
     if (!window.confirm(`Remove keys for ${provider.provider_name}?`)) return;
-    const { error } = await supabase.rpc('admin_remove_gateway_credentials', {
-      p_provider_name: provider.provider_name,
-      p_environment: 'production',
-    });
-    if (error) alert(error.message);
-    else onSaved();
+    try {
+      await supabaseWorkerRequest('/api/v1/admin/gateway-credentials/remove', { method: 'POST', body: JSON.stringify({ provider_name: provider.provider_name, environment: 'production' }) });
+      onSaved();
+    } catch (error: unknown) { alert(error instanceof Error ? error.message : 'Could not remove credentials.'); }
   };
 
   return (
