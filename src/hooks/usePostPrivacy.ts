@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import type { PostPrivacy } from '../components/PrivacySelector';
 
@@ -11,30 +11,19 @@ export function usePostPrivacy() {
   );
 
   useEffect(() => {
-    (async () => {
-      const me = await getCachedUser();
-      if (!me) return;
-      const { data } = await supabase
-        .from('users')
-        .select('default_post_privacy')
-        .eq('id', me.id)
-        .maybeSingle();
-      if (data?.default_post_privacy) {
-        setPrivacyState(data.default_post_privacy);
-        localStorage.setItem(KEY, data.default_post_privacy);
-      }
-    })();
+    d1Request<{ data?: { default_post_visibility?: PostPrivacy } }>('/api/me/privacy')
+      .then(result => {
+        const value = result.data?.default_post_visibility;
+        if (value) { setPrivacyState(value); localStorage.setItem(KEY, value); }
+      })
+      .catch(() => { /* Use the locally stored preference until D1 settings are available. */ });
   }, []);
 
   const setPrivacy = async (p: PostPrivacy) => {
     setPrivacyState(p);
     localStorage.setItem(KEY, p);
-    const me = await getCachedUser();
-    if (me) {
-      try {
-        await supabase.from('users').update({ default_post_privacy: p }).eq('id', me.id);
-      } catch { /* ignore if column doesn't exist */ }
-    }
+    try { await d1Request('/api/me/privacy', { method: 'PATCH', body: JSON.stringify({ default_post_visibility: p }) }); }
+    catch { /* The local preference remains available while the D1 route is being added. */ }
   };
 
   return { privacy, setPrivacy };
