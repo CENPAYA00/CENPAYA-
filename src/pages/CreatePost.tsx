@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { getD1ApiUrl, getD1Token, d1Request } from '../lib/d1Api';
-import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { getCachedUser, setCached } from '../lib/cache';
 import { ArrowLeft, Image as ImageIcon, X, Palette, Smile, Video } from 'lucide-react';
