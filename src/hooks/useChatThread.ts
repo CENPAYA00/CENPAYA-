@@ -1,7 +1,7 @@
 /* src/hooks/useChatThread.ts */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { useVoiceRecorder } from './useVoiceRecorder';
 import { useReadReceipts } from './useReadReceipts';
@@ -32,7 +32,30 @@ export type ChatMessage = {
 
 export type OtherUser = { id: string; username: string };
 export type ForwardTarget = { channel_id: string; username: string };
-type ParticipantRow = { disappearing_seconds: number | null; chat_theme: string | null };
+
+async function uploadChatMedia(blob: Blob, folder: string, ext: string): Promise<string> {
+  const form = new FormData();
+  form.append('file', blob, `${crypto.randomUUID()}.${ext}`);
+  form.append('folder', folder);
+  const token = getD1Token();
+  const response = await fetch(getD1ApiUrl('/api/chat/media'), {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.url) throw new Error(result.error || 'Media upload failed');
+  return result.url as string;
+}
+
+function normalizeMessage(message: any): ChatMessage {
+  return {
+    ...message,
+    body: message.message_text ?? message.body ?? '',
+    message_type: message.message_type || 'text',
+    status: message.status || 'sent',
+  };
+}
 
 export function useChatThread(id: string | undefined) {
   const navigate = useNavigate();
@@ -59,181 +82,102 @@ export function useChatThread(id: string | undefined) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recordStartRef = useRef<number>(0);
-
   const recorder = useVoiceRecorder();
 
   useReadReceipts(id, userId);
-  useDemoAutoReply({
-    channelId: id,
-    otherUsername: otherUser?.username,
-    messages,
-    myUserId: userId,
-  });
+  useDemoAutoReply({ channelId: id, otherUsername: otherUser?.username, messages, myUserId: userId });
 
   useEffect(() => {
-    let cleanup: (() => void) | undefined;
-    let me: { id: string } | null = null;
-
+    let active = true;
     const load = async (): Promise<void> => {
-      me = await getCachedUser();
-      if (!me || !id) {
+      try {
+        const me = await getCachedUser();
+        if (!active) return;
+        if (!me || !id) { setLoading(false); return; }
+        setUserId(me.id);
+
+        const [peerResult, messagesResult, settingsResult, featureResult] = await Promise.all([
+          d1Request<{ data: OtherUser }>(`/api/chat/threads/${encodeURIComponent(id)}/peer`),
+          d1Request<{ data: any[] }>(`/api/chat/threads/${encodeURIComponent(id)}/messages?limit=${PAGE_SIZE}`),
+          d1Request<{ data: any }>(`/api/chat/threads/${encodeURIComponent(id)}/settings`).catch(() => ({ data: null })),
+          d1Request<{ data: any }>('/api/config/features').catch(() => ({ data: null })),
+        ]);
+        if (!active) return;
+
+        setOtherUser(peerResult.data || null);
+        const initial = (messagesResult.data || []).map(normalizeMessage);
+        setMessages(initial);
+        setHasOlder(initial.length === PAGE_SIZE);
+        setDisappearing(settingsResult.data?.disappearing_seconds ?? null);
+        setThemeKey(settingsResult.data?.chat_theme || 'emerald');
+        setVoiceCallsEnabled(!!featureResult.data?.voice_calls_enabled);
         setLoading(false);
-        return;
+        await d1Request(`/api/chat/threads/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
+      } catch (error) {
+        console.warn('Could not load chat thread', error);
+        if (active) setLoading(false);
       }
-      setUserId(me.id);
-
-      const [othersRes, participantRes, msgsRes, settingsRes] = await Promise.all([
-        supabase
-          .from('chat_participants')
-          .select('user_id')
-          .eq('channel_id', id)
-          .neq('user_id', me.id)
-          .maybeSingle<{ user_id: string }>(),
-        supabase
-          .from('chat_participants')
-          .select('disappearing_seconds, chat_theme')
-          .eq('channel_id', id)
-          .eq('user_id', me.id)
-          .maybeSingle<ParticipantRow>(),
-        supabase
-          .from('chat_messages')
-          .select('*')
-          .eq('channel_id', id)
-          .order('created_at', { ascending: false })
-          .limit(PAGE_SIZE),
-        supabase
-          .from('app_settings')
-          .select('value')
-          .eq('key', 'voice_calls_enabled')
-          .maybeSingle<{ value: string }>(),
-      ]);
-
-      if (othersRes.data?.user_id) {
-        const { data: p } = await supabase
-          .from('public_profiles')
-          .select('id, username')
-          .eq('id', othersRes.data.user_id)
-          .maybeSingle<OtherUser>();
-        setOtherUser(p ?? null);
-      }
-
-      setDisappearing(participantRes.data?.disappearing_seconds ?? null);
-      if (participantRes.data?.chat_theme) {
-        setThemeKey(participantRes.data.chat_theme);
-      }
-
-      const initial = ((msgsRes.data ?? []) as ChatMessage[]).slice().reverse();
-      setMessages(initial);
-      setHasOlder(initial.length === PAGE_SIZE);
-      setVoiceCallsEnabled(settingsRes.data?.value === 'true');
-      setLoading(false);
-
-      const sub = supabase
-        .channel(`chat_${id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'chat_messages',
-            filter: `channel_id=eq.${id}`,
-          },
-          (payload) => {
-            const m = payload.new as ChatMessage;
-            setMessages((prev) => {
-              if (prev.some((x) => x.id === m.id)) return prev;
-              const idx = prev.findIndex(
-                (x) =>
-                  String(x.id).startsWith('temp-') &&
-                  x.body === m.body &&
-                  x.sender_id === m.sender_id,
-              );
-              if (idx >= 0) {
-                const copy = prev.slice();
-                copy[idx] = { ...m, status: 'sent' };
-                return copy;
-              }
-              return [...prev, m];
-            });
-            if (me && m.sender_id !== me.id) play('message_received');
-          },
-        )
-        .subscribe();
-
-      cleanup = () => {
-        supabase.removeChannel(sub);
-      };
     };
 
-    load();
-    return () => {
-      cleanup?.();
-    };
-  }, [id, play]);
+    void load();
+    const poll = window.setInterval(async () => {
+      if (!active || !id) return;
+      try {
+        const result = await d1Request<{ data: any[] }>(`/api/chat/threads/${encodeURIComponent(id)}/messages?limit=100`);
+        if (!active) return;
+        const incoming = (result.data || []).map(normalizeMessage);
+        setMessages(prev => {
+          const known = new Set(prev.map(m => m.id));
+          const additions = incoming.filter(m => !known.has(m.id));
+          if (additions.some(m => m.sender_id !== userId)) play('message_received');
+          return additions.length ? [...prev, ...additions] : prev;
+        });
+      } catch { /* Keep the conversation visible while the API retries. */ }
+    }, 5000);
+
+    return () => { active = false; window.clearInterval(poll); };
+  }, [id, play, userId]);
 
   const loadOlder = useCallback(async (): Promise<void> => {
-    if (!id || !messages.length || loadingOlder) return;
+    if (!id || !messages.length || loadingOlder || !hasOlder) return;
     setLoadingOlder(true);
-    const oldest = messages[0].created_at;
-    const { data } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .eq('channel_id', id)
-      .lt('created_at', oldest)
-      .order('created_at', { ascending: false })
-      .limit(PAGE_SIZE);
-    const older = ((data ?? []) as ChatMessage[]).slice().reverse();
-    setMessages((prev) => [...older, ...prev]);
-    setHasOlder(older.length === PAGE_SIZE);
-    setLoadingOlder(false);
-  }, [id, messages, loadingOlder]);
+    try {
+      const oldest = messages[0].created_at;
+      const result = await d1Request<{ data: any[] }>(
+        `/api/chat/threads/${encodeURIComponent(id)}/messages?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest)}`
+      );
+      const older = (result.data || []).map(normalizeMessage);
+      setMessages(prev => [...older.filter(m => !prev.some(p => p.id === m.id)), ...prev]);
+      setHasOlder(older.length === PAGE_SIZE);
+    } catch (error) {
+      console.warn('Could not load older messages', error);
+    } finally { setLoadingOlder(false); }
+  }, [id, messages, loadingOlder, hasOlder]);
 
   const handleSend = useCallback(async (): Promise<void> => {
     if (!input.trim() || !userId || !id) return;
-
+    const body = input.trim();
     const tempId = `temp-${Date.now()}`;
-    const optimisticMsg: ChatMessage = {
-      id: tempId,
-      channel_id: id,
-      sender_id: userId,
-      body: input.trim(),
-      message_type: 'text',
-      created_at: new Date().toISOString(),
-      status: 'sending',
+    const optimistic: ChatMessage = {
+      id: tempId, channel_id: id, sender_id: userId, body,
+      message_type: 'text', created_at: new Date().toISOString(), status: 'sending',
     };
-
-    setMessages((prev) => [...prev, optimisticMsg]);
+    setMessages(prev => [...prev, optimistic]);
     setInput('');
     play('message_sent');
-
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .insert({
-        channel_id: id,
-        sender_id: userId,
-        body: optimisticMsg.body,
-        message_type: 'text',
-      })
-      .select()
-      .single<ChatMessage>();
-
-    if (data && !error) {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...data, status: 'sent' } : m)),
-      );
-    } else {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m)),
-      );
+    try {
+      const result = await d1Request<{ id: string }>(`/api/chat/threads/${encodeURIComponent(id)}/messages`, {
+        method: 'POST', body: JSON.stringify({ message_text: body }),
+      });
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: result.id, status: 'sent' } : m));
+    } catch (error: any) {
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed', error: error.message } : m));
     }
   }, [input, userId, id, play]);
 
   const startRecording = useCallback(async (): Promise<void> => {
     const ok = await recorder.start();
-    if (ok) {
-      setIsRecording(true);
-      recordStartRef.current = Date.now();
-    }
+    if (ok) { setIsRecording(true); recordStartRef.current = Date.now(); }
   }, [recorder]);
 
   const sendRecording = useCallback(async (): Promise<void> => {
@@ -244,260 +188,114 @@ export function useChatThread(id: string | undefined) {
 
     const localUrl = URL.createObjectURL(blob);
     const tempId = `temp-voice-${Date.now()}`;
+    setMessages(prev => [...prev, {
+      id: tempId, channel_id: id, sender_id: userId, body: '🎤 Voice note',
+      message_type: 'voice_note', voice_note_url: localUrl, media_url: localUrl,
+      media_duration_seconds: duration, created_at: new Date().toISOString(), status: 'sending',
+    }]);
 
-    const optimisticMsg: ChatMessage = {
-      id: tempId,
-      channel_id: id,
-      sender_id: userId,
-      body: '🎤 Voice note',
-      message_type: 'voice_note',
-      voice_note_url: localUrl,
-      media_url: localUrl,
-      media_duration_seconds: duration,
-      created_at: new Date().toISOString(),
-      status: 'sending',
-    };
-    setMessages((prev) => [...prev, optimisticMsg]);
-
-    const extFromType = (blob.type || '').includes('mp4')
-      ? 'm4a'
-      : (blob.type || '').includes('ogg')
-        ? 'ogg'
-        : 'webm';
-    const path = `voice-notes/${id}/${Date.now()}.${extFromType}`;
-
-    const { error: upErr } = await supabase.storage
-      .from('chat-media')
-      .upload(path, blob, { contentType: blob.type || 'audio/webm' });
-
-    if (upErr) {
-      console.error('Upload error:', upErr);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId ? { ...m, status: 'failed', error: upErr.message } : m,
-        ),
-      );
-      return;
-    }
-
-    const { data: urlData } = supabase.storage
-      .from('chat-media')
-      .getPublicUrl(path);
-
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .insert({
-        channel_id: id,
-        sender_id: userId,
-        body: '🎤 Voice note',
-        message_type: 'voice_note',
-        voice_note_url: urlData.publicUrl,
-        media_url: urlData.publicUrl,
-        media_duration_seconds: duration,
-      })
-      .select()
-      .single<ChatMessage>();
-
-    if (data && !error) {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...data, status: 'sent' } : m)),
-      );
-    } else {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m)),
-      );
+    try {
+      const ext = (blob.type || '').includes('mp4') ? 'm4a' : (blob.type || '').includes('ogg') ? 'ogg' : 'webm';
+      const url = await uploadChatMedia(blob, `chat/${id}/voice`, ext);
+      const result = await d1Request<{ id: string }>(`/api/chat/threads/${encodeURIComponent(id)}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ message_text: '', media_url: url, media_duration_seconds: duration, message_type: 'voice_note' }),
+      });
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: result.id, voice_note_url: url, media_url: url, status: 'sent' } : m));
+    } catch (error: any) {
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed', error: error.message } : m));
     }
   }, [recorder, userId, id]);
 
-  const cancelRecording = useCallback((): void => {
-    recorder.cancel();
-    setIsRecording(false);
-  }, [recorder]);
+  const cancelRecording = useCallback((): void => { recorder.cancel(); setIsRecording(false); }, [recorder]);
 
-  const togglePlay = useCallback(
-    (m: ChatMessage): void => {
-      if (playingId === m.id) {
-        audioRef.current?.pause();
-        setPlayingId(null);
-        return;
-      }
-      if (audioRef.current) audioRef.current.pause();
-      const src = m.media_url || m.voice_note_url;
-      if (!src) return;
-      const audio = new Audio(src);
-      audioRef.current = audio;
-      audio.onended = () => setPlayingId(null);
-      audio.play();
-      setPlayingId(m.id);
-    },
-    [playingId],
-  );
+  const togglePlay = useCallback((m: ChatMessage): void => {
+    if (playingId === m.id) { audioRef.current?.pause(); setPlayingId(null); return; }
+    if (audioRef.current) audioRef.current.pause();
+    const src = m.media_url || m.voice_note_url;
+    if (!src) return;
+    const audio = new Audio(src);
+    audioRef.current = audio;
+    audio.onended = () => setPlayingId(null);
+    void audio.play();
+    setPlayingId(m.id);
+  }, [playingId]);
 
-  const applyTheme = useCallback(
-    async (k: string): Promise<void> => {
-      setThemeKey(k);
-      if (!id || !userId) return;
-      await supabase
-        .from('chat_participants')
-        .update({ chat_theme: k })
-        .eq('channel_id', id)
-        .eq('user_id', userId);
-    },
-    [id, userId],
-  );
+  const applyTheme = useCallback(async (key: string): Promise<void> => {
+    setThemeKey(key);
+    if (!id) return;
+    await d1Request(`/api/chat/threads/${encodeURIComponent(id)}/settings`, {
+      method: 'PATCH', body: JSON.stringify({ chat_theme: key }),
+    });
+  }, [id]);
 
-  const setDisappearingSeconds = useCallback(
-    async (seconds: number | null): Promise<void> => {
-      if (!id) return;
-      const { error } = await supabase.rpc('set_chat_disappearing', {
-        p_channel_id: id,
-        p_seconds: seconds,
+  const setDisappearingSeconds = useCallback(async (seconds: number | null): Promise<void> => {
+    if (!id) return;
+    try {
+      await d1Request(`/api/chat/threads/${encodeURIComponent(id)}/settings`, {
+        method: 'PATCH', body: JSON.stringify({ disappearing_seconds: seconds }),
       });
-      if (error) {
-        alert(error.message);
-        return;
-      }
       setDisappearing(seconds);
       setShowChatMenu(false);
-    },
-    [id],
-  );
+    } catch (error: any) { alert(error.message); }
+  }, [id]);
 
   const deleteMsg = useCallback(async (): Promise<void> => {
-    if (!actionMessage) return;
-    if (!window.confirm('Delete this message?')) return;
-    await supabase.from('chat_messages').delete().eq('id', actionMessage.id);
-    setMessages((prev) => prev.filter((x) => x.id !== actionMessage.id));
-    setActionMessage(null);
-  }, [actionMessage]);
+    if (!actionMessage || !id || !window.confirm('Delete this message?')) return;
+    try {
+      await d1Request(`/api/chat/threads/${encodeURIComponent(id)}/messages/${encodeURIComponent(actionMessage.id)}`, { method: 'DELETE' });
+      setMessages(prev => prev.filter(message => message.id !== actionMessage.id));
+      setActionMessage(null);
+    } catch (error: any) { alert(error.message || 'Could not delete message'); }
+  }, [actionMessage, id]);
 
   const openForward = useCallback(async (): Promise<void> => {
-    if (!actionMessage) return;
-    const me = await getCachedUser();
-    if (!me) return;
-    const { data: myChannels } = await supabase
-      .from('chat_participants')
-      .select('channel_id')
-      .eq('user_id', me.id);
-    if (!myChannels || myChannels.length === 0) {
+    if (!actionMessage || !id) return;
+    try {
+      const result = await d1Request<{ data: ForwardTarget[] }>(`/api/chat/threads/${encodeURIComponent(id)}/forward-targets`);
+      setForwardTargets(result.data || []);
       setShowForward(actionMessage);
       setActionMessage(null);
-      return;
-    }
-    const ids = (myChannels as { channel_id: string }[]).map((c) => c.channel_id);
-    const { data: others } = await supabase
-      .from('chat_participants')
-      .select('channel_id, user_id')
-      .in('channel_id', ids)
-      .neq('user_id', me.id);
-    const otherIds = [
-      ...new Set(((others ?? []) as { user_id: string }[]).map((o) => o.user_id)),
-    ];
-    const { data: profiles } = await supabase
-      .from('public_profiles')
-      .select('id, username')
-      .in('id', otherIds);
-    const map: Record<string, string> = {};
-    ((profiles ?? []) as OtherUser[]).forEach((p) => {
-      map[p.id] = p.username;
-    });
-    setForwardTargets(
-      ((others ?? []) as { channel_id: string; user_id: string }[]).map((o) => ({
-        channel_id: o.channel_id,
-        username: map[o.user_id] || 'User',
-      })),
-    );
-    setShowForward(actionMessage);
-    setActionMessage(null);
-  }, [actionMessage]);
+    } catch (error: any) { alert(error.message || 'Could not load conversations'); }
+  }, [actionMessage, id]);
 
-  const doForward = useCallback(
-    async (channelId: string): Promise<void> => {
-      if (!showForward) return;
-      const { data, error } = await supabase.rpc('forward_message', {
-        p_message_id: showForward.id,
-        p_target_channel_id: channelId,
+  const doForward = useCallback(async (channelId: string): Promise<void> => {
+    if (!showForward) return;
+    try {
+      await d1Request(`/api/chat/messages/${encodeURIComponent(showForward.id)}/forward`, {
+        method: 'POST', body: JSON.stringify({ thread_id: channelId }),
       });
-      if (error || !data?.ok) {
-        alert(error?.message || data?.error || 'Forward failed');
-        return;
-      }
       setShowForward(null);
       alert('Forwarded');
-    },
-    [showForward],
-  );
+    } catch (error: any) { alert(error.message || 'Forward failed'); }
+  }, [showForward]);
 
   const deleteConversation = useCallback(async (): Promise<void> => {
-    if (!id) return;
-    if (
-      !window.confirm(
-        'Delete this conversation for you? The other person keeps their copy.',
-      )
-    ) {
-      return;
-    }
-    const { error } = await supabase.rpc('delete_my_chat', { p_channel_id: id });
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    navigate('/chat');
+    if (!id || !window.confirm('Delete this conversation for you? The other person keeps their copy.')) return;
+    try {
+      await d1Request(`/api/chat/threads/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      navigate('/chat');
+    } catch (error: any) { alert(error.message || 'Could not delete conversation'); }
   }, [id, navigate]);
 
   const blockUser = useCallback(async (): Promise<void> => {
-    if (!otherUser?.id) return;
-    if (!window.confirm(`Block @${otherUser.username}?`)) return;
-    const { error } = await supabase.rpc('toggle_block', {
-      p_target_id: otherUser.id,
-    });
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    alert(`@${otherUser.username} blocked`);
-    setShowChatMenu(false);
+    if (!otherUser?.id || !window.confirm(`Block @${otherUser.username}?`)) return;
+    try {
+      await d1Request('/api/me/blocked-users', {
+        method: 'POST', body: JSON.stringify({ user_id: otherUser.id }),
+      });
+      alert(`@${otherUser.username} blocked`);
+      setShowChatMenu(false);
+    } catch (error: any) { alert(error.message || 'Could not block user'); }
   }, [otherUser]);
 
   return {
-    // state
-    messages,
-    otherUser,
-    userId,
-    input,
-    setInput,
-    loading,
-    playingId,
-    isRecording,
-    actionMessage,
-    setActionMessage,
-    showChatMenu,
-    setShowChatMenu,
-    showForward,
-    setShowForward,
-    showReport,
-    setShowReport,
-    showThemePicker,
-    setShowThemePicker,
-    forwardTargets,
-    disappearing,
-    themeKey,
-    voiceCallsEnabled,
-    hasOlder,
-    loadingOlder,
-    // actions
-    loadOlder,
-    handleSend,
-    startRecording,
-    sendRecording,
-    cancelRecording,
-    togglePlay,
-    applyTheme,
-    setDisappearingSeconds,
-    deleteMsg,
-    openForward,
-    doForward,
-    deleteConversation,
-    blockUser,
+    messages, otherUser, userId, input, setInput, loading, playingId, isRecording,
+    actionMessage, setActionMessage, showChatMenu, setShowChatMenu, showForward,
+    setShowForward, showReport, setShowReport, showThemePicker, setShowThemePicker,
+    forwardTargets, disappearing, themeKey, voiceCallsEnabled, hasOlder, loadingOlder,
+    loadOlder, handleSend, startRecording, sendRecording, cancelRecording, togglePlay,
+    applyTheme, setDisappearingSeconds, deleteMsg, openForward, doForward,
+    deleteConversation, blockUser,
   };
-    }
+}
