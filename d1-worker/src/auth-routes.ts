@@ -113,6 +113,12 @@ export async function handleAuthRoutes(request:Request,env:Env,url:URL,path:stri
     return json({success:true},200,{"Set-Cookie":clearSessionCookie()});
   }
   if(path==="/api/auth/refresh"&&method==="POST"){
-  
+    const user=await auth(request,env);
+    const refreshToken=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);
+    if(!user||!refreshToken)return fail("Unauthorized",401);
+    const accessToken=await createSession(env.DB,user.id,request,env,900);
+    return json({success:true,token:accessToken,expires_in:900,user:safeUser(user)});
+  }
+
   return null;
 }
