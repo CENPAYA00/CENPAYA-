@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { Plus, X } from 'lucide-react';
 
 export default function AdminPaymentMethods() {
@@ -11,28 +11,25 @@ export default function AdminPaymentMethods() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.from('payment_methods').select('*').order('display_label');
-    setMethods(data || []);
+    try {
+      const result = await supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/payment-methods');
+      setMethods(result.data || []);
+    } catch (error) { console.error(error); setMethods([]); }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
   const toggle = async (m: any) => {
-    await supabase.rpc('admin_toggle_payment_method', {
-      p_method_name: m.method_name,
-      p_active: !m.is_active,
-    });
+    await supabaseWorkerRequest('/api/v1/admin/rpc/admin_toggle_payment_method', { method: 'POST', body: JSON.stringify({ args: { p_method_name: m.method_name, p_active: !m.is_active } }) });
     load();
   };
 
   const add = async () => {
     if (!name.trim() || !label.trim()) return;
-    const { error } = await supabase.rpc('admin_add_payment_method', {
-      p_method_name: name.trim(),
-      p_display_label: label.trim(),
-    });
-    if (error) { alert(error.message); return; }
+    try {
+      await supabaseWorkerRequest('/api/v1/admin/rpc/admin_add_payment_method', { method: 'POST', body: JSON.stringify({ args: { p_method_name: name.trim(), p_display_label: label.trim() } }) });
+    } catch (error: unknown) { alert(error instanceof Error ? error.message : 'Could not add payment method.'); return; }
     setShowAdd(false);
     setName('');
     setLabel('');
