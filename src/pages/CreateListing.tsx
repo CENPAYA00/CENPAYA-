@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Image as ImageIcon, X, MapPin, FileText, Check
@@ -66,13 +67,8 @@ export default function CreateListing() {
       const u = await getCachedUser();
       setUser(u);
 
-      const [catsRes, countryRes] = await Promise.all([
-        supabase
-          .from('listing_categories')
-          .select('id, slug, display_name, icon, listing_type, section, display_order')
-          .eq('is_active', true)
-          .order('section', { ascending: true })
-          .order('display_order', { ascending: true }),
+      const [catsResult, countryRes] = await Promise.all([
+        d1Request<{ data: any[] }>('/api/market/categories'),
         supabase
           .from('supported_countries')
           .select('code, name, phone_prefix, flag_emoji, regions, cities')
@@ -80,7 +76,16 @@ export default function CreateListing() {
           .order('name'),
       ]);
 
-      if (catsRes.data) setCategories(catsRes.data as Category[]);
+      const d1Categories = (catsResult.data || []).map((category: any) => ({
+        id: category.id,
+        slug: category.slug,
+        display_name: category.name,
+        icon: category.icon,
+        listing_type: category.category_type,
+        section: category.section || 'products',
+        display_order: category.position,
+      }));
+      setCategories(d1Categories as Category[]);
       const countryData = countryRes.data || [];
       setCountries(countryData);
 
