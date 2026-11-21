@@ -257,7 +257,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(!user)return fail("Unauthorized",401);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const content=str(b.content,10000),visibility=str(b.visibility,20)||"public",postType=str(b.post_type,30)||"text";
-    if(!content||!["public","followers","private"].includes(visibility)||!["text","image","video","mixed"].includes(postType))return fail("Invalid post content or type");
+    if(!content||!["public","followers","friends","private"].includes(visibility)||!["text","image","video","mixed"].includes(postType))return fail("Invalid post content or type");
     const id=uuid();
     await env.DB.prepare("INSERT INTO posts(id,author_id,content,post_type,visibility,status,published_at) VALUES(?,?,?,?,?,'published',"+NOW+")").bind(id,user.id,content,postType,visibility).run();
     return json({success:true,id},201);
@@ -280,11 +280,16 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(!user)return fail("Unauthorized",401);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const title=str(b.title,160),description=str(b.description,10000),category=str(b.category_id,64),type=str(b.listing_type,30),country=str(b.country_code,2).toUpperCase();
-    if(!title||!description||!category||!country||!["product","service"].includes(type))return fail("Title, description, category, country and valid listing type required");
-    const cat=await env.DB.prepare("SELECT id FROM marketplace_categories WHERE id=? AND status='active'").bind(category).first();
+    const priceType=str(b.price_type,20)||"fixed",priceAmount=b.price_amount,currency=str(b.currency_code,3).toUpperCase();
+    if(!title||!description||!category||! /^[A-Z]{2}$/.test(country)||!["product","service"].includes(type))return fail("Title, description, category, country and valid listing type required");
+    if(!["fixed","negotiable","contact"].includes(priceType))return fail("Invalid price type");
+    if(priceType!=="contact"&&(!Number.isSafeInteger(priceAmount)||Number(priceAmount)<0||! /^[A-Z]{3}$/.test(currency)))return fail("Fixed or negotiable listings require a non-negative integer price and three-letter currency");
+    const cat=await env.DB.prepare("SELECT id,category_type FROM marketplace_categories WHERE id=? AND status='active'").bind(category).first<{id:string;category_type:string}>();
     if(!cat)return fail("Category not found",404);
+    if(cat.category_type!=="both"&&cat.category_type!==type)return fail("Listing type does not match category",400);
     const id=uuid();
-    await env.DB.prepare("INSERT INTO marketplace_listings(id,seller_id,category_id,title,description,listing_type,country_code,status) VALUES(?,?,?,?,?,?,?,'draft')").bind(id,user.id,category,title,description,type,country).run();
+    await env.DB.prepare("INSERT INTO marketplace_listings(id,seller_id,category_id,title,description,listing_type,price_type,price_amount,currency_code,country_code,status) VALUES(?,?,?,?,?,?,?,?,?,?,'draft')")
+      .bind(id,user.id,category,title,description,type,priceType,priceType==="contact"?null:Number(priceAmount),priceType==="contact"?null:currency,country).run();
     return json({success:true,id,status:"draft"},201);
   }
   if(path==="/api/notifications"&&method==="GET"){
@@ -304,7 +309,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const subject=str(b.subject,160),description=str(b.description,5000),category=str(b.category,40)||"general";
     if(!subject||!description||!["general","account","technical","marketplace","payments","security","privacy","other"].includes(category))return fail("Valid subject, description and category required");
-    const id=uuid(),number="CP-"+Date.now().toString(36).toUpperCase();
+    const id=uuid(),number="CP-"+Date.now().toString(36).toUpperCase()+"-"+uuid().slice(0,8).toUpperCase();
     await env.DB.prepare("INSERT INTO support_tickets(id,user_id,ticket_number,subject,description,category) VALUES(?,?,?,?,?,?)").bind(id,user.id,number,subject,description,category).run();
     return json({success:true,id,ticket_number:number},201);
   }
