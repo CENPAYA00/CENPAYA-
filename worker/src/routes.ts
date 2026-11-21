@@ -375,11 +375,19 @@ export async function handleAuthenticatedApi(
     }
     return failure("unsupported_order_action", 400, headers);
   }
+  const orderDetail = path.match(/^\/api\/v1\/orders\/([0-9a-f-]{36})$/i);
+  if (method === "GET" && orderDetail) {
+    const { data, error } = await supabase.from("orders").select("*").eq("id", orderDetail[1])
+      .or("buyer_id.eq." + userId + ",seller_id.eq." + userId).maybeSingle()
+      .abortSignal(AbortSignal.timeout(5_000));
+    if (error) return failure("order_lookup_failed", 502, headers);
+    return data ? success(data, headers) : failure("order_not_found", 404, headers);
+  }
   if (method === "GET" && path === "/api/v1/orders") {
     const { data, error } = await supabase.from("orders")
-      .select("id,listing_id,buyer_id,seller_id,amount,currency_code,escrow_status,escrow_created_at,order_status,order_type,updated_at")
+      .select("*")
       .or("buyer_id.eq." + userId + ",seller_id.eq." + userId)
-      .order("updated_at", { ascending: false }).limit(pageSize(url, 50))
+      .order("escrow_created_at", { ascending: false }).limit(pageSize(url, 50))
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) return failure("orders_lookup_failed", 502, headers);
     return success(data || [], headers);
