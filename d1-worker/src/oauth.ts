@@ -1,5 +1,6 @@
 import type { Env } from "./types.js";
-import { readUser, createSession } from "./auth.js";
+import { readUser } from "./auth.js";
+import { createSession } from "./sessions.js";
 import { digest, randomToken, sha256Base64Url, uuid } from "./security.js";
 
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), {
