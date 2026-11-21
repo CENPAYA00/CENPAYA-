@@ -179,23 +179,20 @@ export async function handleAuthenticatedApi(
       if (!response.ok || !result.success || !result.data) return failure("listing_quote_unavailable", response.status === 404 ? 404 : 503, headers);
       const listing = result.data;
       const isRange = listing.price_is_range === true || listing.price_is_range === 1 || listing.price_is_range === "true";
-      const amountValue = isRange ? listing.price_min : listing.price;
-      const amount = typeof amountValue === "number" ? amountValue : Number(amountValue);
-      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000_000) return failure("listing_price_invalid", 409, headers);
-      const member = await readUserProfile(supabase, userId);
-      if (!member) return failure("checkout_membership_unavailable", 503, headers);
-      const suffix = member.is_subscribed ? "member" : "non_member";
-      const [{ data: pct, error: pctError }, { data: fixed, error: fixedError }] = await Promise.all([
-        supabase.rpc("setting", { p_key: "fee_pct_" + suffix }),
-        supabase.rpc("setting", { p_key: "fee_fixed_" + suffix }),
-      ]);
-      if (pctError || fixedError) return failure("checkout_fee_unavailable", 503, headers);
-      const feePct = Number(pct), feeFixed = Number(fixed);
-      if (!Number.isFinite(feePct) || feePct < 0 || feePct > 100 || !Number.isFinite(feeFixed) || feeFixed < 0) {
+      const amount = Math.round(Number(amountValue));
+      const currency = String(listing.currency_code || "XAF").toUpperCase();
+      const sellerId = typeof listing.seller_id === "string" ? listing.seller_id : "";
+      if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 1_000_000_000_000) return failure("listing_price_invalid", 409, headers);
+      if (currency !== "XAF") return failure("unsupported_checkout_currency", 409, headers);
+      if (!sellerId || sellerId === userId) return failure("listing_not_available", 409, headers);
+      const { data: feeRows, error: feeError } = await supabase.rpc("cenpaya_calculate_platform_fee", { p_seller_id: sellerId, p_amount: amount });
+      const fee = Array.isArray(feeRows) ? feeRows[0] : feeRows;
+      if (feeError || !fee) return failure("checkout_fee_unavailable", 503, headers);
+      const feePct = Number(fee.calculated_fee_pct), feeFixed = Number(fee.calculated_fee_fixed), platformFee = Number(fee.calculated_platform_fee);
+      if (!Number.isFinite(feePct) || feePct < 0 || feePct > 100 || !Number.isSafeInteger(feeFixed) || feeFixed < 0 || !Number.isSafeInteger(platformFee) || platformFee < 0) {
         return failure("checkout_fee_configuration_invalid", 503, headers);
       }
-      const platformFee = Math.round(amount * feePct / 100);
-      return success({ amount, fee_pct: feePct, fee_fixed: feeFixed, platform_fee: platformFee, total: amount + platformFee + feeFixed }, headers);
+      return success({ amount, fee_pct: feePct, fee_fixed: feeFixed, platform_fee: platformFee, total: amount + platformFee, currency_code: currency }, headers);
     } catch {
       return failure("checkout_quote_unavailable", 503, headers);
     }
@@ -227,28 +224,23 @@ export async function handleAuthenticatedApi(
     const sellerId = typeof listing.seller_id === "string" ? listing.seller_id : "";
     const isRange = listing.price_is_range === true || listing.price_is_range === 1 || listing.price_is_range === "true";
     const rawAmount = isRange ? listing.price_min : listing.price;
-    const amount = typeof rawAmount === "number" ? rawAmount : Number(rawAmount);
-    if (!sellerId || sellerId === userId || !Number.isFinite(amount) || amount <= 0 ||
+    const amount = Math.round(Number(rawAmount));
+    const currency = String(listing.currency_code || "XAF").toUpperCase();
+    if (!sellerId || sellerId === userId || !Number.isSafeInteger(amount) || amount <= 0 ||
         amount > 1_000_000_000_000 || listing.status === "deleted" || listing.status === "inactive") {
       return failure("listing_not_available", 409, headers);
     }
-    const member = await readUserProfile(supabase, userId);
-    if (!member) return failure("checkout_membership_unavailable", 503, headers);
-    const suffix = member.is_subscribed ? "member" : "non_member";
-    const [{ data: feePctData, error: feePctError }, { data: feeFixedData, error: feeFixedError }] = await Promise.all([
-      supabase.rpc("setting", { p_key: "fee_pct_" + suffix }),
-      supabase.rpc("setting", { p_key: "fee_fixed_" + suffix }),
-    ]);
-    if (feePctError || feeFixedError) return failure("checkout_fee_unavailable", 503, headers);
-    const feePct = Number(feePctData);
-    const feeFixed = Number(feeFixedData);
-    if (!Number.isFinite(feePct) || feePct < 0 || feePct > 100 ||
-        !Number.isFinite(feeFixed) || feeFixed < 0 || feeFixed > 1_000_000) {
+    if (currency !== "XAF") return failure("unsupported_checkout_currency", 409, headers);
+    const { data: feeRows, error: feeError } = await supabase.rpc("cenpaya_calculate_platform_fee", { p_seller_id: sellerId, p_amount: amount });
+    const fee = Array.isArray(feeRows) ? feeRows[0] : feeRows;
+    if (feeError || !fee) return failure("checkout_fee_unavailable", 503, headers);
+    const feePct = Number(fee.calculated_fee_pct), feeFixed = Number(fee.calculated_fee_fixed), platformFee = Number(fee.calculated_platform_fee);
+    if (!Number.isFinite(feePct) || feePct < 0 || feePct > 100 || !Number.isSafeInteger(feeFixed) || feeFixed < 0 || !Number.isSafeInteger(platformFee) || platformFee < 0) {
       return failure("checkout_fee_configuration_invalid", 503, headers);
     }
     const cleanText = (value: unknown, max: number) =>
       typeof value === "string" ? value.trim().slice(0, max) : "";
-    const total = amount + Math.round(amount * feePct / 100) + feeFixed;
+    const total = amount + platformFee;
     const { data: wallet, error: walletError } = await supabase.from("wallets").select("available_funds").eq("user_id", userId).maybeSingle();
     if (walletError) return failure("wallet_balance_unavailable", 502, headers);
     if (!wallet || Number(wallet.available_funds) < total) return failure("insufficient_wallet_balance", 409, headers);
@@ -265,11 +257,13 @@ export async function handleAuthenticatedApi(
       buyer_id: userId,
       seller_id: sellerId,
       listing_id: listingId,
-      listing_title: cleanText(listing.title, 200),
       amount,
-      currency_code: "XAF",
+      currency_code: currency,
       fee_pct: feePct,
       fee_fixed: feeFixed,
+      platform_fee: platformFee,
+      order_type: "marketplace",
+      order_status: "pending",
       escrow_status: "hold",
       escrow_created_at: new Date().toISOString(),
       shipping_country: cleanText(body.shipping_country, 2) || "CM",
