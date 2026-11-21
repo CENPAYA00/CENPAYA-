@@ -4,7 +4,7 @@ import {
   X, User, Wallet, Store, ShoppingBag, Sparkles, Users,
   Briefcase, PlusCircle, Zap, Ticket, FileText, Users2,
   Video, Bookmark, Settings, Shield, ChevronRight,
-  MessageCircle, HeadphonesIcon, Globe, Link2, Network, Activity, Crown
+  MessageCircle, HeadphonesIcon, Globe, Link2, Crown
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -162,7 +162,6 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
             <Item icon={<FileText size={18} />} label="Posts" onClick={() => go('/my-posts')} />
             <Item icon={<Store size={18} />} label="My Listings" onClick={() => go('/my-listings')} />
             <Item icon={<ShoppingBag size={18} />} label="Orders" onClick={() => go('/my-orders')} />
-            <Item icon={<Activity size={18} />} label="Activity log" onClick={() => go('/activity')} />
           </Section>
 
           <Section label="Market">
@@ -175,8 +174,6 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
 
           <Section label="Social">
             <Item icon={<Users size={18} />} label="Follow" onClick={() => go('/follow')} />
-            <Item icon={<Network size={18} />} label="Communities" onClick={() => go('/communities')} />
-            <Item icon={<Users2 size={18} />} label="Groups" onClick={() => go('/groups')} />
             <Item icon={<Video size={18} />} label="Reels" onClick={() => go('/reels')} />
             <Item icon={<Bookmark size={18} />} label="Saved" onClick={() => go('/saved')} />
           </Section>

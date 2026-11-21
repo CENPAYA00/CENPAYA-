@@ -1,6 +1,6 @@
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'; // ADDED useNavigate
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'; // ADDED useNavigate
 import { lazy, Suspense, useEffect } from 'react'; // ADDED useEffect
-import { supabase } from './lib/supabase'; // ADDED supabase
+import { clearD1SessionToken, d1Request, getD1SessionToken, setD1SessionToken } from './lib/d1Api';
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import StaffLayout from './components/StaffLayout';
@@ -66,11 +66,6 @@ const StaffTicketThread = lazy(() => import('./pages/StaffTicketThread'));
 const StaffReports = lazy(() => import('./pages/StaffReports'));
 const Notifications = lazy(() => import('./pages/Notifications'));
 const Follow = lazy(() => import('./pages/Follow'));
-const Groups = lazy(() => import('./pages/Groups'));
-const GroupDetail = lazy(() => import('./pages/GroupDetail'));
-const Communities = lazy(() => import('./pages/Communities'));
-const CommunityDetail = lazy(() => import('./pages/CommunityDetail'));
-const JoinGroupByLink = lazy(() => import('./pages/JoinGroupByLink'));
 const SuperAdminDashboard = lazy(() => import('./pages/SuperAdminDashboard'));
 const AdminStaff = lazy(() => import('./pages/admin/AdminStaff'));
 const StaffAccept = lazy(() => import('./pages/StaffAccept'));
@@ -88,22 +83,37 @@ const AdminTicketThread = lazy(() => import('./pages/admin/AdminTicketThread'));
 const AdminLedger = lazy(() => import('./pages/admin/AdminLedger'));
 const AdminPaymentMethods = lazy(() => import('./pages/admin/AdminPaymentMethods'));
 const AdminEscrow = lazy(() => import('./pages/admin/AdminEscrow'));
-const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const ArchivedPosts = lazy(() => import('./pages/ArchivedPosts'));
 
-// ADDED: The Google Auth Bouncer
+// D1 session callback: Google returns a short-lived session token in the URL fragment.
 function AuthListener() {
   const navigate = useNavigate();
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event !== 'SIGNED_IN' || !session) return;
-      const u = session.user;
-      const { data } = await supabase.from('users').select('onboarding_completed').eq('id', u.id).maybeSingle();
-      if (!data || !data.onboarding_completed) {
-        navigate('/complete-profile', { replace: true });
-      }
-    });
-    return () => { authListener.subscription.unsubscribe(); };
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const queryParams = new URLSearchParams(window.location.search);
+    const callbackToken = params.get('d1_token');
+    if (callbackToken) {
+      setD1SessionToken(callbackToken);
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+    }
+    if (queryParams.has('google_error')) {
+      navigate('/login?google_error=' + encodeURIComponent(queryParams.get('google_error') || 'sign_in_failed'), { replace: true });
+      return;
+    }
+    if (!callbackToken && !getD1SessionToken()) return;
+    let active = true;
+    d1Request<{ user: { role?: string; onboarding_completed?: boolean | number } }>('/api/me')
+      .then(({ user }) => {
+        if (!active) return;
+        if (user.role === 'owner' || user.role === 'super_admin') navigate('/admin', { replace: true });
+        else if (user.role === 'support_agent') navigate('/staff', { replace: true });
+        else if (!user.onboarding_completed) navigate('/complete-profile', { replace: true });
+        else if (callbackToken) navigate('/home', { replace: true });
+      })
+      .catch(() => {
+        if (active && callbackToken) clearD1SessionToken();
+      });
+    return () => { active = false; };
   }, [navigate]);
   return null;
 }
@@ -182,14 +192,12 @@ export default function App() {
             <Route path="/saved" element={<Saved />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/follow" element={<Follow />} />
-            <Route path="/groups" element={<Groups />} />
-            <Route path="/groups/join/:code" element={<JoinGroupByLink />} />
-            <Route path="/groups/:id" element={<GroupDetail />} />
-            <Route path="/communities" element={<Communities />} />
-            <Route path="/communities/:id" element={<CommunityDetail />} />
 
-            <Route path="/activity" element={<ActivityLog />} />
             <Route path="/archive" element={<ArchivedPosts />} />
+            <Route path="/groups/*" element={<Navigate to="/home" replace />} />
+            <Route path="/communities/*" element={<Navigate to="/home" replace />} />
+            <Route path="/pages/*" element={<Navigate to="/home" replace />} />
+            <Route path="/activity" element={<Navigate to="/home" replace />} />
           </Route>
 
           <Route element={<StaffLayout />}>

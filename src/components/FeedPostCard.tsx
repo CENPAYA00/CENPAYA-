@@ -13,7 +13,6 @@ import PostFollowButton from './PostFollowButton';
 import ShareSheet from './ShareSheet';
 import DemoBadge from './DemoBadge';
 import { useSound } from '../contexts/sound';
-import { logActivity } from '../lib/activityLog';
 
 type Props = {
   post: any;
@@ -137,7 +136,6 @@ export default function FeedPostCard({
   };
 
   const handleShareComplete = () => {
-    logActivity('post_shared', { post_id: post.id });
     play('success');
     onShare?.(post.id);
     showToast('Sent');

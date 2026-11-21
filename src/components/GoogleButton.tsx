@@ -1,25 +1,19 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1ApiUrl } from '../lib/d1Api';
 import { notify } from '../lib/notify';
 
 export default function GoogleButton({ label = 'Continue with Google' }: { label?: string }) {
   const [busy, setBusy] = useState(false);
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = () => {
     setBusy(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/`, // Redirects back to your app's root
-        queryParams: { prompt: 'select_account' }, // lets people pick which Google account
-      },
-    });
-    
-    if (error) {
+    try {
+      const returnTo = window.location.origin;
+      window.location.assign(d1ApiUrl('/api/auth/google/start?return_to=' + encodeURIComponent(returnTo)));
+    } catch (error) {
       notify.fromError(error);
       setBusy(false);
     }
-    // On success the browser leaves for Google, so there is nothing else to do here.
   };
 
   return (

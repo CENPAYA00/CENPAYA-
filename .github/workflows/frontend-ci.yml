@@ -1,0 +1,29 @@
+name: Frontend CI
+
+on:
+  push:
+    branches:
+      - integration/main-d1-supabase-monolith
+  pull_request:
+    branches:
+      - main
+      - integration/main-d1-supabase-monolith
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - ".github/workflows/frontend-ci.yml"
+
+jobs:
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
