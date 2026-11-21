@@ -6,17 +6,19 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 export async function readUser(db:D1Database,id:string):Promise<User|null>{
   return db.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,role,account_status,banned,password_hash,onboarding_completed FROM users WHERE id=? AND deleted_at IS NULL").bind(id).first<User>();
 }
-export async function auth(request:Request,env:Env):Promise<User|null>{
-  const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];
-  const cookie=request.headers.get("Cookie")||"";
-  const cookieToken=cookie.split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);
-  const token=bearer || (cookieToken ? decodeURIComponent(cookieToken) : undefined);
-  if(!token || token.length<32 || token.length>256)return null;
+async function userForSessionToken(token:string,env:Env):Promise<User|null>{
+  if(token.length<32||token.length>256)return null;
   const hash=await digest(token);
   const row=await env.DB.prepare(`SELECT u.id FROM user_sessions s JOIN users u ON u.id=s.user_id
     WHERE s.session_token_hash=? AND s.status='active' AND s.expires_at>${NOW}
     AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(hash).first<{id:string}>();
   return row?readUser(env.DB,row.id):null;
+}
+export async function auth(request:Request,env:Env):Promise<User|null>{
+  const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\\s+(.+)$/i)?.[1];
+  const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);
+  if(bearer){const user=await userForSessionToken(bearer,env);if(user)return user;}
+  return cookie?userForSessionToken(decodeURIComponent(cookie),env):null;
 }
 export async function rateLimit(env:Env,key:string,max:number,windowSeconds:number):Promise<boolean>{
   if(env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN){
