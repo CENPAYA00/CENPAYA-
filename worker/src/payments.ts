@@ -396,7 +396,7 @@ export async function handleGatewayWebhook(request: Request, env: Env): Promise<
 
   let topup: Record<string, unknown> = {};
   try {
-    topup = asObject(await callRpc(db, "worker_get_topup_payment_details", { p_topup_id: externalId }));
+    topup = object(await callRpc(db, "worker_get_topup_payment_details", { p_topup_id: externalId }));
   } catch {
     return jsonResponse({ ok: false, error: "payment_record_unavailable" }, 503);
   }
@@ -434,7 +434,7 @@ export async function handleGatewayWebhook(request: Request, env: Env): Promise<
 
   let withdrawal: Record<string, unknown> = {};
   try {
-    withdrawal = asObject(await callRpc(db, "worker_get_withdrawal_payment_details", {
+    withdrawal = object(await callRpc(db, "worker_get_withdrawal_payment_details", {
       p_withdrawal_id: externalId,
     }));
   } catch {
