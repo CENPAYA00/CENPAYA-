@@ -1,7 +1,4 @@
 const API_BASE = String(import.meta.env.VITE_D1_API_URL ?? '').trim().replace(/\/$/, '');
-let sessionToken: string | null = null;
-let sessionTokenExpiresAt = 0;
-
 export type D1User = {
   id: string;
   username: string | null;
@@ -26,26 +23,6 @@ export class D1ApiError extends Error {
   }
 }
 
-export function getD1Token(): string | null {
-  if (sessionToken && Date.now() >= sessionTokenExpiresAt - 30_000) { sessionToken = null; sessionTokenExpiresAt = 0; }
-  return sessionToken;
-}
-
-export function setD1Token(token: string | null) { sessionToken = token; sessionTokenExpiresAt = token ? Date.now() + 900_000 : 0; }
-
-export async function refreshD1Session(force = false): Promise<string | null> {
-  if (!force && getD1Token()) return sessionToken;
-  try {
-    const response = await fetch(getD1ApiUrl('/api/auth/refresh'), {
-      method: 'POST', credentials: 'include', cache: 'no-store',
-    });
-    const payload = await response.json().catch(() => ({})) as { token?: string; expires_in?: number };
-    sessionToken = response.ok && typeof payload.token === 'string' ? payload.token : null;
-    sessionTokenExpiresAt = sessionToken ? Date.now() + Math.max(60, Number(payload.expires_in) || 900) * 1000 : 0;
-    return sessionToken;
-  } catch { sessionToken = null; sessionTokenExpiresAt = 0; return null; }
-}
-
 export function getD1ApiUrl(path: string): string {
   if (!API_BASE) throw new Error('D1 API is not configured. Set VITE_D1_API_URL to the deployed D1 Worker URL.');
   return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
@@ -54,11 +31,9 @@ export function getD1ApiUrl(path: string): string {
 export async function d1Request<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  const token = getD1Token();
-  if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(getD1ApiUrl(path), { ...options, headers, credentials: 'include' });
+    response = await fetch(getD1ApiUrl(path), { ...options, headers, credentials: 'include', cache: 'no-store' });
   } catch {
     throw new Error('Unable to reach CenPaya services. Check your connection and D1 API configuration.');
   }
@@ -82,7 +57,7 @@ export async function d1Login(identifier: string, password: string) {
   const result = await d1Request<{ user: D1User }>('/api/auth/login', {
     method: 'POST', body: JSON.stringify({ identifier, password }),
   });
-  await refreshD1Session(true); return result;
+  return result;
 }
 
 export async function d1VerifyOtp(user_id: string, code: string, purpose: 'verify_email' | 'verify_phone' | 'password_reset' = 'verify_email') {
@@ -123,5 +98,5 @@ export function d1UpdateProfile(input: Record<string, unknown>) {
 
 export async function d1Logout() {
   try { await d1Request<{ success: boolean }>('/api/auth/logout', { method: 'POST' }); }
-  finally { setD1Token(null); }
+  finally { /* The HttpOnly session cookie is cleared by the Worker. */ }
 }
