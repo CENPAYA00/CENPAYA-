@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import {
   X, User, Wallet, Store, ShoppingBag, Sparkles, Users,
   Video, Bookmark, Settings, Shield, ChevronRight,
-  MessageCircle, HeadphonesIcon, Globe, Link2, Crown
+  MessageCircle, HeadphonesIcon, Globe, Link2, Crown, FileText, Briefcase, PlusCircle, Zap, Ticket
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { d1Me } from '../lib/d1Api';
