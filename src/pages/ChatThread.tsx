@@ -2,17 +2,13 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MoreVertical, Palette, ChevronDown } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { supabase } from '../lib/supabase';
-import { useReadReceipts } from '../hooks/useReadReceipts';
-import { useDemoAutoReply } from '../hooks/useDemoAutoReply';
+import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { useSound } from '../contexts/sound';
 import ReadReceipt from '../components/ReadReceipt';
 import ChatMenus from '../components/ChatMenus';
 import { VoiceBubble, SharedPostCard } from '../components/ChatMedia';
 import { RichComposer } from '../components/RichComposer';
 import { resolveTheme, ChatThemeKey } from '../lib/chatThemes';
-
-const BUCKET = 'chat-media';
 
 async function compressImage(file: File, max = 1280, quality = 0.82): Promise<Blob> {
   const bmp = await createImageBitmap(file);
@@ -22,14 +18,19 @@ async function compressImage(file: File, max = 1280, quality = 0.82): Promise<Bl
   return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("compress failed"))), "image/jpeg", quality));
 }
 
-async function upload(blob: Blob, folder: string, ext: string, tries = 3): Promise<string> {
-  const path = `${folder}/${crypto.randomUUID()}.${ext}`;
-  for (let i = 0; i < tries; i++) {
-    const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { contentType: blob.type || undefined, cacheControl: "31536000" });
-    if (!error) return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
-    await new Promise((r) => setTimeout(r, 500 * 2 ** i));
-  }
-  throw new Error("upload failed");
+async function upload(blob: Blob, folder: string, ext: string): Promise<string> {
+  const form = new FormData();
+  form.append('file', blob, `${crypto.randomUUID()}.${ext}`);
+  form.append('folder', folder);
+  const token = getD1Token();
+  const response = await fetch(getD1ApiUrl('/api/chat/media'), {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.url) throw new Error(result.error || 'Media upload failed');
+  return result.url as string;
 }
 
 function dayLabel(iso: string) {
@@ -63,81 +64,62 @@ export default function ChatThread() {
   
   const parentRef = useRef<HTMLDivElement>(null);
 
-  useReadReceipts(id, userId);
-  useDemoAutoReply({ channelId: id, otherUsername: otherUser?.username, messages, myUserId: userId });
   const theme = resolveTheme(themeKey);
 
   useEffect(() => {
-    let cleanup: (() => void) | undefined;
+    let active = true;
     const load = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const me = session?.user;
-      if (!me || !id) { setLoading(false); return; }
-      setUserId(me.id);
-
-      const [othersRes, participantRes, msgsRes] = await Promise.all([
-        supabase.from('chat_participants').select('user_id').eq('channel_id', id).neq('user_id', me.id).maybeSingle(),
-        supabase.from('chat_participants').select('chat_theme, disappearing_seconds').eq('channel_id', id).eq('user_id', me.id).maybeSingle(),
-        supabase.from('chat_messages').select('*').eq('channel_id', id).order('created_at', { ascending: false }).limit(40)
-      ]);
-
-      // FIXED: Explicit check for othersRes.data object
-      const otherId = (othersRes.data as any)?.user_id;
-      if (otherId) {
-        const { data: p } = await supabase.from('public_profiles').select('id, username, avatar_url').eq('id', otherId).maybeSingle();
-        setOtherUser(p);
+      try {
+        if (!id) { setLoading(false); return; }
+        const me = await d1Request<{ user: { id: string } }>('/api/me');
+        if (!active) return;
+        setUserId(me.user.id);
+        const [profileResult, messagesResult] = await Promise.all([
+          d1Request<{ data: any }>(`/api/chat/threads/${encodeURIComponent(id)}/peer`),
+          d1Request<{ data: any[] }>(`/api/chat/threads/${encodeURIComponent(id)}/messages?limit=100`),
+        ]);
+        if (!active) return;
+        setOtherUser(profileResult.data || null);
+        const initialMessages = (messagesResult.data || []).map((m: any) => ({
+          ...m, body: m.message_text ?? m.body ?? '', message_type: m.message_type || 'text',
+          created_at: m.created_at, status: m.status || 'sent',
+        }));
+        setMessages(initialMessages);
+        setLoading(false);
+        await d1Request(`/api/chat/threads/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
+      } catch (error: any) {
+        if (active) { alert(error.message || 'Could not load conversation'); setLoading(false); }
       }
-      
-      if (participantRes.data?.chat_theme) setThemeKey(participantRes.data.chat_theme as ChatThemeKey); 
-      if (participantRes.data?.disappearing_seconds) setDisappearing(participantRes.data.disappearing_seconds);
-      
-      const initialMessages = (msgsRes.data || []).reverse();
-      setMessages(initialMessages);
-      setLoading(false);
-
-      const sharedIds = initialMessages.filter(m => m.message_type === 'shared_post' && m.shared_post_id).map(m => m.shared_post_id);
-      if (sharedIds.length > 0) {
-        const { data: posts } = await supabase.from('posts').select('id, content, image_url, profiles:public_profiles(username, avatar_url)').in('id', sharedIds);
-        const map: Record<string, any> = {};
-        (posts || []).forEach(p => { map[p.id] = { ...p, username: p.profiles?.[0]?.username, avatar_url: p.profiles?.[0]?.avatar_url }; });
-        setPostPreviews(map);
-      }
-
-      const sub = supabase.channel(`chat_${id}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${id}` }, (payload: any) => {
-          if (payload.eventType === 'INSERT') {
-            const newMsg = payload.new;
-            setMessages(prev => {
-              if (prev.some(x => x.id === newMsg.id)) return prev;
-              const tempIdx = prev.findIndex(x => String(x.id).startsWith('temp-') && x.sender_id === newMsg.sender_id && x.body === newMsg.body);
-              if (tempIdx >= 0) {
-                const copy = [...prev];
-                copy[tempIdx] = { ...newMsg, status: 'sent' };
-                return copy;
-              }
-              return [...prev, newMsg];
-            });
-            if (newMsg.sender_id !== me.id) play('message_received');
-          } 
-          else if (payload.eventType === 'UPDATE') {
-            const updated = payload.new;
-            setMessages(prev => prev.map(m => m.id === updated.id ? { ...m, read_at: updated.read_at, delivered_at: updated.delivered_at } : m));
-          }
-        }).subscribe();
-      cleanup = () => { supabase.removeChannel(sub); };
     };
-    load();
-    return () => { cleanup?.(); };
-  }, [id, play]);
+    void load();
+    const poll = window.setInterval(async () => {
+      if (!id || !active) return;
+      try {
+        const result = await d1Request<{ data: any[] }>(`/api/chat/threads/${encodeURIComponent(id)}/messages?limit=100`);
+        if (!active) return;
+        const incoming = (result.data || []).map((m: any) => ({ ...m, body: m.message_text ?? m.body ?? '', message_type: m.message_type || 'text', status: m.status || 'sent' }));
+        setMessages(prev => {
+          const known = new Set(prev.map(m => m.id));
+          const additions = incoming.filter(m => !known.has(m.id));
+          if (additions.some(m => m.sender_id !== userId)) play('message_received');
+          return additions.length ? [...prev, ...additions] : prev;
+        });
+      } catch { /* Keep the current conversation visible while polling retries. */ }
+    }, 5000);
+    return () => { active = false; window.clearInterval(poll); };
+  }, [id, play, userId]);
 
   const handleSendText = async (text: string) => {
     if (!text.trim() || !userId) return;
     const tempId = `temp-${Date.now()}`;
     setMessages(prev => [...prev, { id: tempId, channel_id: id, sender_id: userId, body: text, message_type: 'text', created_at: new Date().toISOString(), status: 'sending' }]);
     setIsAway(false);
-    const { data, error } = await supabase.from('chat_messages').insert({ channel_id: id, sender_id: userId, body: text, message_type: 'text' }).select().single();
-    if (data && !error) setMessages(prev => prev.map(m => m.id === tempId ? { ...data, status: 'sent' } : m));
-    else setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+    try {
+      const result = await d1Request<{ id: string }>(`/api/chat/threads/${encodeURIComponent(id || '')}/messages`, { method: 'POST', body: JSON.stringify({ message_text: text }) });
+      setMessages(prev => prev.map(m => m.id === tempId ? { id: result.id, thread_id: id, sender_id: userId, body: text, message_type: 'text', created_at: new Date().toISOString(), status: 'sent' } : m));
+    } catch {
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+    }
   };
 
   const handleSendImages = async (files: File[]) => {
@@ -150,8 +132,8 @@ export default function ChatThread() {
       try {
         const compressed = await compressImage(f);
         const url = await upload(compressed, `chat/${id}/images`, 'jpg');
-        const { data } = await supabase.from('chat_messages').insert({ channel_id: id, sender_id: userId, body: '', message_type: 'image', media_url: url }).select().single();
-        if (data) setMessages(prev => prev.map(m => m.id === tempId ? { ...data, status: 'sent' } : m));
+        const result = await d1Request<{ id: string }>(`/api/chat/threads/${encodeURIComponent(id || '')}/messages`, { method: 'POST', body: JSON.stringify({ message_text: '', media_url: url, message_type: 'image' }) });
+        setMessages(prev => prev.map(m => m.id === tempId ? { id: result.id, thread_id: id, sender_id: userId, body: '', message_type: 'image', media_url: url, created_at: new Date().toISOString(), status: 'sent' } : m));
       } catch {
         setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
       }
@@ -167,8 +149,8 @@ export default function ChatThread() {
     try {
       const ext = blob.type.includes('mp4') ? 'm4a' : 'webm';
       const url = await upload(blob, `chat/${id}/voice`, ext);
-      const { data } = await supabase.from('chat_messages').insert({ channel_id: id, sender_id: userId, body: '', message_type: 'voice_note', media_url: url, media_duration_seconds: durationMs / 1000 }).select().single();
-      if (data) setMessages(prev => prev.map(m => m.id === tempId ? { ...data, status: 'sent' } : m));
+      const result = await d1Request<{ id: string }>(`/api/chat/threads/${encodeURIComponent(id || '')}/messages`, { method: 'POST', body: JSON.stringify({ message_text: '', media_url: url, media_duration_seconds: durationMs / 1000, message_type: 'voice_note' }) });
+      setMessages(prev => prev.map(m => m.id === tempId ? { id: result.id, thread_id: id, sender_id: userId, body: '', message_type: 'voice_note', media_url: url, media_duration_seconds: durationMs / 1000, created_at: new Date().toISOString(), status: 'sent' } : m));
     } catch {
       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
     }
@@ -204,13 +186,12 @@ export default function ChatThread() {
   const applyTheme = async (k: ChatThemeKey) => {
     setThemeKey(k);
     if (!id || !userId) return;
-    await supabase.from('chat_participants').update({ chat_theme: k }).eq('channel_id', id).eq('user_id', userId);
+    await d1Request(`/api/chat/threads/${encodeURIComponent(id)}/settings`, { method: 'PATCH', body: JSON.stringify({ chat_theme: k }) });
   };
 
   const setDisappearingSeconds = async (seconds: number | null) => {
     if (!id) return;
-    const { error } = await supabase.rpc('set_chat_disappearing', { p_channel_id: id, p_seconds: seconds });
-    if (error) { alert(error.message); return; }
+    try { await d1Request(`/api/chat/threads/${encodeURIComponent(id)}/settings`, { method: 'PATCH', body: JSON.stringify({ disappearing_seconds: seconds }) }); } catch (error: any) { alert(error.message); return; }
     setDisappearing(seconds);
     setShowChatMenu(false);
   };
@@ -218,32 +199,24 @@ export default function ChatThread() {
   const deleteMsg = async () => {
     if (!actionMessage) return;
     if (!window.confirm('Delete this message?')) return;
-    await supabase.from('chat_messages').delete().eq('id', actionMessage.id);
+    await d1Request(`/api/chat/threads/${encodeURIComponent(id || '')}/messages/${encodeURIComponent(actionMessage.id)}`, { method: 'DELETE' });
     setMessages(prev => prev.filter(x => x.id !== actionMessage.id));
     setActionMessage(null);
   };
 
   const openForward = async () => {
     if (!actionMessage) return;
-    const me = await supabase.auth.getUser();
-    if (!me.data.user) return;
-    const { data: myChannels } = await supabase.from('chat_participants').select('channel_id').eq('user_id', me.data.user.id);
-    if (!myChannels || myChannels.length === 0) { setShowForward(actionMessage); setActionMessage(null); return; }
-    const ids = myChannels.map((c: any) => c.channel_id);
-    const { data: others } = await supabase.from('chat_participants').select('channel_id, user_id').in('channel_id', ids).neq('user_id', me.data.user.id);
-    const otherIds = [...new Set((others || []).map((o: any) => o.user_id))];
-    const { data: profiles } = await supabase.from('public_profiles').select('id, username').in('id', otherIds);
-    const map: Record<string, string> = {};
-    (profiles || []).forEach((p: any) => { map[p.id] = p.username; });
-    setForwardTargets((others || []).map((o: any) => ({ channel_id: o.channel_id, username: map[o.user_id] || 'User' })));
-    setShowForward(actionMessage);
-    setActionMessage(null);
+    try {
+      const result = await d1Request<{ data: any[] }>(`/api/chat/threads/${encodeURIComponent(id || '')}/forward-targets`);
+      setForwardTargets(result.data || []);
+      setShowForward(actionMessage);
+      setActionMessage(null);
+    } catch (error: any) { alert(error.message || 'Could not load conversations'); }
   };
 
   const doForward = async (channelId: string) => {
     if (!showForward) return;
-    const { data, error } = await supabase.rpc('forward_message', { p_message_id: showForward.id, p_target_channel_id: channelId });
-    if (error || !data?.ok) { alert(error?.message || data?.error || 'Forward failed'); return; }
+    try { await d1Request('/api/chat/messages/' + encodeURIComponent(showForward.id) + '/forward', { method: 'POST', body: JSON.stringify({ thread_id: channelId }) }); } catch (error: any) { alert(error.message || 'Forward failed'); return; }
     setShowForward(null);
     alert('Forwarded');
   };
@@ -251,16 +224,14 @@ export default function ChatThread() {
   const deleteConversation = async () => {
     if (!id) return;
     if (!window.confirm('Delete this conversation for you? The other person keeps their copy.')) return;
-    const { error } = await supabase.rpc('delete_my_chat', { p_channel_id: id });
-    if (error) { alert(error.message); return; }
+    try { await d1Request(`/api/chat/threads/${encodeURIComponent(id)}/leave`, { method: 'POST' }); } catch (error: any) { alert(error.message); return; }
     navigate('/chat');
   };
 
   const blockUser = async () => {
     if (!otherUser?.id) return;
     if (!window.confirm(`Block @${otherUser.username}?`)) return;
-    const { error } = await supabase.rpc('toggle_block', { p_target_id: otherUser.id });
-    if (error) { alert(error.message); return; }
+    try { await d1Request('/api/me/blocked-users', { method: 'POST', body: JSON.stringify({ user_id: otherUser.id }) }); } catch (error: any) { alert(error.message); return; }
     alert(`@${otherUser.username} blocked`);
     setShowChatMenu(false);
   };
