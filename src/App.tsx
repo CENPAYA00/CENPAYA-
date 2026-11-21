@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'; // ADDED useNavigate
 import { lazy, Suspense, useEffect } from 'react'; // ADDED useEffect
-import { supabase } from './lib/supabase'; // ADDED supabase
+import { clearD1SessionToken, d1Request, getD1SessionToken, setD1SessionToken } from './lib/d1Api';
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import StaffLayout from './components/StaffLayout';
@@ -85,19 +85,34 @@ const AdminPaymentMethods = lazy(() => import('./pages/admin/AdminPaymentMethods
 const AdminEscrow = lazy(() => import('./pages/admin/AdminEscrow'));
 const ArchivedPosts = lazy(() => import('./pages/ArchivedPosts'));
 
-// ADDED: The Google Auth Bouncer
+// D1 session callback: Google returns a short-lived session token in the URL fragment.
 function AuthListener() {
   const navigate = useNavigate();
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event !== 'SIGNED_IN' || !session) return;
-      const u = session.user;
-      const { data } = await supabase.from('users').select('onboarding_completed').eq('id', u.id).maybeSingle();
-      if (!data || !data.onboarding_completed) {
-        navigate('/complete-profile', { replace: true });
-      }
-    });
-    return () => { authListener.subscription.unsubscribe(); };
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const callbackToken = params.get('d1_token');
+    if (callbackToken) {
+      setD1SessionToken(callbackToken);
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+    }
+    if (params.has('google_error')) {
+      navigate('/login?google_error=' + encodeURIComponent(params.get('google_error') || 'sign_in_failed'), { replace: true });
+      return;
+    }
+    if (!callbackToken && !getD1SessionToken()) return;
+    let active = true;
+    d1Request<{ user: { role?: string; onboarding_completed?: boolean | number } }>('/api/me')
+      .then(({ user }) => {
+        if (!active) return;
+        if (user.role === 'owner' || user.role === 'super_admin') navigate('/admin', { replace: true });
+        else if (user.role === 'support_agent') navigate('/staff', { replace: true });
+        else if (!user.onboarding_completed) navigate('/complete-profile', { replace: true });
+        else if (callbackToken) navigate('/home', { replace: true });
+      })
+      .catch(() => {
+        if (active && callbackToken) clearD1SessionToken();
+      });
+    return () => { active = false; };
   }, [navigate]);
   return null;
 }
