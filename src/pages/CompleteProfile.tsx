@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { notify } from '../lib/notify';
 
 export default function CompleteProfile() {
@@ -11,16 +11,11 @@ export default function CompleteProfile() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Get the user that just logged in via Google
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        navigate('/login');
-        return;
-      }
-      setUser(data.user);
-      // Pre-fill phone if they have one from Google (unlikely, but possible)
-      setPhone(data.user.phone || '');
-    });
+    d1Request<{ user: any }>('/api/me').then(({ user: currentUser }) => {
+      setUser(currentUser);
+      setPhone(currentUser.phone || '');
+      setUsername(currentUser.username || '');
+    }).catch(() => navigate('/login', { replace: true }));
   }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,18 +23,16 @@ export default function CompleteProfile() {
     if (!user) return;
     setLoading(true);
 
-    // 1. Update the public.users table with the missing data
-    const { error } = await supabase.from('users').upsert({
-      id: user.id,
-      email: user.email,
-      username: username.trim().toLowerCase(),
-      phone: phone.trim(),
-      onboarding_completed: true, // <--- THIS UNLOCKS THE APP
-      avatar_url: user.user_metadata?.avatar_url || null,
-    });
-
-    if (error) {
-      // If the username is taken, Supabase throws an error here
+    try {
+      await d1Request('/api/me/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          username: username.trim().toLowerCase(),
+          phone: phone.trim(),
+          onboarding_completed: true,
+        }),
+      });
+    } catch (error) {
       notify.fromError(error);
       setLoading(false);
       return;
