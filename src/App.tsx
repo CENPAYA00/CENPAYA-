@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'; // ADDED useNavigate
 import { lazy, Suspense, useEffect } from 'react'; // ADDED useEffect
-import { supabase } from './lib/supabase'; // ADDED supabase
+import { d1Me, setD1Token } from './lib/d1Api';
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import StaffLayout from './components/StaffLayout';
@@ -91,19 +91,21 @@ const AdminEscrow = lazy(() => import('./pages/admin/AdminEscrow'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const ArchivedPosts = lazy(() => import('./pages/ArchivedPosts'));
 
-// ADDED: The Google Auth Bouncer
+// Complete the D1 Google OAuth hand-off and restore the D1 user session.
 function AuthListener() {
   const navigate = useNavigate();
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event !== 'SIGNED_IN' || !session) return;
-      const u = session.user;
-      const { data } = await supabase.from('users').select('onboarding_completed').eq('id', u.id).maybeSingle();
-      if (!data || !data.onboarding_completed) {
-        navigate('/complete-profile', { replace: true });
-      }
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const token = params.get('d1_token');
+    if (!token) return;
+    setD1Token(token);
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+    d1Me().then(({ user }) => {
+      navigate(user.onboarding_completed ? '/home' : '/complete-profile', { replace: true });
+    }).catch(() => {
+      setD1Token(null);
+      navigate('/login', { replace: true });
     });
-    return () => { authListener.subscription.unsubscribe(); };
   }, [navigate]);
   return null;
 }
