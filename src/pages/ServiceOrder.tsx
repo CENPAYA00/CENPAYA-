@@ -59,23 +59,25 @@ export default function ServiceOrder() {
           setSeller(s);
         }
       } else if (id) {
+        let existingOrder: any = null;
         try {
-          const { data } = await supabaseWorkerRequest<{ data: any }>(`/api/v1/service-orders/${encodeURIComponent(id)}`);
-          setOrder(data);
+          const result = await supabaseWorkerRequest<{ data: any }>(`/api/v1/service-orders/${encodeURIComponent(id)}`);
+          existingOrder = result.data;
+          setOrder(existingOrder);
         } catch (error: unknown) {
           setErrorMsg(error instanceof Error ? error.message : 'Service orders are unavailable until the financial schema is migrated.');
           setLoading(false);
           return;
         }
 
-        if (data) {
+        if (existingOrder) {
           const [svcRes, packagesRes, sellerRes] = await Promise.all([
-            d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(data.service_id)}`),
-            d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(data.service_id)}/packages`),
-            d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(data.seller_id)}`),
+            d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(existingOrder.service_id)}`),
+            d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(existingOrder.service_id)}/packages`),
+            d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(existingOrder.seller_id)}`),
           ]);
           setService(svcRes.data);
-          setPkg((packagesRes.data || []).find((row: any) => row.id === data.package_id) || null);
+          setPkg((packagesRes.data || []).find((row: any) => row.id === existingOrder.package_id) || null);
           setSeller(sellerRes.data);
         }
       }
