@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -37,8 +37,8 @@ export default function Subscribe() {
       setUserId(user.id);
 
       const [userRes, walletRes, profileRes] = await Promise.all([
-        supabase.from('users').select('is_subscribed').eq('id', user.id).single(),
-        supabase.from('wallets').select('available_funds').eq('user_id', user.id).single(),
+        supabaseWorkerRequest<{ data: { is_subscribed: boolean } }>('/api/v1/me/profile'),
+        supabaseWorkerRequest<{ data: { available_funds: number } | null }>('/api/v1/wallet'),
         d1Request<{ data: any }>('/api/me/personal-details'),
       ]);
       const countryCode = profileRes.data?.country_iso || 'CM';
