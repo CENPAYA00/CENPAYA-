@@ -66,11 +66,6 @@ const StaffTicketThread = lazy(() => import('./pages/StaffTicketThread'));
 const StaffReports = lazy(() => import('./pages/StaffReports'));
 const Notifications = lazy(() => import('./pages/Notifications'));
 const Follow = lazy(() => import('./pages/Follow'));
-const Groups = lazy(() => import('./pages/Groups'));
-const GroupDetail = lazy(() => import('./pages/GroupDetail'));
-const Communities = lazy(() => import('./pages/Communities'));
-const CommunityDetail = lazy(() => import('./pages/CommunityDetail'));
-const JoinGroupByLink = lazy(() => import('./pages/JoinGroupByLink'));
 const SuperAdminDashboard = lazy(() => import('./pages/SuperAdminDashboard'));
 const AdminStaff = lazy(() => import('./pages/admin/AdminStaff'));
 const StaffAccept = lazy(() => import('./pages/StaffAccept'));
@@ -88,7 +83,6 @@ const AdminTicketThread = lazy(() => import('./pages/admin/AdminTicketThread'));
 const AdminLedger = lazy(() => import('./pages/admin/AdminLedger'));
 const AdminPaymentMethods = lazy(() => import('./pages/admin/AdminPaymentMethods'));
 const AdminEscrow = lazy(() => import('./pages/admin/AdminEscrow'));
-const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const ArchivedPosts = lazy(() => import('./pages/ArchivedPosts'));
 
 // Complete the D1 Google OAuth hand-off and restore the D1 user session.
@@ -184,13 +178,7 @@ export default function App() {
             <Route path="/saved" element={<Saved />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/follow" element={<Follow />} />
-            <Route path="/groups" element={<Groups />} />
-            <Route path="/groups/join/:code" element={<JoinGroupByLink />} />
-            <Route path="/groups/:id" element={<GroupDetail />} />
-            <Route path="/communities" element={<Communities />} />
-            <Route path="/communities/:id" element={<CommunityDetail />} />
 
-            <Route path="/activity" element={<ActivityLog />} />
             <Route path="/archive" element={<ArchivedPosts />} />
           </Route>
 
