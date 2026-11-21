@@ -40,8 +40,9 @@ export default function SettingsVerification() {
     setSendingSms(true);
     try {
       await d1UpdateProfile({ phone: fullPhone, country_code: selectedCountry });
+      const { user } = await d1Me();
       await d1ResendOtp(fullPhone, 'verify_phone');
-      navigate(`/verify-otp?identifier=${encodeURIComponent(fullPhone)}&purpose=verify_phone`);
+      navigate(`/verify-otp?identifier=${encodeURIComponent(fullPhone)}&user_id=${encodeURIComponent(user.id)}&purpose=verify_phone`);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Could not send verification code.');
     } finally { setSendingSms(false); }
