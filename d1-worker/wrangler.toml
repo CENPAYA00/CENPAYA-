@@ -10,5 +10,23 @@ binding = "DB"
 database_name = "cenpaya-db"
 database_id = "68b307af-935e-45ca-933f-2e4cf6db8ee2"
 
-# Configure ALLOWED_ORIGINS as a Worker variable.
-# Configure OTP_PEPPER as a secret and OTP_DELIVERY as a Service Binding.
+# Configure the following bindings in the D1 Worker's Cloudflare environment.
+# AI: existing Workers AI / AI Search binding used with AI_SEARCH_NAME.
+# CACHE: existing KV namespace; optional and only for rebuildable public cache.
+# OTP_DELIVERY: service binding to the Cenpaya API email-delivery Worker.
+#
+# Configure these Worker variables:
+# ALLOWED_ORIGINS = exact comma-separated frontend origins
+# FRONTEND_URL = canonical frontend origin
+# GOOGLE_REDIRECT_URI = https://<this-worker-host>/api/auth/google/callback
+# AI_SEARCH_NAME = exact existing Cenpaya AI Search index/project name
+# SESSION_TTL_SECONDS = optional
+#
+# Configure these Worker secrets:
+# OTP_PEPPER
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# UPSTASH_REDIS_REST_TOKEN (optional)
+# UPSTASH_REDIS_REST_URL may be a variable; Redis is optional.
+#
+# Never place provider credentials or secret values in this file.
