@@ -284,7 +284,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
     const row=await env.DB.prepare("SELECT * FROM public_marketplace_search WHERE listing_id=?").bind(decodeURIComponent(internalListingQuote[1])).first<Record<string,unknown>>();
     if(!row)return fail("Listing not found",404);
-    const data={...row,listing_id:row.listing_id||row.id,id:row.listing_id||row.id,title:row.product_title||row.title,price:row.product_price??row.price_amount??row.price,seller_id:row.seller_id||row.merchant_id,images:row.images||(row.image_url?[row.image_url]:[])};
+    const data={...row,listing_id:row.listing_id||row.id,id:row.listing_id||row.id,title:row.product_title||row.title,price:row.product_price??row.price_amount??row.price,seller_id:row.seller_id||row.merchant_id,images:row.images||(row.image_url?[row.image_url]:[]),currency_code:row.currency_code||row.currency||"XAF"};
     return json({success:true,data});
   }
   const publicListing=path.match(/^\/api\/market\/listings\/([^/]+)$/);
