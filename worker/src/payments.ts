@@ -317,6 +317,7 @@ export async function handleAuthenticatedPaymentApi(
       const reason = error instanceof Error ? error.message : "provider_initiation_failed";
       const definitive = reason.startsWith("provider_rejected_");
       try { await callRpc(db, "cenpaya_momo_membership_fail", { p_payment_id: started.payment_id, p_reason: reason, p_uncertain: !definitive }); } catch { /* Keep uncertain payments for provider reconciliation. */ }
+      if (!definitive) console.error(JSON.stringify({ event: "membership_initiation_uncertain", payment_id: started.payment_id, provider, severity: "critical" }));
       return jsonResponse({ success: false, error: definitive ? "payment_provider_rejected_request" : "payment_initiation_uncertain_contact_support" }, definitive ? 502 : 503, headers);
     }
   }
@@ -419,6 +420,7 @@ export async function handleAuthenticatedPaymentApi(
         }
         return jsonResponse({ success: false, error: "payment_provider_rejected_request" }, 400, headers);
       }
+      console.error(JSON.stringify({ event: "topup_initiation_uncertain", topup_id: topupId, provider: providerName, severity: "critical" }));
       return jsonResponse({ success: false, error: "payment_initiation_uncertain_contact_support" }, 502, headers);
     }
   }
@@ -557,6 +559,7 @@ export async function handleAuthenticatedPaymentApi(
         }
         return jsonResponse({ success: false, error: "payment_provider_rejected_request" }, 400, headers);
       }
+      console.error(JSON.stringify({ event: "withdrawal_initiation_uncertain", withdrawal_id: withdrawalId, provider: gateway, severity: "critical" }));
       return jsonResponse({ success: false, error: "withdrawal_initiation_uncertain_contact_support" }, 502, headers);
     }
   }
