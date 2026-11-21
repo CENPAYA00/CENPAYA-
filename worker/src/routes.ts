@@ -3,51 +3,117 @@ import { jsonResponse, readJsonObject } from "./http-utils.js";
 import { readUserProfile } from "./profile.js";
 
 type AdminRpcSchema = {
+  required: string[];
   optional: string[];
+  genericAllowed: boolean;
   validate: (args: Record<string, unknown>) => boolean;
 };
-const noArgs = (args: Record<string, unknown>) => Object.keys(args).length === 0;
-const integerIn = (value: unknown, min: number, max: number) =>
-  Number.isSafeInteger(value) && Number(value) >= min && Number(value) <= max;
-const nullableFlow = (value: unknown) => value === null || value === "CASH_IN" || value === "CASH_OUT";
+const isText = (v: unknown, max = 500, min = 1) =>
+  typeof v === "string" && v.trim().length >= min && v.length <= max;
+const isUuid = (v: unknown) =>
+  typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+const isBool = (v: unknown) => typeof v === "boolean";
+const isNumericAmount = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 1_000_000_000_000;
+const isPercent = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100;
+const isStringArray = (v: unknown) =>
+  Array.isArray(v) && v.length <= 20 && v.every((item) => isText(item, 2048));
+const defineRpc = (
+  required: string[], optional: string[], validate: (args: Record<string, unknown>) => boolean,
+  genericAllowed = true,
+): AdminRpcSchema => ({ required, optional, validate, genericAllowed });
 
-// The generic RPC gateway is deliberately read-only. Mutating and money-moving
-// operations must use dedicated endpoints with operation-specific validation.
+// Each RPC has an exact argument contract. High-impact actions are intentionally
+// excluded from the generic gateway and must use their dedicated typed routes.
 const ADMIN_RPC_SCHEMAS: Record<string, AdminRpcSchema> = {
-  admin_available_gains: { optional: [], validate: noArgs },
-  admin_gains_breakdown: { optional: [], validate: noArgs },
-  admin_list_invitations: { optional: [], validate: noArgs },
-  admin_list_providers: { optional: [], validate: noArgs },
-  admin_money_circulation: { optional: [], validate: noArgs },
-  admin_money_circulation_full: { optional: [], validate: noArgs },
-  admin_list_ledger: {
-    optional: ["p_limit", "p_offset", "p_flow"],
-    validate: (args) =>
-      (args.p_limit === undefined || integerIn(args.p_limit, 1, MAX_PAGE_SIZE)) &&
-      (args.p_offset === undefined || integerIn(args.p_offset, 0, 100_000)) &&
-      (args.p_flow === undefined || nullableFlow(args.p_flow)),
-  },
-  admin_list_open_escrows: {
-    optional: ["p_limit"],
-    validate: (args) => args.p_limit === undefined || integerIn(args.p_limit, 1, MAX_PAGE_SIZE),
-  },
-  admin_list_users: {
-    optional: ["p_search", "p_role_filter", "p_banned_only", "p_limit", "p_offset"],
-    validate: (args) =>
-      (args.p_search === undefined || args.p_search === null || (typeof args.p_search === "string" && args.p_search.length <= 120)) &&
-      (args.p_role_filter === undefined || args.p_role_filter === null || (typeof args.p_role_filter === "string" && args.p_role_filter.length <= 40)) &&
-      (args.p_banned_only === undefined || typeof args.p_banned_only === "boolean") &&
-      (args.p_limit === undefined || integerIn(args.p_limit, 1, MAX_PAGE_SIZE)) &&
-      (args.p_offset === undefined || integerIn(args.p_offset, 0, 100_000)),
-  },
+  admin_add_country: defineRpc(
+    ["p_country_iso","p_currency_code","p_base_fee_pct","p_premium_fee_pct","p_withdrawal_fee_pct"], [],
+    (a) => isText(a.p_country_iso,2) && /^[A-Z]{2}$/.test(String(a.p_country_iso)) &&
+      isText(a.p_currency_code,3) && /^[A-Z]{3}$/.test(String(a.p_currency_code)) &&
+      isPercent(a.p_base_fee_pct) && isPercent(a.p_premium_fee_pct) && isPercent(a.p_withdrawal_fee_pct)),
+  admin_add_payment_method: defineRpc(["p_method_name","p_display_label"], [],
+    (a) => isText(a.p_method_name,80) && isText(a.p_display_label,120)),
+  admin_assign_role: defineRpc(["p_target_user_id","p_new_role"], [],
+    (a) => isUuid(a.p_target_user_id) && isText(a.p_new_role,40), false),
+  admin_available_gains: defineRpc([], [], noArgs),
+  admin_ban_user: defineRpc(["p_target_id","p_reason"], [],
+    (a) => isUuid(a.p_target_id) && isText(a.p_reason,1000,10), false),
+  admin_escrow_action: defineRpc(["p_kind","p_id","p_action","p_reason"], [],
+    (a) => ["service","order"].includes(String(a.p_kind)) && isUuid(a.p_id) &&
+      ["release","refund","cancel","dispute"].includes(String(a.p_action)) && isText(a.p_reason,1000,10), false),
+  admin_gains_breakdown: defineRpc([], [], noArgs),
+  admin_grant_membership: defineRpc(["p_target_user_id","p_reason"], [],
+    (a) => isUuid(a.p_target_user_id) && isText(a.p_reason,1000,5), false),
+  admin_grant_permission: defineRpc(["p_target_user_id","p_permission_key"], [],
+    (a) => isUuid(a.p_target_user_id) && isText(a.p_permission_key,100), false),
+  admin_list_invitations: defineRpc([], [], noArgs),
+  admin_list_ledger: defineRpc(["p_limit","p_offset","p_flow"], [],
+    (a) => integerIn(a.p_limit,1,MAX_PAGE_SIZE) && integerIn(a.p_offset,0,100_000) &&
+      (a.p_flow === null || a.p_flow === "CASH_IN" || a.p_flow === "CASH_OUT")),
+  admin_list_open_escrows: defineRpc(["p_limit"], [],
+    (a) => integerIn(a.p_limit,1,MAX_PAGE_SIZE)),
+  admin_list_providers: defineRpc([], [], noArgs),
+  admin_list_users: defineRpc(["p_search","p_role_filter","p_banned_only","p_limit","p_offset"], [],
+    (a) => (a.p_search === null || isText(a.p_search,120)) &&
+      (a.p_role_filter === null || isText(a.p_role_filter,40)) && isBool(a.p_banned_only) &&
+      integerIn(a.p_limit,1,MAX_PAGE_SIZE) && integerIn(a.p_offset,0,100_000)),
+  admin_moderate_user: defineRpc(
+    ["p_target_user_id","p_action","p_reason","p_duration_hours","p_evidence_urls","p_ip_address"], [],
+    (a) => isUuid(a.p_target_user_id) && isText(a.p_action,40) && isText(a.p_reason,1000,5) &&
+      (a.p_duration_hours === null || integerIn(a.p_duration_hours,1,87600)) &&
+      (a.p_evidence_urls === null || isStringArray(a.p_evidence_urls)) &&
+      (a.p_ip_address === null || isText(a.p_ip_address,64)), false),
+  admin_money_circulation: defineRpc([], [], noArgs),
+  admin_money_circulation_full: defineRpc([], [], noArgs),
+  admin_remove_gateway_credentials: defineRpc(["p_provider_name"], ["p_environment"],
+    (a) => isText(a.p_provider_name,80) &&
+      (a.p_environment === undefined || ["sandbox","production"].includes(String(a.p_environment))), false),
+  admin_remove_support_agent: defineRpc(["p_user_id"], [],
+    (a) => isUuid(a.p_user_id), false),
+  admin_resolve_dispute: defineRpc(["p_dispute_id","p_outcome","p_notes"], [],
+    (a) => isUuid(a.p_dispute_id) && isText(a.p_outcome,40) && isText(a.p_notes,2000,5), false),
+  admin_review_kyc: defineRpc(["p_kyc_id","p_decision","p_reason"], [],
+    (a) => isUuid(a.p_kyc_id) && isText(a.p_decision,30) && isText(a.p_reason,1000,3), false),
+  admin_revoke_invitation: defineRpc(["p_id"], [],
+    (a) => isUuid(a.p_id)),
+  admin_revoke_membership: defineRpc(["p_target_id"], [],
+    (a) => isUuid(a.p_target_id), false),
+  admin_set_gateway_credentials: defineRpc(
+    ["p_provider_name","p_api_public_key","p_api_secret_key"], ["p_webhook_secret","p_environment"],
+    (a) => isText(a.p_provider_name,80) && isText(a.p_api_public_key,2048) &&
+      isText(a.p_api_secret_key,4096) &&
+      (a.p_webhook_secret === undefined || a.p_webhook_secret === null || isText(a.p_webhook_secret,4096)) &&
+      (a.p_environment === undefined || ["sandbox","production"].includes(String(a.p_environment))), false),
+  admin_set_provider_active: defineRpc(["p_provider_name","p_active"], [],
+    (a) => isText(a.p_provider_name,80) && isBool(a.p_active)),
+  admin_toggle_payment_method: defineRpc(["p_method_name","p_active"], [],
+    (a) => isText(a.p_method_name,80) && isBool(a.p_active)),
+  admin_topup_my_wallet: defineRpc(["p_amount","p_reason"], [],
+    (a) => isNumericAmount(a.p_amount) && isText(a.p_reason,500,3), false),
+  admin_unban_user: defineRpc(["p_target_id"], [],
+    (a) => isUuid(a.p_target_id), false),
+  admin_update_region: defineRpc(
+    ["p_country_iso","p_base_fee_pct","p_premium_fee_pct","p_withdrawal_fee_pct","p_is_operational"], [],
+    (a) => isText(a.p_country_iso,2) && /^[A-Z]{2}$/.test(String(a.p_country_iso)) &&
+      isPercent(a.p_base_fee_pct) && isPercent(a.p_premium_fee_pct) &&
+      isPercent(a.p_withdrawal_fee_pct) && isBool(a.p_is_operational)),
+  admin_withdraw_from_my_wallet: defineRpc(["p_amount","p_momo_number","p_provider"], [],
+    (a) => isNumericAmount(a.p_amount) && isText(a.p_momo_number,32,7) &&
+      ["mtn_momo","orange_money","airtel_money","moov_money"].includes(String(a.p_provider)), false),
+  admin_withdraw_gains_to_wallet: defineRpc(["p_amount"], [],
+    (a) => isNumericAmount(a.p_amount), false),
+  admin_withdraw_platform_gains: defineRpc(["p_amount","p_gateway","p_destination"], [],
+    (a) => isNumericAmount(a.p_amount) && isText(a.p_gateway,40) &&
+      isText(a.p_destination,80,5), false),
 };
 function validAdminRpcArgs(name: string, args: Record<string, unknown>): boolean {
   const schema = ADMIN_RPC_SCHEMAS[name];
-  if (!schema) return false;
-  const allowed = new Set(schema.optional);
-  return Object.keys(args).every((key) => allowed.has(key)) && schema.validate(args);
+  if (!schema || !schema.genericAllowed) return false;
+  const required = schema.required, allowed = new Set([...required, ...schema.optional]);
+  return required.every((key) => Object.prototype.hasOwnProperty.call(args, key)) &&
+    Object.keys(args).every((key) => allowed.has(key)) && schema.validate(args);
 }
-
 const MAX_PAGE_SIZE = 200;
 function pageSize(url: URL, fallback = 50): number {
   const raw = url.searchParams.get("limit");
