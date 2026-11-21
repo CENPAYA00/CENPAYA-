@@ -13,11 +13,12 @@ interface Env {
 }
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const json = (data: unknown, status = 200, headers: HeadersInit = {}) =>
-  new Response(JSON.stringify(data), { status, headers: {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store", ...headers
-  }});
+const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
+  const headers = new Headers(extraHeaders);
+  headers.set("Content-Type", "application/json; charset=utf-8");
+  headers.set("Cache-Control", "no-store");
+  return new Response(JSON.stringify(data), { status, headers });
+};
 const fail = (message: string, status = 400) => json({success:false,error:message},status);
 const allowedOrigins = (env: Env) => (env.ALLOWED_ORIGINS || "").split(",").map(x=>x.trim()).filter(Boolean);
 function cors(request: Request, env: Env): Response | null {
@@ -218,8 +219,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const allowed=["display_name","bio","avatar_url","cover_url","country_code","preferred_language","location_city","location_region","occupation","profile_visibility"];
     const fields=allowed.filter(k=>Object.prototype.hasOwnProperty.call(b,k));
     if(!fields.length)return fail("No supported profile fields supplied");
-    const values:unknown[]=[];
-    const sets=fields.map(k=>{let v=b[k];if(typeof v!=="string"&&v!==null)return "";v=typeof v==="string"?v.trim().slice(0,k==="bio"?2000: k==="display_name"?100:255):null;values.push(v);return '"'+k+'"=?';});
+    const values:(string|null)[]=[];
+    const sets=fields.map(k=>{let v=b[k];if(typeof v!=="string"&&v!==null)return "";v=typeof v==="string"?v.trim().slice(0,k==="bio"?2000: k==="display_name"?100:255):null;values.push(v as string|null);return '"'+k+'"=?';});
     if(sets.some(x=>!x))return fail("Invalid profile field value");
     if(b.profile_visibility!==undefined&&!["public","private","followers"].includes(String(b.profile_visibility)))return fail("Invalid profile visibility");
     values.push(user.id);
