@@ -1,21 +1,16 @@
-import { supabase } from './supabase';
+import { d1Request } from './d1Api';
 
 export const api = {
   getFeed: async (limit = 20, offset = 0) => {
-    const { data, error } = await supabase.rpc('get_feed', { p_limit: limit, p_offset: offset });
-    if (error) throw error;
-    return data?.feed ?? [];
+    const result = await d1Request<{ data: any[] }>(`/api/feed?limit=${limit}&offset=${offset}`);
+    return result.data ?? [];
   },
   toggleSave: async (postId: string) => {
-    const { data, error } = await supabase.rpc('toggle_save_post', { p_post_id: postId });
-    if (error) throw error;
-    return data;
+    const state = await d1Request<{ saved: boolean }>(`/api/posts/${encodeURIComponent(postId)}/my-state`);
+    return d1Request(`/api/posts/${encodeURIComponent(postId)}/save`, { method: state.saved ? 'DELETE' : 'POST' });
   },
   trackShare: async (postId: string, channel = 'external') => {
-    const { error } = await supabase.rpc('track_post_share', {
-      p_post_id: postId,
-      p_channel: channel,
-    });
-    if (error) console.warn('share track failed', error);
+    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/share`, { method: 'POST', body: JSON.stringify({ channel }) }); }
+    catch (error) { console.warn('share tracking failed', error); }
   },
 };
