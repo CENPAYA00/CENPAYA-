@@ -13,7 +13,7 @@ Do not import the export's CSV/JSON/SQL row data into Git. It includes personal 
 
 ## Worker module layout and internal services
 
-The Worker entry point in `src/index.ts` now delegates security primitives to `src/security.ts`, account/session verification and OTP helpers to `src/auth.ts`, session creation to `src/sessions.ts`, and Google OAuth flows to `src/oauth.ts`. Shared request and environment types live in `src/types.ts`; AI Search and result verification now live in `src/search.ts`. Remaining route groups are still being separated from the entry point.
+The Worker entry point in `src/index.ts` now delegates security primitives to `src/security.ts`, account/session verification and OTP helpers to `src/auth.ts`, session creation to `src/sessions.ts`, and Google OAuth flows to `src/oauth.ts`. Shared request and environment types live in `src/types.ts`. The entry point delegates profile/country routes to `src/profiles.ts`, marketplace/feed/listing routes to `src/marketplace.ts`, messaging/notifications/support routes to `src/community.ts`, and AI Search to `src/search.ts`. `src/index.ts` now focuses on CORS, session/authentication, internal security endpoints, and route dispatch.
 
 The D1 Worker implements three private service-binding endpoints used by the Supabase financial Worker:
 
