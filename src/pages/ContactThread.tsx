@@ -27,12 +27,16 @@ export default function ContactThread() {
   };
 
   useEffect(() => {
+    let active = true;
     const init = async () => {
       const u = await getCachedUser();
+      if (!active) return;
       setMe(u);
       await load();
     };
-    init();
+    void init();
+    const poll = window.setInterval(() => { if (active) void load(); }, 5000);
+    return () => { active = false; window.clearInterval(poll); };
   }, [id]);
 
   useEffect(() => {
