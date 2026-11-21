@@ -1,0 +1,14 @@
+name = "cenpaya-d1-worker"
+main = "src/index.ts"
+compatibility_date = "2026-11-20"
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cenpaya-db"
+database_id = "68b307af-935e-45ca-933f-2e4cf6db8ee2"
+
+# Configure ALLOWED_ORIGINS as a Worker variable.
+# Configure OTP_PEPPER as a secret and OTP_DELIVERY as a Service Binding.
