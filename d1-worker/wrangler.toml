@@ -1,5 +1,6 @@
 name = "cenpaya-d1-worker"
 main = "src/index.ts"
+migrations_dir = "../database/d1/migrations"
 compatibility_date = "2026-11-20"
 
 [observability]
