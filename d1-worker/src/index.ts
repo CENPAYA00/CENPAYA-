@@ -196,7 +196,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(user.banned||user.account_status!=="active")return fail("Account is unavailable",403);
     if(!(user.email_verified||user.phone_verified))return fail("Verify your email address or phone number before signing in",403);
     const token=await createSession(env.DB,user.id,request,env);
-    return sessionJson({success:true,user:safeUser(user),token},token,env);
+    return sessionJson({success:true,user:safeUser(user)},token,env);
   }
   if(path==="/api/auth/logout"&&method==="POST"){
     const token=requestSessionToken(request);
