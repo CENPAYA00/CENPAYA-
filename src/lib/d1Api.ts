@@ -72,16 +72,18 @@ export function d1Register(input: {
   );
 }
 
-export function d1Login(identifier: string, password: string) {
-  return d1Request<{ user: D1User; token: string }>('/api/auth/login', {
+export async function d1Login(identifier: string, password: string) {
+  const result = await d1Request<{ user: D1User; token: string }>('/api/auth/login', {
     method: 'POST', body: JSON.stringify({ identifier, password }),
   });
+  setD1Token(result.token); return result;
 }
 
 export async function d1VerifyOtp(user_id: string, code: string, purpose: 'verify_email' | 'verify_phone' | 'password_reset' = 'verify_email') {
-  return d1Request<{ user: D1User; token: string }>('/api/auth/verify', {
+  const result = await d1Request<{ user: D1User; token: string }>('/api/auth/verify', {
     method: 'POST', body: JSON.stringify({ user_id, code, purpose }),
   });
+  setD1Token(result.token); return result;
 }
 
 export function d1ResendOtp(identifier: string, purpose: 'verify_email' | 'verify_phone' = 'verify_email') {
@@ -96,10 +98,11 @@ export function d1RequestPasswordReset(identifier: string) {
   });
 }
 
-export function d1ResetPassword(identifier: string, code: string, new_password: string) {
-  return d1Request<{ user: D1User; token: string }>('/api/auth/password/reset', {
+export async function d1ResetPassword(identifier: string, code: string, new_password: string) {
+  const result = await d1Request<{ user: D1User; token: string }>('/api/auth/password/reset', {
     method: 'POST', body: JSON.stringify({ identifier, code, new_password }),
   });
+  setD1Token(result.token); return result;
 }
 
 export function d1Me() {
