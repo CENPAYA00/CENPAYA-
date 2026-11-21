@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { compressImage } from '../utils/compressImage';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
@@ -39,21 +39,17 @@ export default function GroupDetail() {
 
   const loadGroup = async () => {
     if (!id) return;
-    const { data: res } = await supabase.rpc('get_group', { p_group_id: id });
-    if (res?.ok) setData(res);
+    try { const result = await d1Request<{ data: any }>(`/api/groups/${encodeURIComponent(id)}`); setData(result.data); } catch (error: any) { alert(error.message || 'Could not load group'); }
     setLoading(false);
   };
 
   const loadMessages = async () => {
     if (!id) return;
-    await supabase.rpc('purge_expired_group_messages');
-    const { data: res } = await supabase.rpc('list_group_messages', { p_group_id: id, p_limit: 100 });
-    if (res?.ok) setMessages(res.messages || []);
+    try { const result = await d1Request<{ data: any[] }>(`/api/groups/${encodeURIComponent(id)}/messages?limit=100`); setMessages(result.data || []); } catch (error: any) { console.warn('Could not refresh group messages', error); }
   };
 
   const loadPoll = async (messageId: string) => {
-    const { data: res } = await supabase.rpc('get_group_poll', { p_message_id: messageId });
-    if (res?.ok) setPolls((prev) => ({ ...prev, [messageId]: res }));
+    try { const result = await d1Request<{ data: any }>(`/api/groups/messages/${encodeURIComponent(messageId)}/poll`); setPolls((prev) => ({ ...prev, [messageId]: result.data })); } catch (error) { console.warn('Could not load group poll', error); }
   };
 
   useEffect(() => {
@@ -73,17 +69,8 @@ export default function GroupDetail() {
 
   useEffect(() => {
     if (!id) return;
-    const sub = supabase
-      .channel(`group_${id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `group_id=eq.${id}` },
-        async (payload: any) => {
-          const m = payload.new;
-          const { data: user } = await supabase.from('public_profiles').select('username, avatar_url').eq('id', m.sender_id).maybeSingle();
-          setMessages((prev) => [...prev, { ...m, sender_username: user?.username, sender_avatar: user?.avatar_url }]);
-          if (m.message_type === 'poll') loadPoll(m.id);
-        })
-      .subscribe();
-    return () => { supabase.removeChannel(sub); };
+    const timer = window.setInterval(() => { void loadMessages(); }, 5000);
+    return () => window.clearInterval(timer);
   }, [id]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length]);
@@ -108,33 +95,23 @@ export default function GroupDetail() {
 
   const leave = async () => {
     if (!window.confirm('Leave this group?')) return;
-    const { data: res, error } = await supabase.rpc('leave_group', { p_group_id: id });
-    if (error || !res?.ok) alert(error?.message || res?.error || 'Failed');
-    else navigate('/groups');
+    try { await d1Request(`/api/groups/${encodeURIComponent(id || '')}/leave`, { method: 'POST' }); navigate('/groups'); } catch (error: any) { alert(error.message || 'Failed'); }
   };
 
   const mute = async (minutes: number | null) => {
-    const { data: res, error } = await supabase.rpc('set_group_mute', { p_group_id: id, p_duration_minutes: minutes });
-    if (error || !res?.ok) alert(error?.message || res?.error || 'Failed');
-    else { setShowMenu(false); loadGroup(); }
+    try { await d1Request(`/api/groups/${encodeURIComponent(id || '')}/settings`, { method: 'PATCH', body: JSON.stringify({ mute_minutes: minutes }) }); setShowMenu(false); loadGroup(); } catch (error: any) { alert(error.message || 'Failed'); }
   };
 
   const setDisappearing = async (seconds: number | null) => {
-    const { data: res, error } = await supabase.rpc('set_group_disappearing', { p_group_id: id, p_seconds: seconds });
-    if (error || !res?.ok) alert(error?.message || res?.error || 'Failed');
-    else { setShowMenu(false); loadGroup(); loadMessages(); }
+    try { await d1Request(`/api/groups/${encodeURIComponent(id || '')}/settings`, { method: 'PATCH', body: JSON.stringify({ disappearing_seconds: seconds }) }); setShowMenu(false); loadGroup(); loadMessages(); } catch (error: any) { alert(error.message || 'Failed'); }
   };
 
   const setPostingRule = async (who: 'everyone' | 'admins') => {
-    const { data: res, error } = await supabase.rpc('set_group_posting_rule', { p_group_id: id, p_who_can_post: who });
-    if (error || !res?.ok) alert(error?.message || res?.error || 'Failed');
-    else { setShowMenu(false); loadGroup(); }
+    try { await d1Request(`/api/groups/${encodeURIComponent(id || '')}/settings`, { method: 'PATCH', body: JSON.stringify({ who_can_post: who }) }); setShowMenu(false); loadGroup(); } catch (error: any) { alert(error.message || 'Failed'); }
   };
 
   const shareGroupToFeed = async () => {
-    const { data: res, error } = await supabase.rpc('share_group_to_social', { p_group_id: id });
-    if (error || !res?.ok) alert(error?.message || res?.error || 'Failed');
-    else { alert('Group shared to feed'); setShowMenu(false); }
+    try { await d1Request(`/api/groups/${encodeURIComponent(id || '')}/share`, { method: 'POST' }); alert('Group shared to feed'); setShowMenu(false); } catch (error: any) { alert(error.message || 'Failed'); }
   };
 
   const sendText = async () => {
@@ -142,23 +119,23 @@ export default function GroupDetail() {
     const body = input.trim();
     const mentionIds = mentions.map((m) => m.user_id);
     setInput(''); setReplyTo(null); setMentions([]); setSending(true);
-    const { error } = await supabase.rpc('send_group_message', {
-      p_group_id: id, p_body: body, p_message_type: 'text',
-      p_reply_to_id: replyTo?.id || null, p_mentions: mentionIds,
-    });
-    if (error) alert(error.message);
+    try { await d1Request(`/api/groups/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ message_text: body, message_type: 'text', reply_to_id: replyTo?.id || null, mentions: mentionIds }) }); }
+    catch (error: any) { alert(error.message || 'Could not send message'); }
     setSending(false);
   };
 
   const sendImage = async (file: File) => {
     if (!id) return;
-    const compressed = await compressImage(file);
-    const ext = compressed.name.split('.').pop();
-    const path = `group-media/${id}/${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from('chat-media').upload(path, compressed);
-    if (upErr) { alert(upErr.message); return; }
-    const { data: urlData } = supabase.storage.from('chat-media').getPublicUrl(path);
-    await supabase.rpc('send_group_message', { p_group_id: id, p_message_type: 'image', p_media_url: urlData.publicUrl, p_reply_to_id: replyTo?.id || null });
+    try {
+      const compressed = await compressImage(file);
+      const form = new FormData(); form.append('file', compressed, compressed.name || 'image.jpg'); form.append('group_id', id);
+      const token = getD1Token();
+      const response = await fetch(getD1ApiUrl('/api/groups/media'), { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+      const uploaded = await response.json().catch(() => ({}));
+      if (!response.ok || !uploaded.url) throw new Error(uploaded.error || 'Upload failed');
+      await d1Request(`/api/groups/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ message_type: 'image', media_url: uploaded.url, reply_to_id: replyTo?.id || null }) });
+      await loadMessages();
+    } catch (error: any) { alert(error.message || 'Could not send image'); }
   };
 
   const startRecording = async () => {
@@ -171,11 +148,15 @@ export default function GroupDetail() {
     setIsRecording(false);
     const duration = Math.round((Date.now() - recordStartRef.current) / 1000);
     if (!blob || !id || duration < 1) return;
-    const path = `group-voice/${id}/${Date.now()}.webm`;
-    const { error: upErr } = await supabase.storage.from('chat-media').upload(path, blob, { contentType: blob.type });
-    if (upErr) { alert(upErr.message); return; }
-    const { data: urlData } = supabase.storage.from('chat-media').getPublicUrl(path);
-    await supabase.rpc('send_group_message', { p_group_id: id, p_message_type: 'voice_note', p_media_url: urlData.publicUrl, p_media_duration_seconds: duration });
+    try {
+      const form = new FormData(); form.append('file', blob, 'voice.webm'); form.append('group_id', id);
+      const token = getD1Token();
+      const response = await fetch(getD1ApiUrl('/api/groups/media'), { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+      const uploaded = await response.json().catch(() => ({}));
+      if (!response.ok || !uploaded.url) throw new Error(uploaded.error || 'Upload failed');
+      await d1Request(`/api/groups/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ message_type: 'voice_note', media_url: uploaded.url, media_duration_seconds: duration }) });
+      await loadMessages();
+    } catch (error: any) { alert(error.message || 'Could not send voice note'); }
   };
 
   const cancelRecording = () => { recorder.cancel(); setIsRecording(false); };
@@ -193,31 +174,23 @@ export default function GroupDetail() {
   const deleteMsg = async () => {
     if (!actionMessage) return;
     if (!window.confirm('Delete this message?')) return;
-    const { error } = await supabase.rpc('delete_group_message', { p_message_id: actionMessage.id });
-    if (error) alert(error.message);
-    else setMessages((prev) => prev.map((x) => (x.id === actionMessage.id ? { ...x, is_deleted: true, body: null, media_url: null } : x)));
+    try { await d1Request(`/api/groups/messages/${encodeURIComponent(actionMessage.id)}`, { method: 'DELETE' }); setMessages((prev) => prev.map((x) => (x.id === actionMessage.id ? { ...x, is_deleted: true, body: null, media_url: null } : x))); } catch (error: any) { alert(error.message || 'Could not delete message'); }
     setActionMessage(null);
   };
 
   const shareMessageToFeed = async () => {
     if (!actionMessage) return;
-    const { data: res, error } = await supabase.rpc('share_group_message_to_social', { p_message_id: actionMessage.id, p_caption: '' });
-    if (error || !res?.ok) alert(error?.message || res?.error || 'Failed');
-    else { alert('Shared to feed'); setActionMessage(null); }
+    try { await d1Request(`/api/groups/messages/${encodeURIComponent(actionMessage.id)}/share`, { method: 'POST', body: JSON.stringify({ caption: '' }) }); alert('Shared to feed'); setActionMessage(null); } catch (error: any) { alert(error.message || 'Failed'); }
   };
 
   const submitReport = async (reason: string) => {
     if (!reportMessage) return;
-    const { data: res, error } = await supabase.rpc('report_group_message', { p_message_id: reportMessage.id, p_reason: reason });
-    if (error || !res?.ok) alert(error?.message || res?.error || 'Failed');
-    else alert('Reported. Support will review.');
+    try { await d1Request(`/api/groups/messages/${encodeURIComponent(reportMessage.id)}/report`, { method: 'POST', body: JSON.stringify({ reason }) }); alert('Reported. Support will review.'); } catch (error: any) { alert(error.message || 'Failed'); }
     setReportMessage(null);
   };
 
   const vote = async (pollId: string, messageId: string, key: string) => {
-    const { error } = await supabase.rpc('vote_on_poll', { p_poll_id: pollId, p_option_key: key });
-    if (error) alert(error.message);
-    else loadPoll(messageId);
+    try { await d1Request(`/api/groups/polls/${encodeURIComponent(pollId)}/vote`, { method: 'POST', body: JSON.stringify({ option_key: key }) }); await loadPoll(messageId); } catch (error: any) { alert(error.message || 'Could not vote'); }
   };
 
   const handleInputChange = async (val: string) => {
@@ -225,8 +198,7 @@ export default function GroupDetail() {
     const atIdx = val.lastIndexOf('@');
     if (atIdx >= 0 && !val.slice(atIdx + 1).includes(' ')) {
       setShowMentions(true);
-      const { data: res } = await supabase.rpc('search_group_members', { p_group_id: id, p_query: val.slice(atIdx + 1) });
-      setMentionResults(res?.members || []);
+      try { const res = await d1Request<{ data: any[] }>(`/api/groups/${encodeURIComponent(id || '')}/members/search?q=${encodeURIComponent(val.slice(atIdx + 1))}`); setMentionResults(res.data || []); } catch { setMentionResults([]); }
     } else setShowMentions(false);
   };
 
