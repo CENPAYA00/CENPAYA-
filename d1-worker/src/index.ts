@@ -454,7 +454,12 @@ async function handle(request:Request,env:Env):Promise<Response>{
         const hit:any=hitMap.get(String(row.listing_id))||{};
         const listingType=String(row.listing_type||hit.kind||"listing").toLowerCase();
         const entityKind=listingType.includes("service")?"service":"listing";
-        const images=Array.isArray(row.images)?row.images:typeof row.images==="string"?row.images.split(","):[];
+        let images:any[]=[];
+        if(Array.isArray(row.images))images=row.images;
+        else if(typeof row.images==="string"){
+          try{const parsed=JSON.parse(row.images);images=Array.isArray(parsed)?parsed:row.images.split(",");}
+          catch{images=row.images.split(",");}
+        }
         const price=row.price_amount??row.price??null;
         const currency=row.currency_code||"XAF";
         return {id:String(row.listing_id),kind:entityKind,title:String(row.product_title||row.title||hit.title||"Marketplace item"),subtitle:String(row.location_city||row.location_region||row.country_code||hit.subtitle||""),cover:row.image_url||images[0]||hit.cover||null,meta:price===null?String(hit.meta||""):`${Number(price).toLocaleString()} ${currency}`,is_demo:!!row.is_demo||!!hit.is_demo,score:hit.score,snippet:hit.snippet};
