@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Wallet, Smartphone, Shield, Check, MapPin } from 'lucide-react';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
@@ -42,6 +42,7 @@ export default function Checkout() {
   const [payPhone, setPayPhone] = useState('');
   const [requirements, setRequirements] = useState('');
   const [processing, setProcessing] = useState(false);
+  const checkoutIdempotencyKey = useRef<string | null>(null);
   const [err, setErr] = useState('');
 
   const [countries, setCountries] = useState<CheckoutCountry[]>([]);
@@ -182,7 +183,7 @@ export default function Checkout() {
           method: 'POST',
           body: JSON.stringify({
             listing_id: item.id,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: checkoutIdempotencyKey.current || (checkoutIdempotencyKey.current = crypto.randomUUID()),
             payment_method: method,
             payment_phone: method === 'momo' ? payPhone : null,
             shipping_country: country,
@@ -197,6 +198,8 @@ export default function Checkout() {
       const message = e instanceof Error ? e.message : 'Payment failed';
       if (/insufficient/i.test(message)) setErr('Insufficient wallet balance. Top up first.');
       else if (/idempotency|duplicate/i.test(message)) setErr('This checkout was already submitted. Refresh your orders before retrying.');
+      else if (/marketplace_mobile_money_checkout_unavailable/i.test(message)) setErr('Mobile Money marketplace checkout is not available yet. Use your wallet or top up first.');
+      else if (/service_order_schema_not_present/i.test(message)) setErr('Service orders are paused until their financial database tables and settlement transaction are migrated.');
       else if (/provider_rejected/i.test(message)) setErr('The payment provider rejected the request. Check the payment details and try again.');
       else if (/uncertain|timeout|network/i.test(message)) setErr('Payment status is uncertain. Check your orders before retrying to avoid duplicate payment.');
       else setErr(message);
