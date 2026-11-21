@@ -17,10 +17,11 @@ export default function AdminUsers() {
       const { data: membershipRows } = ids.length
         ? await supabase.from('users').select('id, is_subscribed, is_membership_exempt').in('id', ids)
         : { data: [] };
-      const membershipById = new Map((membershipRows || []).map((row: any) => [row.id, row]));
+      const membershipById: Record<string, any> = {};
+      (membershipRows || []).forEach((row: any) => { membershipById[row.id] = row; });
       setUsers(profiles.map((user: any) => ({
         ...user,
-        ...(membershipById.get(user.id) || {}),
+        ...(membershipById[user.id] || {}),
       })).sort((a: any, b: any) => Number(!!b.is_subscribed) - Number(!!a.is_subscribed)));
     } catch (error) {
       console.warn('Could not load users', error);
