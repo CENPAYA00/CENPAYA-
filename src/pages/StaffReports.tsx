@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { Flag, Check, X, Clock, User as UserIcon, FileText as FileTextIcon, MessageSquare } from 'lucide-react';
 
 export default function StaffReports() {
@@ -9,11 +9,10 @@ export default function StaffReports() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.rpc('admin_list_reports', {
-      p_status: filter === 'all' ? null : filter,
-      p_limit: 200,
-    });
-    setReports(data?.reports || []);
+    try {
+      const result = await d1Request<{ data: any[] }>(`/api/reports?status=${filter}&limit=200`);
+      setReports(result.data || []);
+    } catch (error) { console.warn('Could not load reports', error); setReports([]); }
     setLoading(false);
   };
 
@@ -21,13 +20,12 @@ export default function StaffReports() {
 
   const resolve = async (id: string, decision: 'resolved' | 'dismissed' | 'under_review') => {
     const note = window.prompt('Add a note (optional):') || null;
-    const { error } = await supabase.rpc('admin_resolve_report', {
-      p_report_id: id,
-      p_decision: decision,
-      p_note: note,
-    });
-    if (error) alert(error.message);
-    else load();
+    try {
+      await d1Request(`/api/reports/${encodeURIComponent(id)}`, {
+        method: 'PATCH', body: JSON.stringify({ decision, note }),
+      });
+      load();
+    } catch (error: any) { alert(error.message || 'Could not update report'); }
   };
 
   const targetIcon = (t: string) => {
