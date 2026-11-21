@@ -1,0 +1,12 @@
+name = "cenpaya-supabase" # Renamed from cenpaya-neon
+main = "src/index.ts"
+compatibility_date = "2026-11-10"
+compatibility_flags = ["nodejs_compat"]
+
+# HYPERDRIVE HAS BEEN REMOVED
+
+[vars]
+# Set these in the Cloudflare dashboard for this Worker (or via wrangler secret).
+# CENPAYA_ORIGIN = "https://your-actual-pages-domain"
+# SUPABASE_URL = "https://your-project.supabase.co"
+# SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"
