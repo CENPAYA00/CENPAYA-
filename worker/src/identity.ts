@@ -25,7 +25,7 @@ export async function authenticateD1Session(request: Request, env: Env): Promise
   }
 
   if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET || !env.D1_TO_SUPABASE_HMAC_SECRET) {
-    throw new IdentityError("identity_service_not_configured", 503);
+    throw new IdentityError("service_unavailable", 503);
   }
 
   let assertionResponse: Response;
@@ -54,7 +54,7 @@ export async function authenticateD1Session(request: Request, env: Env): Promise
     const payload = await assertionResponse.json() as { assertion?: unknown };
     if (typeof payload.assertion === "string") assertion = payload.assertion;
   } catch {
-    throw new IdentityError("invalid_identity_response", 503);
+    throw new IdentityError("service_unavailable", 503);
   }
   if (!assertion) throw new IdentityError("invalid_identity_response", 503);
 
@@ -89,7 +89,7 @@ export async function authenticateD1Session(request: Request, env: Env): Promise
   try {
     userJwt = await signSupabaseUserJwt(userId, env);
   } catch {
-    throw new IdentityError("supabase_jwt_not_configured", 503);
+    throw new IdentityError("service_unavailable", 503);
   }
 
   let supabase: ReturnType<typeof createUserSupabaseClient>;
@@ -102,11 +102,15 @@ export async function authenticateD1Session(request: Request, env: Env): Promise
       .abortSignal(AbortSignal.timeout(4_000))
       .maybeSingle();
 
-    if (error) throw new IdentityError("financial_identity_lookup_failed", 503);
-    if (!data || data.id !== userId) throw new IdentityError("financial_identity_not_linked", 403);
+    if (error) {
+      console.error("Supabase financial identity lookup failed");
+      throw new IdentityError("service_unavailable", 503);
+    }
+    if (!data || data.id !== userId) throw new IdentityError("forbidden", 403);
   } catch (error) {
     if (error instanceof IdentityError) throw error;
-    throw new IdentityError("financial_identity_lookup_failed", 503);
+    console.error("Supabase financial identity lookup failed");
+    throw new IdentityError("service_unavailable", 503);
   }
 
   return { userId, supabase };
