@@ -59,8 +59,14 @@ export default function ServiceOrder() {
           setSeller(s);
         }
       } else if (id) {
-        const { data } = await supabase.from('service_orders').select('*').eq('id', id).single();
-        setOrder(data);
+        try {
+          const { data } = await supabaseWorkerRequest<{ data: any }>(`/api/v1/service-orders/${encodeURIComponent(id)}`);
+          setOrder(data);
+        } catch (error: unknown) {
+          setErrorMsg(error instanceof Error ? error.message : 'Service orders are unavailable until the financial schema is migrated.');
+          setLoading(false);
+          return;
+        }
 
         if (data) {
           const [svcRes, packagesRes, sellerRes] = await Promise.all([
@@ -84,35 +90,13 @@ export default function ServiceOrder() {
 
     setBusy(true);
 
-    if (payMethod === 'wallet') {
-      const { data, error } = await supabase.rpc('create_service_order', {
-        p_service_id: service.id,
-        p_package_id: pkg.id,
-        p_requirements: requirements.trim(),
-        p_pay_from_wallet: true,
+    try {
+      await supabaseWorkerRequest('/api/v1/checkout/service-orders', {
+        method: 'POST',
+        body: JSON.stringify({ service_id: service.id, package_id: pkg.id, requirements: requirements.trim(), payment_method: payMethod }),
       });
-      if (error || !data?.ok) {
-        setErrorMsg(error?.message || data?.error || 'Order failed');
-        setBusy(false);
-        return;
-      }
-      navigate(`/service-order/${data.order_id}`);
-    } else {
-      const { data, error } = await supabase.functions.invoke('initiate-service-payment', {
-        body: {
-          service_id: service.id,
-          package_id: pkg.id,
-          buyer_id: me?.id,
-          requirements: requirements.trim(),
-          method: payMethod,
-        },
-      });
-      if (error || !data?.payment_url) {
-        setErrorMsg(error?.message || 'Payment initiation failed');
-        setBusy(false);
-        return;
-      }
-      window.location.href = data.payment_url;
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Service order checkout is unavailable.');
     }
     setBusy(false);
   };
@@ -135,14 +119,10 @@ export default function ServiceOrder() {
       fileUrl = data.publicUrl;
     }
 
-    const { data, error } = await supabase.rpc('submit_service_delivery', {
-      p_order_id: order.id,
-      p_delivery_note: deliveryNote.trim(),
-      p_delivery_file_url: fileUrl,
-    });
-
-    if (error || !data?.ok) {
-      setErrorMsg(error?.message || data?.error || 'Delivery failed');
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/delivery`, { method: 'POST', body: JSON.stringify({ delivery_note: deliveryNote.trim(), delivery_file_url: fileUrl }) });
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Service delivery is unavailable.');
       setBusy(false);
       return;
     }
@@ -154,9 +134,10 @@ export default function ServiceOrder() {
   const approve = async () => {
     if (!window.confirm('Approve this delivery and release funds?')) return;
     setBusy(true);
-    const { data, error } = await supabase.rpc('approve_service_delivery', { p_order_id: order.id });
-    if (error || !data?.ok) {
-      setErrorMsg(error?.message || data?.error || 'Approval failed');
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/approve`, { method: 'POST', body: JSON.stringify({}) });
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Service order approval is unavailable.');
       setBusy(false);
       return;
     }
@@ -168,12 +149,10 @@ export default function ServiceOrder() {
     const reason = window.prompt('Describe the issue (min 10 characters):');
     if (!reason || reason.trim().length < 10) return;
     setBusy(true);
-    const { data, error } = await supabase.rpc('open_service_dispute', {
-      p_order_id: order.id,
-      p_reason: reason.trim(),
-    });
-    if (error || !data?.ok) {
-      setErrorMsg(error?.message || data?.error || 'Dispute failed');
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/dispute`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) });
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Service-order disputes are unavailable.');
       setBusy(false);
       return;
     }
@@ -186,10 +165,6 @@ export default function ServiceOrder() {
   // ---------- NEW ORDER ----------
   if (isNew && service && pkg) {
     const amount = Number(pkg.price);
-    const feePct = 3;
-    const feeFixed = 50;
-    const fee = amount * feePct / 100 + feeFixed;
-    const total = amount + fee;
 
     return (
       <div className="px-3 py-3 pb-28">
@@ -251,19 +226,8 @@ export default function ServiceOrder() {
           ))}
         </div>
 
-        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
-          <div className="flex justify-between text-[11px] mb-1">
-            <span className="text-gray-500">Service amount</span>
-            <span className="text-navy dark:text-white">{amount.toLocaleString()} XAF</span>
-          </div>
-          <div className="flex justify-between text-[11px] mb-1">
-            <span className="text-gray-500">Transaction fee ({feePct}% + {feeFixed})</span>
-            <span className="text-navy dark:text-white">{fee.toFixed(0)} XAF</span>
-          </div>
-          <div className="flex justify-between text-[13px] font-bold border-t border-gray-100 dark:border-darkline pt-2 mt-2">
-            <span className="text-navy dark:text-white">Total</span>
-            <span className="text-accent">{total.toLocaleString()} XAF</span>
-          </div>
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] p-3 rounded-xl mb-3">
+          Service-order checkout is paused. Its financial tables and atomic payment settlement are not present in the current Supabase schema; fees will not be estimated or charged in the browser.
         </div>
 
         {errorMsg && (
@@ -274,10 +238,10 @@ export default function ServiceOrder() {
 
         <button
           onClick={createOrder}
-          disabled={busy || !requirements.trim()}
+          disabled={true}
           className="w-full bg-accent text-white font-bold py-3 rounded-xl text-[12px] disabled:opacity-50"
         >
-          {busy ? 'Processing...' : `Pay ${total.toLocaleString()} XAF`}
+          {busy ? 'Processing...' : 'Service orders unavailable'}
         </button>
       </div>
     );
