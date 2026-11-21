@@ -79,6 +79,7 @@ export default function Signup() {
     } finally {
       setLoading(false);
     }
+  };
 
   return (
     <div className="min-h-[100dvh] bg-offwhite dark:bg-darkbg flex items-start justify-center p-4 pt-6 pb-12">
