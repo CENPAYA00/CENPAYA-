@@ -15,3 +15,6 @@ coverage/
 # Local tooling state
 .wrangler/
 .DS_Store
+
+# Local OpenCode backup files
+opencode.json.save*
