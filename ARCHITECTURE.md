@@ -37,7 +37,7 @@ The route tree and actual feature inventory in src/ are authoritative. This docu
 - database/d1/ — D1 schema reference and incremental SQL migrations.
 - public/ — public static assets.
 - vite.config.ts — Vite and PWA build configuration.
-- sw.js — push notification service worker entry.
+- public/push-sw.js — push handlers imported by the Vite-generated service worker.
 - tailwind.config.js — design tokens and Tailwind configuration.
 - rls_policies.sql — legacy Supabase policy reference; review before applying to any database.
 
@@ -58,3 +58,7 @@ The service worker may cache versioned static assets and public images. It must 
 ## D1 migrations
 
 D1 migrations are incremental and must be applied in order to the intended database. Check the D1 migration tracker before applying a migration. Never import exported user rows, credentials, or backup tables as part of a schema migration.
+
+## Frontend environment
+
+Copy `.env.example` to `.env.local` and provide the public D1 API URL, Supabase project URL and anon key, Supabase Worker URL, and VAPID public key. Never place a Supabase service-role key or any private server credential in a Vite `VITE_*` variable.
