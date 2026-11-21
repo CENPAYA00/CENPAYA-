@@ -204,6 +204,7 @@ export async function handleAuthenticatedApi(
     const listingId = typeof body?.listing_id === "string" ? body.listing_id.trim() : "";
     const paymentMethod = body?.payment_method === "wallet" ? "wallet" : "";
     const idempotencyKey = typeof body?.idempotency_key === "string" ? body.idempotency_key.trim() : "";
+    if (body?.payment_method === "momo") return failure("marketplace_mobile_money_checkout_unavailable", 501, headers);
     if (!body || !listingId || listingId.length > 128 || !paymentMethod || idempotencyKey.length < 16 ||
         !env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) {
       return failure("invalid_checkout_request", 400, headers);
