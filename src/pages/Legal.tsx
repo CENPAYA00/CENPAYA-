@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useLang, setLang } from '../lib/language';
 import { ArrowLeft } from 'lucide-react';
 
@@ -15,49 +15,15 @@ export default function Legal() {
   useEffect(() => {
     const load = async () => {
       if (!slug) return;
-
       setLoading(true);
-
-      // 1. Find the document
-      const { data: docData } = await supabase
-        .from('legal_documents')
-        .select('*')
-        .eq('slug', slug)
-        .maybeSingle();
-
-      if (!docData) {
-        setDoc(null);
-        setLoading(false);
-        return;
-      }
-
-      setDoc(docData);
-
-      // 2. Pick the version based on selected language
-      const versionLabel = lang === 'fr' ? 'v1.0-fr' : 'v1.0';
-
-      let { data: v } = await supabase
-        .from('legal_document_versions')
-        .select('*')
-        .eq('document_id', docData.id)
-        .eq('version_label', versionLabel)
-        .maybeSingle();
-
-      // 3. Fallback to English if French is missing
-      if (!v && lang === 'fr') {
-        const fallback = await supabase
-          .from('legal_document_versions')
-          .select('*')
-          .eq('document_id', docData.id)
-          .eq('version_label', 'v1.0')
-          .maybeSingle();
-        v = fallback.data;
-      }
-
-      setVersion(v);
-      setLoading(false);
+      try {
+        const result = await d1Request<{ data: { document: any; version: any } }>(`/api/legal/${encodeURIComponent(slug)}?lang=${lang}`);
+        setDoc(result.data?.document || null);
+        setVersion(result.data?.version || null);
+      } catch (error: any) { setDoc(null); setVersion(null); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, [slug, lang]);
 
   if (loading) {
