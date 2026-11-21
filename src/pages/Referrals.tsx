@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Copy, Check, TrendingUp, Sparkles, Users, Gift, Link2, ArrowDownToLine, Smartphone } from 'lucide-react';
 import Select from '../components/Select';
@@ -41,7 +42,7 @@ export default function Referrals() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await d1Me();
       if (!user) { setLoading(false); return; }
 
       setReferralLink(`https://cenpaya.pages.dev/signup?ref=${user.id.slice(0, 8)}`);
@@ -93,7 +94,7 @@ export default function Referrals() {
   const savePrefs = async () => {
     setSavingPrefs(true);
     setPrefsSaved(false);
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user } = await d1Me();
     if (!user) { setSavingPrefs(false); return; }
     const country = countries.find(c => c.code === selectedCountry);
     const prefix = country?.phone_prefix || '+237';
