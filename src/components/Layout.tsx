@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Store, MessageCircle, User, Plus, Bell, Search, Menu, Shield, Briefcase } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { d1Me, d1Request } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import Sidebar from './Sidebar';
 import { useSound } from '../contexts/sound';
 import { MessageToast } from './MessageToast';
@@ -50,8 +51,8 @@ export default function Layout() {
       if (['support_agent', 'super_admin', 'owner'].includes(role)) {
         setStaffRole(role);
         const [ticketsRes, reportsRes] = await Promise.all([
-          d1Request<{ data: any[] }>('/api/staff/tickets?scope=mine').catch(() => ({ data: [] })),
-          d1Request<{ data: any[] }>('/api/reports?status=open&limit=100').catch(() => ({ data: [] })),
+          supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
+          supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
         ]);
         const ticketCount = (ticketsRes.data || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
         const reportCount = (reportsRes.data || []).length;
