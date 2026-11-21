@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Shield, Upload, Check, AlertTriangle, Wallet, Clock } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
@@ -42,22 +43,18 @@ export default function ServiceOrder() {
         const serviceId = search.get('service')!;
         const packageId = search.get('package')!;
 
-        const [svcRes, pkgRes, walletRes] = await Promise.all([
-          supabase.from('services').select('*').eq('id', serviceId).single(),
-          supabase.from('service_packages').select('*').eq('id', packageId).single(),
+        const [svcRes, packagesRes, walletRes] = await Promise.all([
+          d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(serviceId)}`),
+          d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(serviceId)}/packages`),
           supabase.from('wallets').select('available_funds').eq('user_id', u.id).single(),
         ]);
-
+        const selectedPackage = (packagesRes.data || []).find((row: any) => row.id === packageId) || null;
         setService(svcRes.data);
-        setPkg(pkgRes.data);
+        setPkg(selectedPackage);
         setWalletBalance(walletRes.data?.available_funds || 0);
 
         if (svcRes.data?.seller_id) {
-          const { data: s } = await supabase
-            .from('public_profiles')
-            .select('id, username, avatar_url')
-            .eq('id', svcRes.data.seller_id)
-            .maybeSingle();
+          const { data: s } = await d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(svcRes.data.seller_id)}`);
           setSeller(s);
         }
       } else if (id) {
@@ -65,19 +62,13 @@ export default function ServiceOrder() {
         setOrder(data);
 
         if (data) {
-          const [svcRes, pkgRes, sellerRes] = await Promise.all([
-            supabase.from('services').select('*').eq('id', data.service_id).single(),
-            data.package_id
-              ? supabase.from('service_packages').select('*').eq('id', data.package_id).single()
-              : Promise.resolve({ data: null }),
-            supabase
-              .from('public_profiles')
-              .select('id, username, avatar_url')
-              .eq('id', data.seller_id)
-              .maybeSingle(),
+          const [svcRes, packagesRes, sellerRes] = await Promise.all([
+            d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(data.service_id)}`),
+            d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(data.service_id)}/packages`),
+            d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(data.seller_id)}`),
           ]);
           setService(svcRes.data);
-          setPkg(pkgRes.data);
+          setPkg((packagesRes.data || []).find((row: any) => row.id === data.package_id) || null);
           setSeller(sellerRes.data);
         }
       }
