@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { Users, Check, AlertCircle, Loader } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 
@@ -20,13 +20,8 @@ export default function JoinGroupByLink() {
       }
 
       setStatus('joining');
-      const { data, error: err } = await supabase.rpc('join_group_by_invite_link', { p_invite_code: code });
-      if (err || !data?.ok) {
-        setError(err?.message || data?.error || 'Failed to join.');
-        setStatus('error');
-        return;
-      }
-      setGroupId(data.group_id);
+      const result = await d1Request<{ id: string }>('/api/groups/join', { method: 'POST', body: JSON.stringify({ invite_code: code }) });
+      setGroupId(result.id);
       setStatus('joined');
       setTimeout(() => navigate(`/groups/${data.group_id}`), 1200);
     };
