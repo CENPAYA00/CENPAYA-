@@ -11,7 +11,7 @@ Based on the private `cenpaya-db-export.zip` supplied for this project (exported
 ## Changes in this integration branch
 
 - Adds migration 52 for D1-owned password hashes, password update timestamps, and unique account-identifier indexes.
-- Adds a D1 Worker with registration, OTP verification, password sign-in, session revocation, profile read/update, public feed read/post creation, marketplace category/search/listing creation, notifications, and support ticket list/create.
+- Adds a D1 Worker with registration, OTP verification, password sign-in, session revocation, profile read/update, public feed read/post creation, marketplace category/search/listing creation, direct messaging, notifications, and support ticket list/create.
 - Keeps financial truth in Supabase. The D1 Worker does not create wallets, debit balances, settle orders, release escrow, activate boosts, or mark monetary referrals paid.
 - Marketplace listing creation starts in `draft`; publication/moderation remains a separate controlled workflow.
 - Uses the existing D1 views `public_profiles` and `public_marketplace_search` and existing tables/columns from the export.
@@ -28,4 +28,4 @@ The migration file is committed but has **not** been applied to the live D1 data
 
 ## Deliberately not claimed as complete
 
-This is the first schema-aligned API slice, not the entire application migration. Remaining D1 route families include communities and polls, follows/friendships, marketplace inquiry conversations/reviews/favorites, media upload/storage, moderation/admin, device push delivery, saved searches/collections, legal acceptance, and the authenticated Supabase-to-D1 sync inbox/outbox processor. They must be added against the exact schema and existing triggers. The Supabase Worker remains responsible for all money-changing operations.
+This is the first schema-aligned API slice, not the entire application migration. Remaining D1 route families include follows/friendships, marketplace inquiry conversations/reviews/favorites, media upload/storage, moderation/admin, device push delivery, saved searches/collections, legal acceptance, and the authenticated Supabase-to-D1 sync inbox/outbox processor. Communities, social groups, standalone Pages, group conversations, and the user-facing activity-history feature have been removed from the product scope; no new routes should be added for them. They must be added against the exact schema and existing triggers. The Supabase Worker remains responsible for all money-changing operations. Administrative security audit logs and financial ledger records are retained; they are not the removed user-facing activity history.
