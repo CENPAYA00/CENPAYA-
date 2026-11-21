@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Login, setD1Token } from '../lib/d1Api';
 import { useNavigate, Link } from 'react-router-dom';
 
 export default function Login() {
@@ -14,36 +14,16 @@ export default function Login() {
     e.preventDefault();
     setErrorMsg('');
     setLoading(true);
-
-    const { data: { user }, error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
-
-    if (error) {
-      setErrorMsg(error.message);
-      setLoading(false);
-      return;
-    }
-
-    if (user) {
-      const { data: profile } = await supabase
-        .from('users')
-        .select('role, onboarding_completed')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (profile?.role === 'owner' || profile?.role === 'super_admin') {
-        navigate('/admin');
-      } else if (profile?.role === 'support_agent') {
-        navigate('/staff');
-      } else if (!profile?.onboarding_completed) {
-        navigate('/onboarding');
-      } else {
-        navigate('/home');
-      }
-    }
-    setLoading(false);
+    try {
+      const { user, token } = await d1Login(email.trim(), password);
+      setD1Token(token);
+      if (user.role === 'owner' || user.role === 'super_admin') navigate('/admin');
+      else if (user.role === 'support_agent') navigate('/staff');
+      else if (!user.onboarding_completed) navigate('/onboarding');
+      else navigate('/home');
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Unable to log in.');
+    } finally { setLoading(false); }
   };
 
   return (
@@ -60,12 +40,12 @@ export default function Login() {
           <h2 className="text-lg font-bold text-navy dark:text-white mb-4">Welcome back</h2>
 
           <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Email Address</label>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Email or Phone Number</label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="Email address or phone number"
               autoComplete="email"
               className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent bg-gray-50 dark:bg-darkbg text-navy dark:text-white"
               required
