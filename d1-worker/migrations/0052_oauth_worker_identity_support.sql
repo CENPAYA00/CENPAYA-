@@ -1,7 +1,10 @@
 -- Cenpaya D1 migration 52
--- Adds the two Google OAuth persistence tables required by d1-worker/src/index.ts.
--- Registration profile/consent fields are stored on users (the exported schema
--- already contains gender, date_of_birth, preferred_language and terms_accepted_at).
+-- Reconciles the exported 2026-11-21 schema with the D1 Worker's auth routes.
+-- The export has no password_hash column or OAuth persistence tables.
+-- Registration profile/consent fields already exist on users, so no
+-- user_onboarding_details table is needed.
+
+ALTER TABLE users ADD COLUMN password_hash TEXT;
 
 CREATE TABLE IF NOT EXISTS oauth_states (
   state_hash TEXT PRIMARY KEY NOT NULL,
@@ -29,4 +32,4 @@ CREATE INDEX IF NOT EXISTS idx_oauth_identities_user_id
   ON oauth_identities(user_id);
 
 INSERT OR IGNORE INTO cenpaya_migrations(version, migration_name)
-VALUES (52, 'oauth_worker_identity_support');
+VALUES (52, 'worker_auth_schema_reconciliation');
