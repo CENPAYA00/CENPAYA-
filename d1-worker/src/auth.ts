@@ -1,5 +1,5 @@
 import type { Env, User } from "./types.js";
-import { digest, hmac, passwordHash, verifyPassword, uuid } from "./security.js";
+import { digest, hmac, uuid } from "./security.js";
 
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
