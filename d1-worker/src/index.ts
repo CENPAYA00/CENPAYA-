@@ -260,6 +260,21 @@ async function handle(request:Request,env:Env):Promise<Response>{
     await cachePut(env,"supported-countries",rows.results,3600);
     return json({success:true,data:rows.results});
   }
+  if(path==="/internal/v1/idempotency/consume"&&method==="POST"){
+    const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
+    const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
+    if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
+    const b=await body(request);
+    const userId=str(b?.user_id,64),key=str(b?.idempotency_key,128),scope=str(b?.scope,40);
+    if(!UUID.test(userId)||key.length<16||scope!=="marketplace_order")return fail("Invalid idempotency request",400);
+    try{
+      const now=Math.floor(Date.now()/1000);
+      await env.DB.prepare("DELETE FROM rate_limits WHERE key LIKE 'idem:%' AND window_start<?").bind(now-86400).run();
+      const result=await env.DB.prepare("INSERT OR IGNORE INTO rate_limits(key,window_start,count) VALUES(?,?,1)").bind("idem:"+scope+":"+userId+":"+key,now).run();
+      if(!result.meta.changes)return fail("Duplicate idempotency key",409);
+      return json({success:true});
+    }catch{return fail("Idempotency service unavailable",503);}
+  }
   const internalListingQuote=path.match(/^\/internal\/v1\/market\/listings\/([^/]+)\/quote$/);
   if(internalListingQuote&&method==="GET"){
     const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
