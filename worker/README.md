@@ -4,7 +4,7 @@ This Worker is the API boundary for CenPaya's Supabase financial database and fi
 
 ## Security boundaries
 
-- D1 remains the account/session identity authority. The browser's D1 session token is sent to the Worker; it is never treated as a Supabase token.
+- D1 remains the account/session identity authority. The browser receives a D1 bearer only in memory; D1 also issues an HttpOnly Secure SameSite cookie for browser session restoration. The bearer is never treated as a Supabase token.
 - The Worker calls D1 through the private `D1_IDENTITY` service binding, verifies a short-lived HMAC assertion, atomically consumes its `jti` to prevent replay, mints a short-lived Supabase user JWT, and checks the same UUID exists in `public.users.id`.
 - Normal user and finance/admin database requests use `SUPABASE_ANON_KEY` plus that verified user JWT. Existing Supabase RLS and financial permission functions remain authoritative.
 - Payment operations use a separate, 60-second JWT for the restricted `cenpaya_payment_worker` Postgres role, signed with the project's active Supabase signing key. This role has no direct table or sequence privileges; its functions are restricted to provider credential retrieval and protected payment/withdrawal operations. The service-role key is not used by this Worker.
@@ -48,7 +48,7 @@ All routes below, except liveness, DB health, and provider callbacks, require a 
 | GET | `/api/v1/me/profile` | Existing financial user profile |
 | GET | `/api/v1/wallet` | Active legacy XAF wallet plus non-XAF rows from `user_balances` under RLS; returns a unified `balances` array |
 | GET | `/api/v1/ledger` | Current user's ledger under RLS |
-| GET | `/api/v1/orders` | Orders where current user is buyer or seller |
+| GET | `/api/v1/orders` | Orders where current user is buyer or seller |\n| GET | `/api/v1/orders/:id` | User-scoped order detail |\n| POST | `/api/v1/orders/:id/action` | Typed seller delivery, buyer receipt, or dispute action |\n| GET | `/api/v1/checkout/quote?listing_id=:id` | D1-verified listing price and server-calculated membership fee quote |\n| POST | `/api/v1/checkout/orders` | Server-validated XAF wallet marketplace order creation with balance and idempotency checks |\n| POST | `/api/v1/checkout/service-orders` | Explicitly unavailable until the service-order schema exists in the financial database (501) |\n| POST | `/api/v1/subscriptions` | Explicitly unavailable until atomic subscription settlement is migrated (501) |
 | POST | `/api/v1/wallet/topups` | Idempotent XAF top-up initiation (Fapshi/Campay) |
 | GET | `/api/v1/wallet/topups/:id` | Current user's top-up status |
 | POST | `/api/v1/wallet/withdrawals` | Idempotent XAF withdrawal request |
@@ -89,6 +89,13 @@ The legacy `/api/admin/...` prefix is accepted as an alias for implemented admin
 - Webhooks are notifications only. The Worker verifies the configured webhook credential and independently queries provider status before changing financial state.
 - No production provider credentials are currently configured in `platform_api_vault`. Configure them through the super-admin gateway credential flow after applying the SQL migration.
 
+
+## Checkout security and supported payment scope
+
+Marketplace checkout now obtains the authoritative listing price from the D1 Worker through the private service binding. The Supabase Worker calculates member/non-member percentage and fixed fees, checks the authenticated user's XAF wallet balance, consumes a one-time idempotency key through D1, and inserts the order using the verified user's Supabase JWT and existing RLS. The browser only displays the quote; the Worker recalculates before creating the order.
+
+At present marketplace checkout is wallet-only. Mobile Money marketplace checkout returns HTTP 501 because the Worker has no verified marketplace collection/escrow settlement flow. Do not enable that UI option until provider initiation, callback settlement, and escrow creation are implemented and tested end-to-end. Subscription settlement and service orders also return HTTP 501 until their database transaction/schema dependencies are migrated. Wallet top-ups and withdrawals continue to use the existing Fapshi/Campay payment routes.
+
 ## Database migration required
 
 `worker/sql/migrations/0001_secure_financial_worker_operations.sql` is required before top-up/withdrawal routes can operate. It:
@@ -103,7 +110,7 @@ This migration is committed as a file only. It has **not** been applied to the l
 
 The current Supabase database does not contain the support-ticket, social-report, social-post/chat, app-settings, or service-order tables referenced by some old Supabase RPCs/Edge Functions. Those are D1/non-financial responsibilities under the agreed architecture, so this Worker does not expose stale `admin_list_tickets`, `admin_list_reports`, `admin_resolve_report`, feature-toggle, or service-order RPCs.
 
-The current main frontend helper still sends some staff/support/report/feature requests to the Supabase Worker. Those routes must be redirected to the D1 Worker in a separately approved frontend/D1 phase; they are deliberately not backed by nonexistent Supabase tables here.
+The current main frontend helper still sends some staff/support/report/feature requests to the Supabase Worker. Those routes must be redirected to the D1 Worker in a separately approved frontend/D1 phase; they are deliberately not backed by nonexistent Supabase tables here. Service-order and subscription settlement are also intentionally fail-closed: the live financial database export does not contain the required service-order tables or a verified atomic subscription debit/settlement function.
 
 ## Local verification
 
