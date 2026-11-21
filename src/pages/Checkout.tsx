@@ -54,7 +54,9 @@ export default function Checkout() {
 
         if (packageId) {
           const { data: packages } = await d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(serviceId)}/packages`);
-          setPkg((packages || []).find((p: any) => p.id === packageId) || null);
+          const selectedPackage = (packages || []).find((p: any) => p.id === packageId) || null;
+          setPkg(selectedPackage);
+          setServerAmount(Number(selectedPackage?.price || loadedItem?.starting_price || 0));
         }
       }
 
@@ -78,6 +80,10 @@ export default function Checkout() {
           setFeeFixed(Number(quoteResponse.data.fee_fixed));
           setQuoteReady(true);
         } catch { setQuoteReady(false); }
+      } else if (serviceId) {
+        setFeePct(0);
+        setFeeFixed(0);
+        setQuoteReady(true);
       } else {
         setQuoteReady(false);
       }
