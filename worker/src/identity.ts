@@ -1,0 +1,112 @@
+import { Env } from "./env";
+import { bearerToken } from "./http-utils";
+import { signSupabaseUserJwt, verifyD1IdentityAssertion } from "./jwt";
+import { createUserSupabaseClient } from "./supabase";
+
+export class IdentityError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "IdentityError";
+  }
+}
+
+export interface AuthenticatedIdentity {
+  userId: string;
+  supabase: ReturnType<typeof createUserSupabaseClient>;
+}
+
+const IDENTITY_ASSERTION_URL = "https://d1-identity.internal/internal/v1/identity/assert";
+const IDENTITY_TIMEOUT_MS = 4_000;
+const USER_LOOKUP_TIMEOUT_MS = 4_000;
+
+export async function authenticateD1Session(
+  request: Request,
+  env: Env,
+): Promise<AuthenticatedIdentity> {
+  const sessionToken = bearerToken(request);
+  if (!sessionToken || sessionToken.length < 32 || sessionToken.length > 256) {
+    throw new IdentityError("unauthorized", 401);
+  }
+
+  if (
+    !env.D1_IDENTITY ||
+    !env.D1_INTERNAL_CALL_SECRET ||
+    !env.D1_TO_SUPABASE_HMAC_SECRET
+  ) {
+    throw new IdentityError("identity_service_not_configured", 503);
+  }
+
+  let assertionResponse: Response;
+  try {
+    assertionResponse = await env.D1_IDENTITY.fetch(IDENTITY_ASSERTION_URL, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + sessionToken,
+        "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(IDENTITY_TIMEOUT_MS),
+    });
+  } catch {
+    throw new IdentityError("identity_service_unavailable", 503);
+  }
+
+  if (assertionResponse.status === 401 || assertionResponse.status === 403) {
+    throw new IdentityError("unauthorized", 401);
+  }
+  if (!assertionResponse.ok) {
+    // A 404 here means the D1 Worker has not deployed the agreed assertion endpoint.
+    throw new IdentityError("identity_service_unavailable", 503);
+  }
+
+  let assertion: string | undefined;
+  try {
+    const payload = await assertionResponse.json() as { assertion?: unknown };
+    if (typeof payload.assertion === "string") assertion = payload.assertion;
+  } catch {
+    throw new IdentityError("invalid_identity_response", 503);
+  }
+  if (!assertion) throw new IdentityError("invalid_identity_response", 503);
+
+  let userId: string;
+  try {
+    userId = await verifyD1IdentityAssertion(
+      assertion,
+      env.D1_TO_SUPABASE_HMAC_SECRET,
+    );
+  } catch {
+    throw new IdentityError("unauthorized", 401);
+  }
+
+  let userJwt: string;
+  try {
+    userJwt = await signSupabaseUserJwt(userId, env);
+  } catch {
+    throw new IdentityError("supabase_jwt_not_configured", 503);
+  }
+
+  let supabase: ReturnType<typeof createUserSupabaseClient>;
+  try {
+    supabase = createUserSupabaseClient(env, userJwt);
+    const { data, error } = await supabase
+      .from("users")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle()
+      .abortSignal(AbortSignal.timeout(USER_LOOKUP_TIMEOUT_MS));
+
+    if (error) throw new IdentityError("financial_identity_lookup_failed", 503);
+    if (!data || data.id !== userId) {
+      throw new IdentityError("financial_identity_not_linked", 403);
+    }
+  } catch (error) {
+    if (error instanceof IdentityError) throw error;
+    throw new IdentityError("financial_identity_lookup_failed", 503);
+  }
+
+  return { userId, supabase };
+}

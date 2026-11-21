@@ -1,12 +1,23 @@
-name = "cenpaya-supabase" # Renamed from cenpaya-neon
+name = "cenpaya-supabase"
 main = "src/index.ts"
-compatibility_date = "2026-11-10"
+compatibility_date = "2026-11-20"
 compatibility_flags = ["nodejs_compat"]
 
-# HYPERDRIVE HAS BEEN REMOVED
-
 [vars]
-# Set these in the Cloudflare dashboard for this Worker (or via wrangler secret).
-# CENPAYA_ORIGIN = "https://your-actual-pages-domain"
-# SUPABASE_URL = "https://your-project.supabase.co"
-# SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"
+SUPABASE_URL = "https://vtfwglrjjznxxujrlcnb.supabase.co"
+# Set CENPAYA_ORIGINS to the exact comma-separated deployed frontend origins.
+# Set SUPABASE_JWT_ALGORITHM to the active Supabase project's signing algorithm.
+
+# Private Worker-to-Worker identity validation. The target service name is the
+# existing D1 Worker name; its assertion endpoint must be deployed separately.
+[[services]]
+binding = "D1_IDENTITY"
+service = "cenpaya-d1-worker"
+
+# Configure these as Cloudflare Worker secrets; never put values in this file:
+# SUPABASE_ANON_KEY
+# D1_INTERNAL_CALL_SECRET
+# D1_TO_SUPABASE_HMAC_SECRET
+# For HS256: SUPABASE_JWT_SECRET
+# For RS256/ES256: SUPABASE_JWT_PRIVATE_JWK (private JWK JSON)
+# Optional: SUPABASE_JWT_KID
