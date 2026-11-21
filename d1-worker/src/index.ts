@@ -20,7 +20,7 @@ function cors(request: Request, env: Env): Response | null {
     if (!origin || !allowedOrigins(env).includes(origin)) return fail("Origin not allowed",403);
     return new Response(null,{status:204,headers:{
       "Access-Control-Allow-Origin":origin,"Access-Control-Allow-Methods":"GET,POST,PATCH,DELETE,OPTIONS",
-      "Access-Control-Allow-Headers":"Content-Type,Authorization","Access-Control-Max-Age":"86400","Vary":"Origin"
+      "Access-Control-Allow-Headers":"Content-Type,Authorization","Access-Control-Allow-Credentials":"true","Access-Control-Max-Age":"86400","Vary":"Origin"
     }});
   }
   return null;
@@ -28,9 +28,13 @@ function cors(request: Request, env: Env): Response | null {
 function withCors(response: Response, request: Request, env: Env): Response {
   const origin=request.headers.get("Origin");
   if (!origin || !allowedOrigins(env).includes(origin)) return response;
-  const h=new Headers(response.headers); h.set("Access-Control-Allow-Origin",origin); h.set("Vary","Origin");
+  const h=new Headers(response.headers); h.set("Access-Control-Allow-Origin",origin); h.set("Access-Control-Allow-Credentials","true"); h.set("Vary","Origin");
   return new Response(response.body,{status:response.status,statusText:response.statusText,headers:h});
 }
+function sessionCookie(token:string,env:Env){const ttl=Math.max(300,Math.min(2592000,Number(env.SESSION_TTL_SECONDS||2592000)));return `cenpaya_session=${encodeURIComponent(token)}; Path=/; Max-Age=${ttl}; HttpOnly; Secure; SameSite=None`;}
+function clearSessionCookie(){return "cenpaya_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None";}
+function sessionJson(data:unknown,token:string,env:Env,status=200){return json(data,status,{"Set-Cookie":sessionCookie(token,env)});}
+function requestSessionToken(request:Request){const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\\s+(.+)$/i)?.[1];const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);return bearer||(cookie?decodeURIComponent(cookie):"");}
 async function body(request: Request): Promise<Record<string,unknown>|null> {
   const type=request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
   if(type!=="application/json") return null;
@@ -148,7 +152,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(!await verifyOtp(env,env.DB,userId,purpose as "verify_email"|"verify_phone",code))return fail("Invalid or expired verification code",400);
     const user=await readUser(env.DB,userId);if(!user)return fail("Account not found",404);
     const token=await createSession(env.DB,userId,request,env);
-    return json({success:true,user:safeUser(user),token});
+    return sessionJson({success:true,user:safeUser(user),token},token,env);
   }
   if(path==="/api/auth/password/request"&&method==="POST"){
     const b=await body(request);if(!b)return fail("Valid JSON body required");
@@ -179,7 +183,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     await env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at="+NOW+" WHERE user_id=? AND status='active'").bind(userId).run();
     const token=await createSession(env.DB,userId,request,env);
     const updated=await readUser(env.DB,userId);
-    return json({success:true,user:updated?safeUser(updated):null,token});
+    return sessionJson({success:true,user:updated?safeUser(updated):null,token},token,env);
   }
   if(path==="/api/auth/login"&&method==="POST"){
     const b=await body(request);if(!b)return fail("Valid JSON body required");
