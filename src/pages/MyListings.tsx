@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Zap, MapPin, Eye, Check, Store } from 'lucide-react'; // ADDED Store
 import { getCachedUser } from '../lib/cache';
@@ -14,27 +14,23 @@ export default function MyListings() {
 
   useEffect(() => {
     const load = async () => {
-      const me = await getCachedUser();
-      if (!me) { setLoading(false); return; }
-      
-      const { data } = await supabase
-        .from('listings')
-        .select('id, title, price, price_min, price_max, price_is_range, images, location_city, boosted_until, moderation_status, availability, created_at')
-        .eq('seller_id', me.id)
-        .order('created_at', { ascending: false });
-        
-      setListings(data || []);
-      setLoading(false);
+      try {
+        const result = await d1Request<{ data: any[] }>('/api/market/my-listings');
+        setListings(result.data || []);
+      } catch (error: any) { alert(error.message || 'Could not load your listings'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, []);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this listing permanently?')) return;
     setDeleting(id);
-    const { error } = await supabase.from('listings').delete().eq('id', id);
-    if (!error) setListings(prev => prev.filter(l => l.id !== id));
-    setDeleting(null);
+    try {
+      await d1Request('/api/market/listings/' + encodeURIComponent(id), { method: 'DELETE' });
+      setListings(prev => prev.filter(l => l.id !== id));
+    } catch (error: any) { alert(error.message || 'Could not delete listing'); }
+    finally { setDeleting(null); }
   };
 
   if (loading) {
