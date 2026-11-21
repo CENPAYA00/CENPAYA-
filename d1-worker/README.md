@@ -27,7 +27,7 @@ The rate limiter uses Upstash Redis when configured and the existing D1 `rate_li
 
 ## Browser session security
 
-Browser login, OTP verification, and password-reset completion issue the `cenpaya_session` cookie with `HttpOnly; Secure; SameSite=None`. D1 CORS allows credentials only for the exact configured `ALLOWED_ORIGINS`. The frontend no longer persists D1 bearer tokens in `localStorage`; it retains the bearer in memory and restores it through `POST /api/auth/refresh` after a reload. Logout revokes the session and clears the cookie.
+Browser login, OTP verification, and password-reset completion issue the `cenpaya_session` cookie with `HttpOnly; Secure; SameSite=None`. D1 CORS allows credentials only for the exact configured `ALLOWED_ORIGINS`. The frontend no longer persists D1 bearer tokens in `localStorage`; login, OTP verification, password reset, and Google OAuth set the long-lived HttpOnly refresh cookie. `POST /api/auth/refresh` issues a separate 15-minute bearer token that is retained in memory only. D1 API requests can fall back to the refresh cookie when the in-memory token expires. Logout revokes the refresh session and clears the cookie.
 
 Use HTTPS and configure the frontend and D1 Worker on compatible custom domains. If the Worker is on a third-party `workers.dev` origin, browser third-party-cookie restrictions may block the cookie; validate the deployed domain arrangement before enabling this flow in production.
 
