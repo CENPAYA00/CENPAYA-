@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Star, Clock, RefreshCw, Check, MessageCircle, Shield, FileText, ShoppingCart, Zap } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import DocumentCard from '../components/DocumentCard';
@@ -23,32 +23,27 @@ export default function ServiceDetail() {
 
   useEffect(() => {
     const load = async () => {
-      const me = await getCachedUser();
-
-      const [srvRes, pkgRes] = await Promise.all([
-        supabase.from('services').select('*').eq('id', id).single(),
-        supabase.from('service_packages').select('*').eq('service_id', id).order('price', { ascending: true }),
-      ]);
-
-      setService(srvRes.data);
-
-      const pkgs = pkgRes.data || [];
-      setPackages(pkgs);
-      if (pkgs.length > 0) setSelectedPkg(pkgs[0]);
-
-      if (me && srvRes.data?.seller_id === me.id) setIsOwn(true);
-
-      if (srvRes.data?.seller_id) {
-        const { data: profile } = await supabase
-          .from('public_profiles')
-          .select('id, username, avatar_url')
-          .eq('id', srvRes.data.seller_id)
-          .maybeSingle();
-        setSeller(profile);
-      }
-      setLoading(false);
+      if (!id) return;
+      try {
+        const me = await getCachedUser();
+        const [serviceResult, packageResult] = await Promise.all([
+          d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(id)}`),
+          d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(id)}/packages`).catch(() => ({ data: [] })),
+        ]);
+        const row = serviceResult.data;
+        setService(row);
+        const pkgs = packageResult.data || [];
+        setPackages(pkgs);
+        if (pkgs.length) setSelectedPkg(pkgs[0]);
+        if (me && row?.seller_id === me.id) setIsOwn(true);
+        if (row?.seller_id) {
+          const profile = await d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(row.seller_id)}`);
+          setSeller(profile.data);
+        }
+      } catch (error: any) { alert(error.message || 'Could not load service'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, [id]);
 
   const handleOrder = () => {
@@ -66,45 +61,10 @@ export default function ServiceDetail() {
 
     setStartingChat(true);
     try {
-      const { data: mine } = await supabase
-        .from('chat_participants')
-        .select('channel_id')
-        .eq('user_id', me.id);
-
-      const myChannelIds = (mine || []).map((c: any) => c.channel_id);
-
-      let channelId: string | null = null;
-      if (myChannelIds.length > 0) {
-        const { data: match } = await supabase
-          .from('chat_participants')
-          .select('channel_id')
-          .in('channel_id', myChannelIds)
-          .eq('user_id', service.seller_id)
-          .maybeSingle();
-        channelId = match?.channel_id || null;
-      }
-
-      if (!channelId) {
-        const { data: ch, error: chErr } = await supabase
-          .from('chat_channels')
-          .insert({ channel_type: 'P2P_MARKETPLACE' })
-          .select()
-          .single();
-        if (chErr || !ch) throw chErr || new Error('Could not create channel');
-        channelId = ch.id;
-
-        await supabase.from('chat_participants').insert([
-          { channel_id: channelId, user_id: me.id },
-          { channel_id: channelId, user_id: service.seller_id },
-        ]);
-      }
-
-      navigate(`/chat/${channelId}`);
-    } catch (e: any) {
-      alert(e.message || 'Could not start chat');
-    } finally {
-      setStartingChat(false);
-    }
+      const result = await d1Request<{ id: string }>('/api/chat/direct', { method: 'POST', body: JSON.stringify({ user_id: service.seller_id }) });
+      navigate(`/chat/${result.id}`);
+    } catch (error: any) { alert(error.message || 'Could not start chat'); }
+    finally { setStartingChat(false); }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
