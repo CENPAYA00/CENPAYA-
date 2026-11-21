@@ -313,7 +313,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
       (SELECT m.message_text FROM chat_messages m WHERE m.thread_id=t.id ORDER BY m.created_at DESC LIMIT 1) AS last_message,
       (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id=t.id AND m.sender_id<>? AND m.created_at>COALESCE(tm.last_read_at,'1970-01-01T00:00:00.000Z')) AS unread_count
       FROM chat_thread_members tm JOIN chat_threads t ON t.id=tm.thread_id
-      WHERE tm.user_id=? AND tm.left_at IS NULL ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 100`).bind(user.id,user.id).all();
+      WHERE tm.user_id=? AND tm.left_at IS NULL AND t.thread_type='direct' ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 100`).bind(user.id,user.id).all();
     return json({success:true,data:rows.results});
   }
   if(path==="/api/chat/direct"&&method==="POST"){
@@ -340,25 +340,11 @@ async function handle(request:Request,env:Env):Promise<Response>{
       return raced?json({success:true,id:raced.id,existing:true}):fail("Unable to create conversation",409);
     }
   }
-  if(path==="/api/chat/groups"&&method==="POST"){
-    if(!user)return fail("Unauthorized",401);
-    const b=await body(request);if(!b)return fail("Valid JSON body required");
-    const title=str(b.title,100),requested=Array.isArray(b.member_ids)?b.member_ids.map(x=>str(x,64)):[];
-    const ids=[...new Set([user.id,...requested])];
-    if(!title||ids.length<3||ids.length>50||ids.some(id=>!UUID.test(id)))return fail("A group title and 2–49 valid members are required");
-    const placeholders=ids.map(()=>"?").join(",");
-    const found=await env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE id IN ("+placeholders+") AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(...ids).first<{total:number}>();
-    if((found?.total||0)!==ids.length)return fail("One or more group members are unavailable",400);
-    const id=uuid(),statements=[env.DB.prepare("INSERT INTO chat_threads(id,thread_type,title,created_by) VALUES(?,'group',?,?)").bind(id,title,user.id)];
-    for(const memberId of ids)statements.push(env.DB.prepare("INSERT INTO chat_thread_members(thread_id,user_id,role) VALUES(?,?,?)").bind(id,memberId,memberId===user.id?"owner":"member"));
-    await env.DB.batch(statements);
-    return json({success:true,id},201);
-  }
   const chatMessages=path.match(/^\/api\/chat\/threads\/([^/]+)\/messages$/);
   if(chatMessages&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const threadId=chatMessages[1];
-    const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id).first();
+    const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members m JOIN chat_threads t ON t.id=m.thread_id WHERE m.thread_id=? AND m.user_id=? AND m.left_at IS NULL AND t.thread_type='direct'").bind(threadId,user.id).first();
     if(!member)return fail("Conversation not found",404);
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||50),1),100),before=url.searchParams.get("before");
     const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,m.message_text,m.status,m.created_at,
