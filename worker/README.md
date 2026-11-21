@@ -62,7 +62,10 @@ All routes below, except liveness, DB health, and provider callbacks, require a 
 | GET | `/api/v1/admin/providers` | Provider metadata only; never secrets |
 | GET | `/api/v1/admin/users` | Existing admin user-list RPC |
 | POST | `/api/v1/admin/escrows/:id/action` | Existing escrow action RPC with typed action/reason validation |
-| POST | `/api/v1/admin/users/:id/ban` or `/unban` | Typed user moderation controls |
+| POST | `/api/v1/admin/users/:id/ban` or `/unban` | Typed user ban controls |
+| POST | `/api/v1/admin/users/:id/role`, `/permissions`, `/membership`, `/membership/revoke`, or `/moderation` | Typed role, permission, membership and moderation actions |
+| POST | `/api/v1/admin/disputes/:id/resolve` or `/api/v1/admin/kyc/:id/review` | Typed dispute and KYC decisions |
+| POST | `/api/v1/admin/support-agents/:id/remove` | Typed support-agent removal |
 | POST | `/api/v1/admin/platform-gains/withdraw` | Typed platform-gains withdrawal request |
 | POST | `/api/v1/admin/wallet/topup` or `/withdraw` | Typed admin wallet operations |
 | POST | `/api/v1/admin/gains/withdraw-to-wallet` | Typed platform-gains-to-wallet operation |
