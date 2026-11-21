@@ -24,6 +24,8 @@ Based on the private `cenpaya-db-export.zip` supplied for this project (exported
 - Bind `OTP_DELIVERY` to the approved email/SMS delivery Worker. The auth registration and verification endpoints fail closed when that binding is unavailable; they do not pretend an OTP was sent.
 - Existing accounts have a NULL `password_hash` after migration and need to use password setup/reset before password sign-in.
 
+The migration file is committed but has **not** been applied to the live D1 database. The Worker is not deployed; no live account or database data was changed.
+
 ## Deliberately not claimed as complete
 
 This is the first schema-aligned API slice, not the entire application migration. Remaining D1 route families include communities and polls, follows/friendships, marketplace inquiry conversations/reviews/favorites, media upload/storage, moderation/admin, device push delivery, saved searches/collections, legal acceptance, and the authenticated Supabase-to-D1 sync inbox/outbox processor. They must be added against the exact schema and existing triggers. The Supabase Worker remains responsible for all money-changing operations.
