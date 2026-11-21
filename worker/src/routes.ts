@@ -275,6 +275,96 @@ export async function handleAuthenticatedApi(
     });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
+  const adminBan = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/ban$/i);
+  if (method === "POST" && adminBan) {
+    const body = await readJsonObject(request);
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    if (!body || reason.length < 10 || reason.length > 1000) return failure("invalid_ban_request", 400, headers);
+    const result = await rpc(supabase, "admin_ban_user", { p_target_id: adminBan[1], p_reason: reason });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  const adminUnban = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/unban$/i);
+  if (method === "POST" && adminUnban) {
+    const result = await rpc(supabase, "admin_unban_user", { p_target_id: adminUnban[1] });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  if (method === "POST" && path === "/api/v1/admin/platform-gains/withdraw") {
+    const body = await readJsonObject(request);
+    const amount = body?.amount;
+    const gateway = typeof body?.gateway === "string" ? body.gateway.toUpperCase() : "";
+    const destination = typeof body?.destination === "string" ? body.destination.trim() : "";
+    if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0 ||
+        !["FAPSHI", "CAMPAY"].includes(gateway) || destination.length < 7 || destination.length > 80) {
+      return failure("invalid_platform_gains_withdrawal", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_withdraw_platform_gains", {
+      p_amount: Number(amount), p_gateway: gateway, p_destination: destination,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  if (method === "POST" && path === "/api/v1/admin/wallet/topup") {
+    const body = await readJsonObject(request);
+    const amount = body?.amount;
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0 || reason.length < 3 || reason.length > 500) {
+      return failure("invalid_admin_wallet_topup", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_topup_my_wallet", { p_amount: Number(amount), p_reason: reason });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  if (method === "POST" && path === "/api/v1/admin/wallet/withdraw") {
+    const body = await readJsonObject(request);
+    const amount = body?.amount;
+    const momo = typeof body?.momo_number === "string" ? body.momo_number.trim() : "";
+    const provider = typeof body?.provider === "string" ? body.provider.toLowerCase() : "";
+    if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0 || momo.length < 7 || momo.length > 32 ||
+        !["mtn_momo", "orange_money", "airtel_money", "moov_money"].includes(provider)) {
+      return failure("invalid_admin_wallet_withdrawal", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_withdraw_from_my_wallet", {
+      p_amount: Number(amount), p_momo_number: momo, p_provider: provider,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  if (method === "POST" && path === "/api/v1/admin/gains/withdraw-to-wallet") {
+    const body = await readJsonObject(request);
+    const amount = body?.amount;
+    if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0) {
+      return failure("invalid_gains_withdrawal", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_withdraw_gains_to_wallet", { p_amount: Number(amount) });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  if (method === "POST" && path === "/api/v1/admin/gateway-credentials") {
+    const body = await readJsonObject(request, 16_384);
+    const provider = typeof body?.provider_name === "string" ? body.provider_name.trim() : "";
+    const publicKey = typeof body?.api_public_key === "string" ? body.api_public_key.trim() : "";
+    const secretKey = typeof body?.api_secret_key === "string" ? body.api_secret_key.trim() : "";
+    const webhookSecret = typeof body?.webhook_secret === "string" ? body.webhook_secret.trim() : null;
+    const environment = typeof body?.environment === "string" ? body.environment : "production";
+    if (!body || !provider || provider.length > 80 || !publicKey || publicKey.length > 2048 ||
+        !secretKey || secretKey.length > 4096 || (webhookSecret !== null && webhookSecret.length > 4096) ||
+        !["sandbox", "production"].includes(environment)) {
+      return failure("invalid_gateway_credentials_request", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_set_gateway_credentials", {
+      p_provider_name: provider, p_api_public_key: publicKey, p_api_secret_key: secretKey,
+      p_webhook_secret: webhookSecret, p_environment: environment,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  if (method === "POST" && path === "/api/v1/admin/gateway-credentials/remove") {
+    const body = await readJsonObject(request);
+    const provider = typeof body?.provider_name === "string" ? body.provider_name.trim() : "";
+    const environment = typeof body?.environment === "string" ? body.environment : "production";
+    if (!body || !provider || provider.length > 80 || !["sandbox", "production"].includes(environment)) {
+      return failure("invalid_gateway_credentials_request", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_remove_gateway_credentials", {
+      p_provider_name: provider, p_environment: environment,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
   const adminRpc = path.match(/^\/api\/v1\/admin\/rpc\/([a-z_]+)$/);
   if (method === "POST" && adminRpc) {
     const name = adminRpc[1];
