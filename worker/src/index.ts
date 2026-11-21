@@ -4,7 +4,7 @@ import { corsHeaders, jsonResponse, originAllowed } from "./http-utils.js";
 import { checkDatabaseHealth } from "./database.js";
 import { createPublicSupabaseClient } from "./supabase.js";
 import { handleAuthenticatedApi } from "./routes.js";
-import { handleAuthenticatedPaymentApi, handleGatewayWebhook } from "./payments.js";
+import { handleAuthenticatedPaymentApi } from "./payments.js";
 
 function configuredOrigins(env: Env): string[] {
   const values = (env.CENPAYA_ORIGINS || env.CENPAYA_ORIGIN || "")
@@ -42,14 +42,6 @@ export default {
         );
       } catch {
         return jsonResponse({ status: "unavailable" }, 503, headers);
-      }
-    }
-
-    if (url.pathname === "/api/v1/webhooks/fapshi" || url.pathname === "/api/v1/webhooks/campay") {
-      try {
-        return await handleGatewayWebhook(request, env);
-      } catch {
-        return jsonResponse({ ok: false, error: "webhook_processing_failed" }, 500);
       }
     }
 
