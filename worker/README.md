@@ -17,10 +17,12 @@ Configure these as Cloudflare Worker variables/secrets only when the correspondi
 - `CENPAYA_ORIGIN`: exact deployed frontend origin.
 - `SUPABASE_URL`: existing Supabase project URL.
 - `SUPABASE_ANON_KEY`: project anon/publishable key used with a short-lived, verified user-scoped database JWT.
-- `SUPABASE_JWT_SECRET`: secret used only by the Worker to create short-lived database JWT claims after validating the external D1 identity token.
-- `D1_IDENTITY_HMAC_SECRET`: shared secret for validating identity tokens issued by the D1 Worker.
+- `SUPABASE_JWT_SECRET`: Supabase project's currently accepted JWT signing-key material, used only by this Worker to create short-lived user-scoped JWTs.
+- `D1_TO_SUPABASE_HMAC_SECRET`: shared secret used to verify D1 identity assertions.
+- `D1_INTERNAL_CALL_SECRET`: shared secret used only for the private D1 service-binding introspection call.
+- `D1_IDENTITY`: Cloudflare service binding to the existing `cenpaya-d1-worker` service.
 
-The D1 identity token contract must be agreed with the D1 Worker before production use. Reject requests when identity, issuer, audience, signature, or expiry cannot be verified. Never trust a user ID or role supplied in an unverified request body.
+The exact D1-to-Supabase identity contract is documented in [IDENTITY-CONTRACT.md](./IDENTITY-CONTRACT.md). The D1 assertion and Supabase user JWT are separate tokens. Never trust a user ID or role supplied in an unverified request body, and never use the service-role key for user requests.
 
 ## Routes and status
 
