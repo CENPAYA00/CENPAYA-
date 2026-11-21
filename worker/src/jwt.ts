@@ -76,11 +76,11 @@ export async function verifyHs256Jwt(token: string, secret: string): Promise<Rec
   return claims;
 }
 
-export async function verifyD1IdentityAssertion(
+export async function verifyD1IdentityAssertionClaims(
   token: string,
   secret: string,
   nowSeconds = Math.floor(Date.now() / 1000),
-): Promise<string> {
+): Promise<{ userId: string; jti: string; expiresAt: number }> {
   if (token.length > 4096) throw new Error("invalid_assertion");
   const parts = token.split(".");
   if (parts.length !== 3 || parts.some((part) => !part)) throw new Error("invalid_assertion");
@@ -129,7 +129,15 @@ export async function verifyD1IdentityAssertion(
     throw new Error("invalid_assertion_time");
   }
 
-  return claims.sub;
+  return { userId: claims.sub, jti: claims.jti, expiresAt };
+}
+
+export async function verifyD1IdentityAssertion(
+  token: string,
+  secret: string,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<string> {
+  return (await verifyD1IdentityAssertionClaims(token, secret, nowSeconds)).userId;
 }
 
 function parsePrivateJwk(raw: string): JsonWebKey & { kid?: string; d?: string } {
