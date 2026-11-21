@@ -217,7 +217,7 @@ export default function Signup() {
             </div>
 
             <div className="mt-3 space-y-2">
-              <PasswordCheck label=Password must be at least 12 characters ok={passwordChecks.length} />
+              <PasswordCheck label="Password must be at least 12 characters" ok={passwordChecks.length} />
               <PasswordCheck label={t('password_must_letter')} ok={passwordChecks.letter} />
               <PasswordCheck label={t('password_must_number')} ok={passwordChecks.number} />
             </div>
