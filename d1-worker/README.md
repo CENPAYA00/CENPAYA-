@@ -19,7 +19,7 @@ The D1 Worker implements three private service-binding endpoints used by the Sup
 
 - `POST /internal/v1/identity/assert`: requires the shared `D1_INTERNAL_CALL_SECRET` header and a valid D1 bearer session. It returns a signed HS256 identity assertion with a 120-second lifetime and a unique `jti`.
 - `POST /internal/v1/identity/consume`: atomically records each verified assertion `jti` in the existing rate-limit table; a repeated `jti` receives HTTP 409.
-- `POST /internal/v1/rate-limit/consume`: requires the same internal secret and accepts only a valid user UUID plus `topup` or `withdrawal`. It enforces 5 top-up, 3 withdrawal, 5 marketplace checkout, or 30 payment-status requests per user per 60 seconds.
+- `POST /internal/v1/rate-limit/consume`: requires the same internal secret and accepts only a valid user UUID plus one of `topup`, `withdrawal`, `marketplace_checkout`, or `payment_status`. It enforces 5 top-up, 3 withdrawal, 5 marketplace checkout, or 30 payment-status requests per user per 60 seconds.
 
 Configure `D1_INTERNAL_CALL_SECRET` and `D1_TO_SUPABASE_HMAC_SECRET` as Worker secrets. They must match the corresponding secrets on the Supabase Worker. Never commit secret values. The Supabase Worker uses the existing `D1_IDENTITY` service binding to reach these routes; do not expose the internal secret to browser clients.
 
