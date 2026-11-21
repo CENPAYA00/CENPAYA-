@@ -25,6 +25,16 @@ Configure `D1_INTERNAL_CALL_SECRET` and `D1_TO_SUPABASE_HMAC_SECRET` as Worker s
 
 The rate limiter uses Upstash Redis when configured and the existing D1 `rate_limits` table as its fallback. The D1 fallback now uses a single atomic `INSERT ... ON CONFLICT ... RETURNING count` operation, avoiding a separate read-after-write race. Monitor fallback usage under sustained traffic because the D1 fallback still adds database writes to request handling.
 
+## Browser session security
+
+Browser login, OTP verification, and password-reset completion issue the `cenpaya_session` cookie with `HttpOnly; Secure; SameSite=None`. D1 CORS allows credentials only for the exact configured `ALLOWED_ORIGINS`. The frontend no longer persists D1 bearer tokens in `localStorage`; it retains the bearer in memory and restores it through `POST /api/auth/refresh` after a reload. Logout revokes the session and clears the cookie.
+
+Use HTTPS and configure the frontend and D1 Worker on compatible custom domains. If the Worker is on a third-party `workers.dev` origin, browser third-party-cookie restrictions may block the cookie; validate the deployed domain arrangement before enabling this flow in production.
+
+The Supabase Worker calls the D1 identity service binding with a verified in-memory bearer token. The browser never receives the internal HMAC secret or the Supabase signing key.
+
+Private `POST /internal/v1/idempotency/consume` also accepts only the shared internal secret and currently provides one-time consumption for marketplace order idempotency keys.
+
 ## Local verification
 
 From `d1-worker/`:
