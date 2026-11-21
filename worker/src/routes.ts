@@ -178,7 +178,8 @@ export async function handleAuthenticatedApi(
       const result = await response.json() as { success?: boolean; data?: Record<string, unknown> };
       if (!response.ok || !result.success || !result.data) return failure("listing_quote_unavailable", response.status === 404 ? 404 : 503, headers);
       const listing = result.data;
-      const amountValue = listing.price_is_range === true ? listing.price_min : listing.price;
+      const isRange = listing.price_is_range === true || listing.price_is_range === 1 || listing.price_is_range === "true";
+      const amountValue = isRange ? listing.price_min : listing.price;
       const amount = typeof amountValue === "number" ? amountValue : Number(amountValue);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000_000) return failure("listing_price_invalid", 409, headers);
       const { data: member, error: memberError } = await supabase.from("users").select("is_subscribed").eq("id", userId).maybeSingle();
@@ -224,7 +225,7 @@ export async function handleAuthenticatedApi(
       return failure("listing_quote_unavailable", 503, headers);
     }
     const sellerId = typeof listing.seller_id === "string" ? listing.seller_id : "";
-    const isRange = listing.price_is_range === true;
+    const isRange = listing.price_is_range === true || listing.price_is_range === 1 || listing.price_is_range === "true";
     const rawAmount = isRange ? listing.price_min : listing.price;
     const amount = typeof rawAmount === "number" ? rawAmount : Number(rawAmount);
     if (!sellerId || sellerId === userId || !Number.isFinite(amount) || amount <= 0 ||
@@ -282,9 +283,6 @@ export async function handleAuthenticatedApi(
     const { data: order, error } = await supabase.from("orders").insert(payload).select("id").single();
     if (error || !order?.id) return failure("order_creation_failed", 409, headers);
     return success({ id: order.id, amount, fee_pct: feePct, fee_fixed: feeFixed }, headers);
-  }
-  if (method === "POST" && path === "/api/v1/checkout/service-orders") {
-    return failure("service_order_schema_not_present_in_financial_database", 501, headers);
   }
   if (method === "POST" && path === "/api/v1/checkout/service-orders") {
     return failure("service_order_schema_not_present_in_financial_database", 501, headers);
