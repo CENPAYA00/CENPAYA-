@@ -3,6 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2026-11-20"
 compatibility_flags = ["nodejs_compat"]
 
+[observability]
+enabled = true
+
 [vars]
 SUPABASE_URL = "https://vtfwglrjjznxxujrlcnb.supabase.co"
 # Set CENPAYA_ORIGINS to exact deployed frontend origins.
