@@ -19,16 +19,22 @@ export default function SupportDashboard() {
       const me = await getCachedUser();
       if (!me) { setLoading(false); return; }
 
-      const [ticketsResult, disputesRes] = await Promise.all([
-        d1Request<{ data: any[] }>('/api/support/tickets'),
-        supabase.from('order_disputes').select('id', { count: 'exact', head: true }).eq('raised_by', me.id).neq('status', 'resolved'),
-      ]);
+      try {
+        const [ticketsResult, disputesRes] = await Promise.all([
+          d1Request<{ data: any[] }>('/api/support/tickets'),
+          supabase.from('order_disputes').select('id', { count: 'exact', head: true }).eq('raised_by', me.id).neq('status', 'resolved'),
+        ]);
 
-      const tickets = ticketsResult.data || [];
-      setOpenTickets(tickets.filter((ticket: any) => ['open', 'in_progress', 'waiting'].includes(ticket.status)).length);
-      setActiveDisputes(disputesRes.count || 0);
-      setRecentTickets(tickets.slice(0, 5));
-      setLoading(false);
+        const tickets = ticketsResult.data || [];
+        setOpenTickets(tickets.filter((ticket: any) => ['open', 'in_progress', 'waiting'].includes(ticket.status)).length);
+        setActiveDisputes(disputesRes.count || 0);
+        setRecentTickets(tickets.slice(0, 5));
+      } catch (error) {
+        console.error('Could not load support dashboard:', error);
+        setRecentTickets([]);
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, []);
