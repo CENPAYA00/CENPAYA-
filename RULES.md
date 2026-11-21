@@ -8,8 +8,9 @@ These rules apply to every change in this repository.
 - Keep generated build output out of source changes.
 
 ## 2. Respect backend ownership
-- Cloudflare Worker + D1 owns authentication, email/phone verification, identity, profiles, marketplace, social/feed, chat, notifications, support, reports, and general application configuration.
-- Supabase owns financial records and operations: wallets, deposits, withdrawals, checkout, escrow, ledger, financial orders/transactions, subscriptions, boosts, payment methods, and financial administration.
+- Cloudflare Worker + D1 owns authentication, email/phone verification, identity, profiles, marketplace, social/feed content, chat, notifications, and general application data.
+- Supabase owns all financial records and operations (wallets, deposits, withdrawals, checkout, escrow, ledger, financial orders/transactions), referrals, boosts, subscriptions/memberships, payment methods, platform API vault, and the complete admin/super-admin control plane (roles, permissions, staff access, audit logs, platform settings, feature/region controls, and administrative actions).
+- Admin/super-admin browser screens must not call D1 admin endpoints directly. Supabase may securely broker admin actions on D1-owned application content through a verified server-to-server Worker connection.
 - Do not add Supabase Auth as the app's identity provider.
 - Do not move non-financial domains back into Supabase or duplicate a domain across both databases.
 - A D1 user ID is not automatically a valid Supabase auth.uid(). Any cross-system financial authorization requires a verified server-to-server identity bridge.
