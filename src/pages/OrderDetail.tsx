@@ -22,7 +22,7 @@ export default function OrderDetail() {
       const { user } = await d1Me();
       if (!user) return;
       setUserId(user.id);
-      const { data } = await supabase.from('orders').select('*').eq('id', id).single();
+      const { data } = await supabaseWorkerRequest<{ data: any }>(`/api/v1/orders/${encodeURIComponent(id || '')}`);
       if (data) {
         setOrder(data);
         setIsSeller(data.seller_id === user.id);
