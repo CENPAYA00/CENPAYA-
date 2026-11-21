@@ -2,12 +2,14 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const brandIcon = '/icons/image_76ec5c90%20(1)%20(1)%20(1).png';
+
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'icons/*.png'],
+      includeAssets: ['icons/*.png', 'push-sw.js'],
       manifest: {
         name: 'CenPaya — Buy, Sell, Grow',
         short_name: 'CenPaya',
@@ -19,13 +21,13 @@ export default defineConfig({
         scope: '/',
         start_url: '/',
         categories: ['shopping', 'finance', 'business'],
+        // Use the existing square brand asset and declare its real dimensions.
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: brandIcon, sizes: '1024x1024', type: 'image/png', purpose: 'any' },
         ],
       },
       workbox: {
+        importScripts: ['/push-sw.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
         // Never cache authenticated API responses. D1 owns non-financial
         // application data; Supabase is reserved for financial operations.
