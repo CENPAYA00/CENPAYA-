@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { getCachedUser, setCached } from '../lib/cache';
 import { ArrowLeft, Image as ImageIcon, X, Palette, Smile, Video } from 'lucide-react';
@@ -92,6 +93,18 @@ export default function CreatePost() {
 
     setLoading(true);
     try {
+      // The current D1 Worker supports text-only public posts. Rich posts still
+      // use the existing path until D1 media/tag/feeling endpoints are available.
+      if (images.length === 0 && !isColorActive && !feeling && taggedUsers.length === 0) {
+        await d1Request<{ id: string }>('/api/posts', {
+          method: 'POST',
+          body: JSON.stringify({ content: content.trim(), post_type: 'text', visibility: 'public' }),
+        });
+        setCached('home_posts', null);
+        navigate('/home');
+        return;
+      }
+
       const urls: string[] = [];
       for (const img of images) {
         const compressed = await compressImage(img);
