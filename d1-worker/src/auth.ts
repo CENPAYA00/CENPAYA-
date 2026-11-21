@@ -18,6 +18,14 @@ export async function auth(request:Request,env:Env):Promise<User|null>{
     AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(hash).first<{id:string}>();
   return row?readUser(env.DB,row.id):null;
 }
+export async function createSession(db:D1Database,userId:string,_request:Request,env:Env):Promise<string>{
+  const token=Array.from(crypto.getRandomValues(new Uint8Array(32)),value=>value.toString(16).padStart(2,"0")).join("");
+  const ttl=Math.max(300,Math.min(2592000,Number(env.SESSION_TTL_SECONDS||2592000)));
+  const expiresAt=new Date(Date.now()+ttl*1000).toISOString();
+  await db.prepare("INSERT INTO user_sessions(id,user_id,session_token_hash,status,expires_at) VALUES(?,?,?,'active',?)")
+    .bind(uuid(),userId,await digest(token),expiresAt).run();
+  return token;
+}
 export async function rateLimit(env:Env,key:string,max:number,windowSeconds:number):Promise<boolean>{
   if(env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN){
     try{
