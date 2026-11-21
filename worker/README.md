@@ -46,7 +46,7 @@ All routes below, except liveness, DB health, and provider callbacks, require a 
 | GET | `/healthz` | Worker liveness |
 | GET | `/api/v1/healthz/db` | Public-read database connectivity probe |
 | GET | `/api/v1/me/profile` | Existing financial user profile |
-| GET | `/api/v1/wallet` | Legacy XAF wallet plus all rows from the multi-currency `user_balances` table under RLS |
+| GET | `/api/v1/wallet` | Active legacy XAF wallet plus non-XAF rows from `user_balances` under RLS; returns a unified `balances` array |
 | GET | `/api/v1/ledger` | Current user's ledger under RLS |
 | GET | `/api/v1/orders` | Orders where current user is buyer or seller |
 | POST | `/api/v1/wallet/topups` | Idempotent XAF top-up initiation (Fapshi/Campay) |
