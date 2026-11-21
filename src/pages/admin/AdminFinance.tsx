@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { d1Me } from '../../lib/d1Api';
 import { TrendingUp, Wallet, Settings as Cog, Globe } from 'lucide-react';
 import AdminFinanceGains from './AdminFinanceGains';
 import AdminFinanceExtras from './AdminFinanceExtras';
@@ -26,7 +27,7 @@ export default function AdminFinance() {
 
   const load = async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user } = await d1Me();
 
     const [gainsRes, settingsRes, regionsRes, walletRes, gainsInfoRes, breakdownRes, userRes] = await Promise.all([
       supabase.from('system_gains').select('*').order('processed_at', { ascending: false }).limit(100),
