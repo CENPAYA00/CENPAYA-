@@ -2,7 +2,7 @@ type User = {
   id: string; username: string | null; display_name: string;
   email: string | null; phone: string | null; email_verified: number;
   phone_verified: number; role: string; account_status: string;
-  banned: number; password_hash: string | null;
+  banned: number; password_hash: string | null; onboarding_completed?: number;
 };
 interface Env {
   DB: D1Database;
@@ -91,7 +91,7 @@ async function verifyPassword(password:string,stored:string):Promise<boolean>{
   }catch{return false;}
 }
 async function readUser(db:D1Database,id:string):Promise<User|null>{
-  return db.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,role,account_status,banned,password_hash FROM users WHERE id=? AND deleted_at IS NULL").bind(id).first<User>();
+  return db.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,role,account_status,banned,password_hash,onboarding_completed FROM users WHERE id=? AND deleted_at IS NULL").bind(id).first<User>();
 }
 async function auth(request:Request,env:Env):Promise<User|null>{
   const token=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];
@@ -147,7 +147,7 @@ async function verifyOtp(env:Env,db:D1Database,userId:string,purpose:"verify_ema
   else if(purpose==="verify_phone") await db.prepare("UPDATE users SET phone_verified=1,phone_verified_at="+NOW+",updated_at="+NOW+" WHERE id=?").bind(userId).run();
   return true;
 }
-function safeUser(u:User){return {id:u.id,username:u.username,display_name:u.display_name,email:u.email,phone:u.phone,email_verified:!!u.email_verified,phone_verified:!!u.phone_verified,role:u.role};}
+function safeUser(u:User){return {id:u.id,username:u.username,display_name:u.display_name,email:u.email,phone:u.phone,email_verified:!!u.email_verified,phone_verified:!!u.phone_verified,role:u.role,onboarding_completed:!!u.onboarding_completed};}
 async function randomToken(bytes=32):Promise<string>{
   const data=crypto.getRandomValues(new Uint8Array(bytes));
   return btoa(String.fromCharCode(...data)).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/g,"");
@@ -325,15 +325,28 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(path==="/api/me/profile"&&method==="PATCH"){
     if(!user)return fail("Unauthorized",401);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
-    const allowed=["display_name","bio","avatar_url","cover_url","country_code","preferred_language","location_city","location_region","occupation","profile_visibility"];
+    const allowed=["username","phone","display_name","bio","avatar_url","cover_url","country_code","preferred_language","location_city","location_region","occupation","profile_visibility"];
     const fields=allowed.filter(k=>Object.prototype.hasOwnProperty.call(b,k));
     if(!fields.length)return fail("No supported profile fields supplied");
     const values:(string|null)[]=[];
     const sets=fields.map(k=>{let v=b[k];if(typeof v!=="string"&&v!==null)return "";v=typeof v==="string"?v.trim().slice(0,k==="bio"?2000: k==="display_name"?100:255):null;values.push(v as string|null);return '"'+k+'"=?';});
     if(sets.some(x=>!x))return fail("Invalid profile field value");
     if(b.profile_visibility!==undefined&&!["public","private","followers"].includes(String(b.profile_visibility)))return fail("Invalid profile visibility");
+    if(b.username!==undefined){
+      const username=str(b.username,30).toLowerCase();
+      if(!/^[a-z0-9_]{3,30}$/.test(username))return fail("Username must be 3-30 characters using letters, numbers, or underscores");
+      const taken=await env.DB.prepare("SELECT 1 FROM users WHERE lower(username)=? AND id<>?").bind(username,user.id).first();
+      if(taken)return fail("Username is already taken",409);
+    }
+    if(b.phone!==undefined&&b.phone!==null){
+      const phone=str(b.phone,32);
+      if(phone.length<7)return fail("A valid phone number is required");
+      const taken=await env.DB.prepare("SELECT 1 FROM users WHERE phone=? AND id<>?").bind(phone,user.id).first();
+      if(taken)return fail("Phone number is already in use",409);
+    }
     values.push(user.id);
-    await env.DB.prepare("UPDATE users SET "+sets.join(",")+",updated_at="+NOW+" WHERE id=?").bind(...values).run();
+    const onboardingSet=b.onboarding_completed===true?",onboarding_completed=1":"";
+    await env.DB.prepare("UPDATE users SET "+sets.join(",")+onboardingSet+",updated_at="+NOW+" WHERE id=?").bind(...values).run();
     const updated=await readUser(env.DB,user.id);return json({success:true,user:updated?safeUser(updated):null});
   }
   const publicProfile=path.match(/^\/api\/profiles\/([^/]+)$/);
@@ -344,6 +357,10 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const profile=await env.DB.prepare("SELECT id,username,display_name,avatar_url,cover_url,bio,country_code,location_city,is_premium,followers_count,sales_count,reputation_score,created_at FROM public_profiles WHERE id=? OR lower(username)=lower(?)").bind(key,key).first();
     if(profile)await cachePut(env,"public-profile:"+key.toLowerCase(),profile,300);
     return profile?json({success:true,data:profile}):fail("Profile not found",404);
+  }
+  if(path==="/api/profiles/suggestions"&&method==="GET"){
+    const rows=await env.DB.prepare("SELECT id,username,avatar_url,occupation,location_city AS city FROM public_profiles ORDER BY created_at DESC LIMIT 12").all();
+    return json({success:true,data:rows.results});
   }
   if(path==="/api/countries"&&method==="GET"){
     const cached=await cacheGet(env,"supported-countries");
