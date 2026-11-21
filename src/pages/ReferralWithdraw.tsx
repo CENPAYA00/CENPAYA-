@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Smartphone, AlertCircle, Check } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
 
-type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
-const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
+type Method = 'mtn_momo' | 'orange_money';
+const METHODS: Method[] = ['mtn_momo', 'orange_money'];
 const MIN = 2000;
 
 export default function ReferralWithdraw() {
@@ -25,7 +25,7 @@ export default function ReferralWithdraw() {
       const me = await getCachedUser();
       if (!me) return;
       const [walletRes, profileRes] = await Promise.all([
-        supabase.from('wallets').select('referral_earnings_available').eq('user_id', me.id).single(),
+        supabaseWorkerRequest<{ data: { referral_earnings_available?: number } }>('/api/v1/wallet'),
         d1Request<{ data: any }>('/api/me/personal-details'),
       ]);
       const profile = profileRes.data;
@@ -48,14 +48,13 @@ export default function ReferralWithdraw() {
     if (!phone || phone.trim().length < 8) return setErrorMsg('Enter a valid MoMo number.');
 
     setLoading(true);
-    const { data, error } = await supabase.rpc('request_referral_withdrawal', {
-      p_amount: amt,
-      p_momo_number: phone.trim(),
-      p_provider: provider,
-    });
-
-    if (error || (data && !data.ok)) {
-      setErrorMsg(error?.message || data?.error || 'Withdrawal failed.');
+    try {
+      await supabaseWorkerRequest('/api/v1/wallet/withdrawals', {
+        method: 'POST',
+        body: JSON.stringify({ amount: amt, gateway_provider: 'FAPSHI', destination_provider: provider, source_bucket: 'referral', destination_phone: phone.trim(), idempotency_key: crypto.randomUUID() }),
+      });
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Withdrawal failed.');
       setLoading(false);
       return;
     }
