@@ -67,6 +67,23 @@ async function handle(request:Request,env:Env):Promise<Response>{
       return fail("Identity service unavailable",503);
     }
   }
+  if(path==="/internal/v1/identity/consume"&&method==="POST"){
+    const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
+    const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
+    if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
+    const b=await body(request);
+    const jti=str(b?.jti,200),expiresAt=b?.expires_at,now=Math.floor(Date.now()/1000);
+    if(jti.length<16||!Number.isSafeInteger(expiresAt)||Number(expiresAt)<=now-15||Number(expiresAt)>now+135)return fail("Invalid assertion receipt",400);
+    try{
+      await env.DB.prepare("DELETE FROM rate_limits WHERE key LIKE 'identity:jti:%' AND window_start<?").bind(now-15).run();
+      const inserted=await env.DB.prepare("INSERT OR IGNORE INTO rate_limits(key,window_start,count) VALUES(?,?,1)")
+        .bind("identity:jti:"+jti,Number(expiresAt)).run();
+      if(!inserted.meta.changes)return fail("Assertion already used",409);
+      return json({success:true});
+    }catch{
+      return fail("Identity replay protection unavailable",503);
+    }
+  }
   if(path==="/internal/v1/rate-limit/consume"&&method==="POST"){
     const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
     const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
