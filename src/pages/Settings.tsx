@@ -5,7 +5,7 @@ import {
   Ban, Shield, FileText, Bell, Search, ChevronRight, LogOut, Flag,
   Activity, UserX
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Logout } from '../lib/d1Api';
 import { useI18n } from '../contexts/i18n';
 import { useTheme } from '../contexts/theme';
 import SoundToggle from '../components/SoundToggle';
@@ -17,7 +17,7 @@ export default function Settings() {
   const [search, setSearch] = useState('');
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await d1Logout();
     navigate('/');
   };
 
