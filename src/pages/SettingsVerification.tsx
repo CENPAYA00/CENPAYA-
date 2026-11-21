@@ -26,7 +26,7 @@ export default function SettingsVerification() {
         setIsPhoneVerified(!!me.user.phone_verified);
         const available = countryResult.data || [];
         setCountries(available);
-        if (me.user.country_code) setSelectedCountry(me.user.country_code);
+        if (me.user.country_iso) setSelectedCountry(me.user.country_code);
         else if (available.length && !available.some(c => c.country_code === 'CM')) setSelectedCountry(available[0].country_code);
       })
       .catch(() => navigate('/login', { replace: true }))
@@ -39,7 +39,7 @@ export default function SettingsVerification() {
     const fullPhone = phone.trim().startsWith('+') ? phone.trim() : `${prefix}${phone.trim().replace(/^0+/, '')}`;
     setSendingSms(true);
     try {
-      await d1UpdateProfile({ phone: fullPhone, country_code: selectedCountry });
+      await d1UpdateProfile({ phone: fullPhone, country_iso: selectedCountry });
       const { user } = await d1Me();
       await d1ResendOtp(fullPhone, 'verify_phone');
       navigate(`/verify-otp?identifier=${encodeURIComponent(fullPhone)}&user_id=${encodeURIComponent(user.id)}&purpose=verify_phone`);
