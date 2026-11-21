@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Search, Store, Zap, Plus, Eye, EyeOff } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
@@ -19,20 +19,20 @@ export default function Market() {
 
   useEffect(() => {
     const load = async () => {
-      const me = await getCachedUser();
-      setMeId(me?.id || null);
-
-      const { data } = await supabase
-        .from('listings')
-        .select('*')
-        .eq('moderation_status', 'approved')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      
-      setListings(data || []);
-      setLoading(false);
+      try {
+        const me = await getCachedUser();
+        setMeId(me?.id || null);
+        const result = await d1Request<{ data: any[] }>('/api/market/search?limit=50');
+        setListings((result.data || []).map((row: any) => ({
+          ...row, id: row.listing_id || row.id, title: row.product_title || row.title,
+          price: row.product_price ?? row.price_amount ?? row.price, currency_code: row.currency_code || 'XAF',
+          location_city: row.city || row.location_city, seller_id: row.seller_id || row.merchant_id,
+          images: row.images || (row.image_url ? [row.image_url] : []),
+        })));
+      } catch (error: any) { alert(error.message || 'Could not load marketplace'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, []);
 
   const filtered = listings.filter(l => 
