@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { d1Request } from '../../lib/d1Api';
 import { Search, Shield, Crown, ShieldAlert } from 'lucide-react';
 
 export default function AdminUsers() {
@@ -9,14 +10,22 @@ export default function AdminUsers() {
 
   const load = async () => {
     setLoading(true);
-    // Sort by is_subscribed desc so paid members are first
-    const { data } = await supabase
-      .from('users')
-      .select('id, username, email, role, is_subscribed, is_membership_exempt, country_iso')
-      .order('is_subscribed', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(200);
-    setUsers(data || []);
+    try {
+      const result = await d1Request<{ data: any[] }>('/api/admin/users?limit=200');
+      const profiles = result.data || [];
+      const ids = profiles.map((user: any) => user.id).filter(Boolean);
+      const { data: membershipRows } = ids.length
+        ? await supabase.from('users').select('id, is_subscribed, is_membership_exempt').in('id', ids)
+        : { data: [] };
+      const membershipById = new Map((membershipRows || []).map((row: any) => [row.id, row]));
+      setUsers(profiles.map((user: any) => ({
+        ...user,
+        ...(membershipById.get(user.id) || {}),
+      })).sort((a: any, b: any) => Number(!!b.is_subscribed) - Number(!!a.is_subscribed)));
+    } catch (error) {
+      console.warn('Could not load users', error);
+      setUsers([]);
+    }
     setLoading(false);
   };
 
@@ -35,8 +44,12 @@ export default function AdminUsers() {
 
   const changeRole = async (user: any, newRole: string) => {
     if (!confirm(`Change @${user.username} role to ${newRole}?`)) return;
-    await supabase.from('users').update({ role: newRole }).eq('id', user.id);
-    load();
+    try {
+      await d1Request(`/api/admin/users/${encodeURIComponent(user.id)}`, {
+        method: 'PATCH', body: JSON.stringify({ role: newRole }),
+      });
+      load();
+    } catch (error: any) { alert(error.message || 'Could not update role'); }
   };
 
   const filtered = users.filter(u => 
