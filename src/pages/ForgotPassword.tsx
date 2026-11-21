@@ -33,7 +33,7 @@ export default function ForgotPassword() {
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    if (!/^\\d{6}$/.test(code)) return setErrorMsg('Enter the 6-digit code from your email.');
+    if (code.length !== 6 || [...code].some(char => char < '0' || char > '9')) return setErrorMsg('Enter the 6-digit code from your email.');
     if (newPassword.length < 12) return setErrorMsg('Your new password must be at least 12 characters.');
     setLoading(true);
     try {
@@ -107,7 +107,7 @@ export default function ForgotPassword() {
                   inputMode="numeric"
                   maxLength={6}
                   value={code}
-                  onChange={e => setCode(e.target.value.replace(/\\D/g, '').slice(0, 6))}
+                  onChange={e => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
                   placeholder="000000"
                   className="w-full text-center tracking-[0.4em] p-3 border border-gray-200 dark:border-darkline rounded-lg text-lg bg-gray-50 dark:bg-darkbg dark:text-white mb-3"
                   required
