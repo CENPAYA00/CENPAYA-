@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { d1Request } from '../../lib/d1Api';
 import { Phone, Zap } from 'lucide-react';
 
 export default function AdminFeatures() {
@@ -10,34 +10,34 @@ export default function AdminFeatures() {
 
   const load = async () => {
     setLoading(true);
-    const [flagsRes, voiceRes] = await Promise.all([
-      supabase.from('application_feature_flags').select('*'),
-      supabase.from('app_settings').select('value').eq('key', 'voice_calls_enabled').maybeSingle(),
-    ]);
-    setFlags(flagsRes.data || []);
-    setVoiceEnabled(voiceRes.data?.value === 'true');
+    try {
+      const result = await d1Request<{ data: any[]; voice_calls_enabled: boolean }>('/api/admin/features');
+      setFlags(result.data || []);
+      setVoiceEnabled(!!result.voice_calls_enabled);
+    } catch (error) { console.warn('Could not load feature flags', error); setFlags([]); }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
   const toggleFlag = async (flag: any) => {
-    await supabase
-      .from('application_feature_flags')
-      .update({ is_enabled_globally: !flag.is_enabled_globally })
-      .eq('id', flag.id);
-    setFlags(flags.map(f => f.id === flag.id ? { ...f, is_enabled_globally: !f.is_enabled_globally } : f));
+    try {
+      await d1Request(`/api/admin/features/${encodeURIComponent(flag.id)}`, {
+        method: 'PATCH', body: JSON.stringify({ is_enabled_globally: !flag.is_enabled_globally }),
+      });
+      setFlags(flags.map(f => f.id === flag.id ? { ...f, is_enabled_globally: !f.is_enabled_globally } : f));
+    } catch (error: any) { alert(error.message || 'Could not update feature'); }
   };
 
   const toggleVoice = async () => {
     setSavingVoice(true);
     const next = !voiceEnabled;
-    const { error } = await supabase.rpc('admin_set_app_setting', {
-      p_key: 'voice_calls_enabled',
-      p_value: next ? 'true' : 'false',
-    });
-    if (error) alert(error.message);
-    else setVoiceEnabled(next);
+    try {
+      await d1Request('/api/admin/settings/voice_calls_enabled', {
+        method: 'PATCH', body: JSON.stringify({ value: next ? 'true' : 'false' }),
+      });
+      setVoiceEnabled(next);
+    } catch (error: any) { alert(error.message || 'Could not update voice call setting'); }
     setSavingVoice(false);
   };
 
