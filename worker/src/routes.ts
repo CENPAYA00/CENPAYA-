@@ -349,6 +349,32 @@ export async function handleAuthenticatedApi(
     if (error) return failure("ledger_lookup_failed", 502, headers);
     return success(data || [], headers);
   }
+  const orderAction = path.match(/^\/api\/v1\/orders\/([0-9a-f-]{36})\/action$/i);
+  if (method === "POST" && orderAction) {
+    const body = await readJsonObject(request, 4096);
+    const action = typeof body?.action === "string" ? body.action : "";
+    if (!body || !onlyKeys(body, ["action", "photo_url", "photo_hash", "reason"])) return failure("invalid_order_action", 400, headers);
+    if (action === "mark_delivered") {
+      const photoUrl = typeof body.photo_url === "string" ? body.photo_url.trim() : "";
+      const photoHash = typeof body.photo_hash === "string" ? body.photo_hash.trim() : "";
+      if (photoUrl.length > 2048 || photoHash.length > 500) return failure("invalid_delivery_proof", 400, headers);
+      const result = await rpc(supabase, "seller_mark_delivered", { p_order_id: orderAction[1], p_photo_url: photoUrl || null, p_photo_hash: photoHash || null });
+      return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+    }
+    if (action === "mark_received") {
+      const result = await rpc(supabase, "buyer_mark_received", { p_order_id: orderAction[1] });
+      return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+    }
+    if (action === "dispute") {
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (reason.length < 10 || reason.length > 2000) return failure("invalid_dispute_reason", 400, headers);
+      const { error: disputeError } = await supabase.from("order_disputes").insert({ order_id: orderAction[1], raised_by: userId, reason, status: "open" });
+      if (disputeError) return failure("dispute_creation_failed", 409, headers);
+      const result = await rpc(supabase, "transition_escrow", { p_order_id: orderAction[1], p_target_status: "disputed" });
+      return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+    }
+    return failure("unsupported_order_action", 400, headers);
+  }
   if (method === "GET" && path === "/api/v1/orders") {
     const { data, error } = await supabase.from("orders")
       .select("id,listing_id,buyer_id,seller_id,amount,currency_code,escrow_status,escrow_created_at,order_status,order_type,updated_at")
