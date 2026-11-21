@@ -24,8 +24,10 @@ export async function rateLimit(env:Env,key:string,max:number,windowSeconds:numb
     }catch{ /* Redis is optional; D1 remains the fallback limiter. */ }
   }
   const now=Math.floor(Date.now()/1000), window=Math.floor(now/windowSeconds)*windowSeconds;
-  await env.DB.prepare("INSERT INTO rate_limits(key,window_start,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window_start=excluded.window_start,count=CASE WHEN rate_limits.window_start=excluded.window_start THEN rate_limits.count+1 ELSE 1 END").bind(key,window).run();
-  const row=await env.DB.prepare("SELECT count FROM rate_limits WHERE key=?").bind(key).first<{count:number}>();
+  // RETURNING makes the increment and limit decision use the same atomic write;
+  // a separate SELECT could observe another request's later count under load.
+  const row=await env.DB.prepare("INSERT INTO rate_limits(key,window_start,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window_start=excluded.window_start,count=CASE WHEN rate_limits.window_start=excluded.window_start THEN rate_limits.count+1 ELSE 1 END RETURNING count")
+    .bind(key,window).first<{count:number}>();
   return (row?.count||0)<=max;
 }
 export async function sendOtp(env:Env,db:D1Database,userId:string,channel:"email"|"sms",destination:string,purpose:"verify_email"|"verify_phone"|"password_reset"):Promise<boolean>{
