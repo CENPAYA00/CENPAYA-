@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import type { PostPrivacy } from '../components/PrivacySelector';
@@ -19,12 +19,12 @@ export function usePostPrivacy() {
       .catch(() => { /* Use the locally stored preference until D1 settings are available. */ });
   }, []);
 
-  const setPrivacy = async (p: PostPrivacy) => {
+  const setPrivacy = useCallback(async (p: PostPrivacy) => {
     setPrivacyState(p);
     localStorage.setItem(KEY, p);
     try { await d1Request('/api/me/privacy', { method: 'PATCH', body: JSON.stringify({ default_post_visibility: p }) }); }
     catch { /* The local preference remains available while the D1 route is being added. */ }
-  };
+  }, []);
 
   return { privacy, setPrivacy };
       }
