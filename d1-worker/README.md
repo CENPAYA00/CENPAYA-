@@ -24,3 +24,16 @@ The D1 Worker implements three private service-binding endpoints used by the Sup
 Configure `D1_INTERNAL_CALL_SECRET` and `D1_TO_SUPABASE_HMAC_SECRET` as Worker secrets. They must match the corresponding secrets on the Supabase Worker. Never commit secret values. The Supabase Worker uses the existing `D1_IDENTITY` service binding to reach these routes; do not expose the internal secret to browser clients.
 
 The rate limiter uses Upstash Redis when configured and the existing D1 `rate_limits` table as its fallback. Monitor fallback usage under sustained traffic because the D1 fallback adds database writes to request handling.
+
+## Local verification
+
+From `d1-worker/`:
+
+```sh
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+The test command compiles the security module and runs the built-in Node tests for identity assertion signing, claim contents, expiry, signature validity, and internal-secret comparison. The Wrangler build is a dry run; it does not deploy.
