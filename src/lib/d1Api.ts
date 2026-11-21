@@ -1,5 +1,5 @@
 const API_BASE = String(import.meta.env.VITE_D1_API_URL ?? '').trim().replace(/\/$/, '');
-const TOKEN_KEY = 'cenpaya_d1_session';
+let sessionToken: string | null = null;
 
 export type D1User = {
   id: string;
@@ -25,15 +25,19 @@ export class D1ApiError extends Error {
   }
 }
 
-export function getD1Token(): string | null {
-  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
-}
+export function getD1Token(): string | null { return sessionToken; }
 
-export function setD1Token(token: string | null) {
+export function setD1Token(token: string | null) { sessionToken = token; }
+
+export async function refreshD1Session(): Promise<string | null> {
   try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch { /* Storage may be unavailable in private browsing. */ }
+    const response = await fetch(getD1ApiUrl('/api/auth/refresh'), {
+      method: 'POST', credentials: 'include', cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({})) as { token?: string };
+    sessionToken = response.ok && typeof payload.token === 'string' ? payload.token : null;
+    return sessionToken;
+  } catch { sessionToken = null; return null; }
 }
 
 export function getD1ApiUrl(path: string): string {
@@ -48,7 +52,7 @@ export async function d1Request<T>(path: string, options: RequestInit = {}): Pro
   if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(getD1ApiUrl(path), { ...options, headers, credentials: 'omit' });
+    response = await fetch(getD1ApiUrl(path), { ...options, headers, credentials: 'include' });
   } catch {
     throw new Error('Unable to reach CenPaya services. Check your connection and D1 API configuration.');
   }
@@ -74,7 +78,7 @@ export function d1Login(identifier: string, password: string) {
   });
 }
 
-export function d1VerifyOtp(user_id: string, code: string, purpose: 'verify_email' | 'verify_phone' | 'password_reset' = 'verify_email') {
+export async function d1VerifyOtp(user_id: string, code: string, purpose: 'verify_email' | 'verify_phone' | 'password_reset' = 'verify_email') {
   return d1Request<{ user: D1User; token: string }>('/api/auth/verify', {
     method: 'POST', body: JSON.stringify({ user_id, code, purpose }),
   });
