@@ -2,21 +2,51 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { jsonResponse, readJsonObject } from "./http-utils.js";
 import { readUserProfile } from "./profile.js";
 
-const ADMIN_RPCS = new Set([
-  "admin_add_country", "admin_add_payment_method", "admin_assign_role",
-  "admin_available_gains", "admin_ban_user", "admin_escrow_action",
-  "admin_gains_breakdown", "admin_grant_membership", "admin_grant_permission",
-  "admin_list_invitations", "admin_list_ledger", "admin_list_open_escrows",
-  "admin_list_providers", "admin_list_users", "admin_moderate_user",
-  "admin_money_circulation", "admin_money_circulation_full",
-  "admin_remove_gateway_credentials", "admin_remove_support_agent",
-  "admin_resolve_dispute", "admin_review_kyc", "admin_revoke_invitation",
-  "admin_revoke_membership", "admin_set_gateway_credentials",
-  "admin_set_provider_active", "admin_toggle_payment_method",
-  "admin_topup_my_wallet", "admin_unban_user", "admin_update_region",
-  "admin_withdraw_from_my_wallet", "admin_withdraw_gains_to_wallet",
-  "admin_withdraw_platform_gains",
-]);
+type AdminRpcSchema = {
+  optional: string[];
+  validate: (args: Record<string, unknown>) => boolean;
+};
+const noArgs = (args: Record<string, unknown>) => Object.keys(args).length === 0;
+const integerIn = (value: unknown, min: number, max: number) =>
+  Number.isSafeInteger(value) && Number(value) >= min && Number(value) <= max;
+const nullableFlow = (value: unknown) => value === null || value === "CASH_IN" || value === "CASH_OUT";
+
+// The generic RPC gateway is deliberately read-only. Mutating and money-moving
+// operations must use dedicated endpoints with operation-specific validation.
+const ADMIN_RPC_SCHEMAS: Record<string, AdminRpcSchema> = {
+  admin_available_gains: { optional: [], validate: noArgs },
+  admin_gains_breakdown: { optional: [], validate: noArgs },
+  admin_list_invitations: { optional: [], validate: noArgs },
+  admin_list_providers: { optional: [], validate: noArgs },
+  admin_money_circulation: { optional: [], validate: noArgs },
+  admin_money_circulation_full: { optional: [], validate: noArgs },
+  admin_list_ledger: {
+    optional: ["p_limit", "p_offset", "p_flow"],
+    validate: (args) =>
+      (args.p_limit === undefined || integerIn(args.p_limit, 1, MAX_PAGE_SIZE)) &&
+      (args.p_offset === undefined || integerIn(args.p_offset, 0, 100_000)) &&
+      (args.p_flow === undefined || nullableFlow(args.p_flow)),
+  },
+  admin_list_open_escrows: {
+    optional: ["p_limit"],
+    validate: (args) => args.p_limit === undefined || integerIn(args.p_limit, 1, MAX_PAGE_SIZE),
+  },
+  admin_list_users: {
+    optional: ["p_search", "p_role_filter", "p_banned_only", "p_limit", "p_offset"],
+    validate: (args) =>
+      (args.p_search === undefined || args.p_search === null || (typeof args.p_search === "string" && args.p_search.length <= 120)) &&
+      (args.p_role_filter === undefined || args.p_role_filter === null || (typeof args.p_role_filter === "string" && args.p_role_filter.length <= 40)) &&
+      (args.p_banned_only === undefined || typeof args.p_banned_only === "boolean") &&
+      (args.p_limit === undefined || integerIn(args.p_limit, 1, MAX_PAGE_SIZE)) &&
+      (args.p_offset === undefined || integerIn(args.p_offset, 0, 100_000)),
+  },
+};
+function validAdminRpcArgs(name: string, args: Record<string, unknown>): boolean {
+  const schema = ADMIN_RPC_SCHEMAS[name];
+  if (!schema) return false;
+  const allowed = new Set(schema.optional);
+  return Object.keys(args).every((key) => allowed.has(key)) && schema.validate(args);
+}
 
 const MAX_PAGE_SIZE = 200;
 function pageSize(url: URL, fallback = 50): number {
@@ -166,11 +196,14 @@ export async function handleAuthenticatedApi(
   const adminRpc = path.match(/^\/api\/v1\/admin\/rpc\/([a-z_]+)$/);
   if (method === "POST" && adminRpc) {
     const name = adminRpc[1];
-    if (!ADMIN_RPCS.has(name)) return failure("rpc_not_allowed", 404, headers);
     const body = await readJsonObject(request, 64_000);
     if (!body) return failure("invalid_json_body", 400, headers);
-    const args = body.args && typeof body.args === "object" && !Array.isArray(body.args)
-      ? body.args as Record<string, unknown> : {};
+    const args = body.args === undefined ? {} :
+      body.args && typeof body.args === "object" && !Array.isArray(body.args)
+        ? body.args as Record<string, unknown> : null;
+    if (!args || !validAdminRpcArgs(name, args)) {
+      return failure("rpc_requires_typed_endpoint_or_invalid_arguments", 400, headers);
+    }
     const result = await rpc(supabase, name, args);
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
