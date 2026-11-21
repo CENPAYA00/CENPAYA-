@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Send, Check } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 
@@ -17,13 +17,13 @@ export default function ContactThread() {
 
   const load = async () => {
     if (!id) return;
-    const { data } = await supabase.rpc('get_ticket_thread', { p_ticket_id: id });
-    if (data?.ok) {
-      setTicket(data.ticket);
-      setMessages(data.messages || []);
-      await supabase.rpc('mark_ticket_read', { p_ticket_id: id });
-    }
-    setLoading(false);
+    try {
+      const result = await d1Request<{ data: { ticket: any; messages: any[] } }>(`/api/support/tickets/${encodeURIComponent(id)}`);
+      setTicket(result.data?.ticket || null);
+      setMessages(result.data?.messages || []);
+      await d1Request(`/api/support/tickets/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
+    } catch (error: any) { alert(error.message || 'Could not load support conversation'); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -55,16 +55,11 @@ export default function ContactThread() {
   const send = async () => {
     if (!input.trim() || !id) return;
     setSending(true);
-    const { data, error } = await supabase.rpc('send_ticket_message', {
-      p_ticket_id: id,
-      p_body: input.trim(),
-    });
-    if (error || !data?.ok) {
-      alert(error?.message || data?.error || 'Send failed');
-    } else {
+    try {
+      await d1Request(`/api/support/tickets/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ body: input.trim() }) });
       setInput('');
       await load();
-    }
+    } catch (error: any) { alert(error.message || 'Send failed'); }
     setSending(false);
   };
 
