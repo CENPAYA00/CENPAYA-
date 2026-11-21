@@ -163,9 +163,15 @@ async function signSupabaseJwt(
     throw new Error("supabase_jwt_algorithm_not_configured");
   }
 
+  // The database project does not permit creating custom Postgres roles.
+  // Payment-worker JWTs therefore use the existing authenticated role plus
+  // a private, Worker-signed app_metadata claim checked inside privileged RPCs.
   const claims = {
     aud: "authenticated",
-    role,
+    role: "authenticated",
+    ...(role === "cenpaya_payment_worker"
+      ? { app_metadata: { cenpaya_payment_worker: true } }
+      : {}),
     sub: subject,
     iat: nowSeconds,
     exp: nowSeconds + 60,
