@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, User as UserIcon, ChevronRight } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import ReportSheet from '../components/ReportSheet';
 
 export default function SettingsReport() {
@@ -15,12 +15,11 @@ export default function SettingsReport() {
     setQuery(q);
     if (q.trim().length < 2) { setResults([]); return; }
     setSearching(true);
-    const { data } = await supabase
-      .from('public_profiles')
-      .select('id, username')
-      .ilike('username', `%${q.trim()}%`)
-      .limit(20);
-    setResults(data || []);
+    try {
+      const result = await d1Request<{ data: any[] }>(`/api/profiles/search?q=${encodeURIComponent(q.trim())}`);
+      setResults(result.data || []);
+    } catch (error: any) { alert(error.message || 'Could not search users'); setResults([]); }
+
     setSearching(false);
   };
 
