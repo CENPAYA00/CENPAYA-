@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Activity, Search, FileText } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 
 const LABEL: Record<string, string> = { 
@@ -17,20 +17,13 @@ export default function ActivityLog() {
 
   useEffect(() => {
     const load = async () => {
-      const me = await getCachedUser();
-      if (!me) { setLoading(false); return; }
-
-      const { data: logs } = await supabase
-        .from('activity_log')
-        .select('*')
-        .eq('user_id', me.id)
-        .in('action', ['view_post', 'search', 'view_listing'])
-        .order('created_at', { ascending: false });
-
-      setData(logs || []);
-      setLoading(false);
+      try {
+        const result = await d1Request<{ data: any[] }>('/api/activity');
+        setData(result.data || []);
+      } catch (error: any) { alert(error.message || 'Could not load activity'); }
+      finally { setLoading(false); }
     };
-    load();
+    void load();
   }, []);
 
   if (loading) return <div className="p-4 text-center text-xs text-mute">Loading activity...</div>;
