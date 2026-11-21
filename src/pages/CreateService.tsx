@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
+import { d1Request, getD1ApiUrl } from '../lib/d1Api';
 import { ArrowLeft, Upload, FileText, X, Image as ImageIcon } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import { compressImage } from '../utils/compressImage';
@@ -64,9 +64,8 @@ export default function CreateService() {
         const form = new FormData();
         form.append('file', file, file.name);
         form.append('folder', folder);
-        const token = getD1Token();
         const response = await fetch(getD1ApiUrl('/api/market/media'), {
-          method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
+          method: 'POST', credentials: 'include', body: form,
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.url) throw new Error(result.error || 'File upload failed');
