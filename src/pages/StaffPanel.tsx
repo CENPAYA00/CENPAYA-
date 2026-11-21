@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { d1Request } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { MessageSquare, Check, Shield } from 'lucide-react';
 
 export default function StaffPanel() {
@@ -14,8 +14,8 @@ export default function StaffPanel() {
     setLoading(true);
     try {
       const [profileRes, ticketsRes] = await Promise.all([
-        d1Request<{ data: any }>('/api/staff/profile'),
-        d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`),
+        supabaseWorkerRequest<{ data: any }>('/api/admin/staff/profile'),
+        supabaseWorkerRequest<{ data: any[] }>(`/api/admin/staff/tickets?scope=${tab}`),
       ]);
       if (!profileRes.data) { navigate('/home'); return; }
       setProfile(profileRes.data);
@@ -32,7 +32,7 @@ export default function StaffPanel() {
 
   const claim = async (ticketId: string) => {
     try {
-      await d1Request(`/api/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
+      await supabaseWorkerRequest(`/api/admin/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
       load();
     } catch (error: any) { alert(error.message || 'Could not claim ticket'); }
   };
