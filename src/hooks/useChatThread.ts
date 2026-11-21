@@ -1,7 +1,7 @@
 /* src/hooks/useChatThread.ts */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
+import { d1Request, getD1ApiUrl } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { useVoiceRecorder } from './useVoiceRecorder';
 import { useReadReceipts } from './useReadReceipts';
@@ -37,10 +37,9 @@ async function uploadChatMedia(blob: Blob, folder: string, ext: string): Promise
   const form = new FormData();
   form.append('file', blob, `${crypto.randomUUID()}.${ext}`);
   form.append('folder', folder);
-  const token = getD1Token();
   const response = await fetch(getD1ApiUrl('/api/chat/media'), {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
     body: form,
   });
   const result = await response.json().catch(() => ({}));
