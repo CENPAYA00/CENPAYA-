@@ -42,7 +42,6 @@ export async function payForSubscription(
     const paymentMethod = PAYMENT_METHOD[method];
     const option = (optionsResponse.data?.options || []).find(item => item.payment_method === paymentMethod);
     if (!option) return { success: false, error: 'This mobile money option is not currently configured for your country.' };
-    if (!phone.trim()) return { success: false, error: 'Add a mobile money phone number to your profile before continuing.' };
 
     const result = await supabaseWorkerRequest<{ data: { payment_id: string; status: string; payment_url?: string | null } }>('/api/v1/subscriptions', {
       method: 'POST',
