@@ -368,6 +368,91 @@ export async function handleAuthenticatedApi(
     });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
+  const adminRole = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/role$/i);
+  if (method === "POST" && adminRole) {
+    const body = await readJsonObject(request);
+    const role = typeof body?.role === "string" ? body.role : "";
+    if (!body || !["user", "support_agent", "super_admin"].includes(role)) return failure("invalid_role_assignment", 400, headers);
+    const result = await rpc(supabase, "admin_assign_role", { p_target_user_id: adminRole[1], p_new_role: role });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  const adminPermission = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/permissions$/i);
+  if (method === "POST" && adminPermission) {
+    const body = await readJsonObject(request);
+    const permission = typeof body?.permission_key === "string" ? body.permission_key.trim() : "";
+    if (!body || !/^[a-z0-9_.:-]{2,100}$/i.test(permission)) return failure("invalid_permission_grant", 400, headers);
+    const result = await rpc(supabase, "admin_grant_permission", {
+      p_target_user_id: adminPermission[1], p_permission_key: permission,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  const adminMembership = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/membership$/i);
+  if (method === "POST" && adminMembership) {
+    const body = await readJsonObject(request);
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    if (!body || reason.length < 5 || reason.length > 1000) return failure("invalid_membership_grant", 400, headers);
+    const result = await rpc(supabase, "admin_grant_membership", {
+      p_target_user_id: adminMembership[1], p_reason: reason,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  const adminMembershipRevoke = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/membership\/revoke$/i);
+  if (method === "POST" && adminMembershipRevoke) {
+    const result = await rpc(supabase, "admin_revoke_membership", { p_target_id: adminMembershipRevoke[1] });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  const adminModeration = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/moderation$/i);
+  if (method === "POST" && adminModeration) {
+    const body = await readJsonObject(request, 16_384);
+    const action = typeof body?.action === "string" ? body.action : "";
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    const duration = body?.duration_hours;
+    const evidence = body?.evidence_urls;
+    const ip = body?.ip_address;
+    const validActions = ["flag", "suspend", "ban", "unban", "lift_suspension", "extend_suspension", "note"];
+    if (!body || !validActions.includes(action) || reason.length < 10 || reason.length > 1000 ||
+        (duration !== undefined && duration !== null && (!Number.isSafeInteger(duration) || Number(duration) < 1 || Number(duration) > 87600)) ||
+        (evidence !== undefined && evidence !== null && (!Array.isArray(evidence) || evidence.length > 20 ||
+          !evidence.every((item) => typeof item === "string" && item.length <= 2048))) ||
+        (ip !== undefined && ip !== null && (typeof ip !== "string" || ip.length > 64))) {
+      return failure("invalid_moderation_request", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_moderate_user", {
+      p_target_user_id: adminModeration[1], p_action: action, p_reason: reason,
+      p_duration_hours: duration ?? null, p_evidence_urls: evidence ?? null, p_ip_address: ip ?? null,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  const adminDispute = path.match(/^\/api\/v1\/admin\/disputes\/([0-9a-f-]{36})\/resolve$/i);
+  if (method === "POST" && adminDispute) {
+    const body = await readJsonObject(request);
+    const outcome = typeof body?.outcome === "string" ? body.outcome : "";
+    const notes = typeof body?.notes === "string" ? body.notes.trim() : null;
+    if (!body || !["buyer_wins", "seller_wins", "split", "withdrawn"].includes(outcome) ||
+        (notes !== null && notes.length > 2000)) return failure("invalid_dispute_resolution", 400, headers);
+    const result = await rpc(supabase, "admin_resolve_dispute", {
+      p_dispute_id: adminDispute[1], p_outcome: outcome, p_notes: notes,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  const adminKyc = path.match(/^\/api\/v1\/admin\/kyc\/([0-9a-f-]{36})\/review$/i);
+  if (method === "POST" && adminKyc) {
+    const body = await readJsonObject(request);
+    const decision = typeof body?.decision === "string" ? body.decision : "";
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : null;
+    if (!body || !["approved", "rejected"].includes(decision) || (reason !== null && reason.length > 1000)) {
+      return failure("invalid_kyc_review", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_review_kyc", {
+      p_kyc_id: adminKyc[1], p_decision: decision, p_reason: reason,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  const adminSupportAgent = path.match(/^\/api\/v1\/admin\/support-agents\/([0-9a-f-]{36})\/remove$/i);
+  if (method === "POST" && adminSupportAgent) {
+    const result = await rpc(supabase, "admin_remove_support_agent", { p_user_id: adminSupportAgent[1] });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
   const adminRpc = path.match(/^\/api\/v1\/admin\/rpc\/([a-z_]+)$/);
   if (method === "POST" && adminRpc) {
     const name = adminRpc[1];
