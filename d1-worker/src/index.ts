@@ -246,7 +246,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     let age=today.getUTCFullYear()-birth.getUTCFullYear();
     if(today.getUTCMonth()<birth.getUTCMonth()||(today.getUTCMonth()===birth.getUTCMonth()&&today.getUTCDate()<birth.getUTCDate()))age--;
     if(age<13||age>120)return fail("You must be at least 13 years old and enter a valid date of birth");
-    if(email&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))return fail("Invalid email address");
+    if(email&&!/^[^ @]+@[^ @]+[.][^ @]+$/.test(email))return fail("Invalid email address");
     if(!await rateLimit(env,"register:"+await digest(email||phone||username),5,3600))return fail("Too many registration attempts",429);
     const duplicate=await env.DB.prepare("SELECT id FROM users WHERE lower(username)=? OR (? IS NOT NULL AND lower(email)=?) OR (? IS NOT NULL AND phone=?)").bind(username,email,email,phone,phone).first();
     if(duplicate)return fail("Account details already in use",409);
