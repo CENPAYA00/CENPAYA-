@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { d1Request } from '../../lib/d1Api';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { Flag, Check, X, Clock, User as UserIcon, FileText as FileTextIcon, MessageSquare } from 'lucide-react';
 
 export default function AdminReports() {
@@ -10,7 +10,7 @@ export default function AdminReports() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await d1Request<{ data: any[] }>(`/api/reports?status=${filter}&limit=200`);
+      const result = await supabaseWorkerRequest<{ data: any[] }>(`/api/admin/reports?status=${filter}&limit=200`);
       setReports(result.data || []);
     } catch (error) { console.warn('Could not load reports', error); setReports([]); }
     setLoading(false);
@@ -21,7 +21,7 @@ export default function AdminReports() {
   const resolve = async (id: string, decision: 'resolved' | 'dismissed' | 'under_review') => {
     const note = window.prompt('Add a note (optional):') || null;
     try {
-      await d1Request(`/api/reports/${encodeURIComponent(id)}`, {
+      await supabaseWorkerRequest(`/api/admin/reports/${encodeURIComponent(id)}`, {
         method: 'PATCH', body: JSON.stringify({ decision, note }),
       });
       load();
