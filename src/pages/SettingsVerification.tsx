@@ -26,7 +26,7 @@ export default function SettingsVerification() {
         setIsPhoneVerified(!!me.user.phone_verified);
         const available = countryResult.data || [];
         setCountries(available);
-        if (me.user.country_iso) setSelectedCountry(me.user.country_code);
+        if (me.user.country_iso) setSelectedCountry(me.user.country_iso);
         else if (available.length && !available.some(c => c.country_code === 'CM')) setSelectedCountry(available[0].country_code);
       })
       .catch(() => navigate('/login', { replace: true }))
