@@ -1,6 +1,5 @@
 /* src/pages/Home.tsx */
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react'; // Removed 'Search' icon
