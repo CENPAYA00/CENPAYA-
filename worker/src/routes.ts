@@ -284,26 +284,7 @@ export async function handleAuthenticatedApi(
     return success({ id: order.id, amount, fee_pct: feePct, fee_fixed: feeFixed }, headers);
   }
   if (method === "POST" && path === "/api/v1/checkout/service-orders") {
-    const body = await readJsonObject(request, 16_384);
-    const serviceId = typeof body?.service_id === "string" ? body.service_id : "";
-    const packageId = typeof body?.package_id === "string" ? body.package_id : null;
-    const requirements = typeof body?.requirements === "string" ? body.requirements.trim().slice(0, 10_000) : null;
-    if (!body || !isUuid(serviceId) || (packageId !== null && !isUuid(packageId)) ||
-        body.payment_method !== "wallet") {
-      return failure("invalid_service_checkout_request", 400, headers);
-    }
-    const result = await rpc(supabase, "create_service_order", {
-      p_service_id: serviceId,
-      p_package_id: packageId,
-      p_requirements: requirements || null,
-      p_pay_from_wallet: true,
-    });
-    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
-  }
-  if (method === "POST" && path === "/api/v1/subscriptions") {
-    // Subscription settlement needs a dedicated atomic database transaction and provider callback.
-    // Do not debit the wallet or mark membership from separate browser requests.
-    return failure("subscription_payment_requires_atomic_worker_migration", 501, headers);
+    return failure("service_order_schema_not_present_in_financial_database", 501, headers);
   }
   if (method === "GET" && path === "/api/v1/me/profile") {
     const profile = await readUserProfile(supabase, userId);
