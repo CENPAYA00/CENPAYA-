@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, ChevronRight, Check, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 
 type Reason = {
   code: string;
@@ -27,28 +27,21 @@ export default function ReportSheet({ targetType, targetId, onClose, onSubmitted
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('report_reasons')
-        .select('code, label, description, display_order, applies_to')
-        .contains('applies_to', [targetType])
-        .order('display_order');
-      setReasons((data || []) as Reason[]);
-    })();
+    d1Request<{ data: Reason[] }>(`/api/report-reasons?target_type=${encodeURIComponent(targetType)}`)
+      .then(result => setReasons(result.data || []))
+      .catch(() => setReasons([]));
   }, [targetType]);
 
   const submit = async () => {
     if (!selected) return;
     setBusy(true);
     setErr('');
-    const { data, error } = await supabase.rpc('submit_report', {
-      p_target_type: targetType,
-      p_target_id: targetId,
-      p_reason_code: selected.code,
-      p_notes: notes.trim() || null,
-    });
-    if (error || !data?.ok) {
-      setErr(error?.message || data?.error || 'Failed to submit report.');
+    try {
+      await d1Request('/api/reports', { method: 'POST', body: JSON.stringify({
+        target_type: targetType, target_id: targetId, reason_code: selected.code, notes: notes.trim() || null,
+      }) });
+    } catch (error: any) {
+      setErr(error.message || 'Failed to submit report.');
       setBusy(false);
       return;
     }
