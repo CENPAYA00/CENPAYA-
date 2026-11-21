@@ -139,6 +139,7 @@ export default function Home() {
           <FeedPostCard
             key={post.id}
             post={post}
+            readOnly={true}
             currentUserId={userId}
             isLiked={likedPosts.has(post.id)}
             isSaved={savedPosts.has(post.id)}
