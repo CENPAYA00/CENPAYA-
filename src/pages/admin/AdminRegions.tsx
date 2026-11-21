@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { d1Request } from '../../lib/d1Api';
 import { Plus, X, Globe } from 'lucide-react';
 
 export default function AdminRegions() {
@@ -10,20 +10,22 @@ export default function AdminRegions() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('supported_countries')
-      .select('*')
-      .order('is_active', { ascending: false })
-      .order('name');
-    setCountries(data || []);
+    try {
+      const result = await d1Request<{ data: any[] }>('/api/admin/countries');
+      setCountries(result.data || []);
+    } catch (error) { console.warn('Could not load countries', error); setCountries([]); }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
   const toggleActive = async (c: any) => {
-    await supabase.from('supported_countries').update({ is_active: !c.is_active }).eq('code', c.code);
-    load();
+    try {
+      await d1Request(`/api/admin/countries/${encodeURIComponent(c.code)}`, {
+        method: 'PATCH', body: JSON.stringify({ is_active: !c.is_active }),
+      });
+      load();
+    } catch (error: any) { alert(error.message || 'Could not update country'); }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
@@ -135,18 +137,15 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
     if (!phonePrefix.startsWith('+')) return setErr('Phone prefix must start with +.');
 
     setBusy(true);
-    const { error } = await supabase.from('supported_countries').upsert({
-      code: code.toUpperCase(),
-      name: name.trim(),
-      phone_prefix: phonePrefix.trim(),
-      currency_code: currency.trim().toUpperCase(),
-      currency_value_in_xaf: Number(currencyValue) || 1,
-      flag_emoji: flag.trim() || null,
-      enabled_methods: methods,
-      is_active: true,
-    }, { onConflict: 'code' });
-
-    if (error) { setErr(error.message); setBusy(false); return; }
+    try {
+      await d1Request(`/api/admin/countries/${encodeURIComponent(code.toUpperCase())}`, {
+        method: 'PUT', body: JSON.stringify({
+          code: code.toUpperCase(), name: name.trim(), phone_prefix: phonePrefix.trim(),
+          currency_code: currency.trim().toUpperCase(), currency_value_in_xaf: Number(currencyValue) || 1,
+          flag_emoji: flag.trim() || null, enabled_methods: methods, is_active: true,
+        }),
+      });
+    } catch (error: any) { setErr(error.message || 'Could not save country'); setBusy(false); return; }
     setBusy(false);
     onSaved();
   };
