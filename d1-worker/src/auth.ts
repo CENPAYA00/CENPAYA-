@@ -7,7 +7,10 @@ export async function readUser(db:D1Database,id:string):Promise<User|null>{
   return db.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,role,account_status,banned,password_hash,onboarding_completed FROM users WHERE id=? AND deleted_at IS NULL").bind(id).first<User>();
 }
 export async function auth(request:Request,env:Env):Promise<User|null>{
-  const token=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];
+  const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];
+  const cookie=request.headers.get("Cookie")||"";
+  const cookieToken=cookie.split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);
+  const token=bearer || (cookieToken ? decodeURIComponent(cookieToken) : undefined);
   if(!token || token.length<32 || token.length>256)return null;
   const hash=await digest(token);
   const row=await env.DB.prepare(`SELECT u.id FROM user_sessions s JOIN users u ON u.id=s.user_id
