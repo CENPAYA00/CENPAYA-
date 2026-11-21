@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { d1Login, setD1Token } from '../lib/d1Api';
+import { d1Login } from '../lib/d1Api';
 import { useNavigate, Link } from 'react-router-dom';
 
 export default function Login() {
@@ -15,8 +15,7 @@ export default function Login() {
     setErrorMsg('');
     setLoading(true);
     try {
-      const { user, token } = await d1Login(email.trim(), password);
-      setD1Token(token);
+      const { user } = await d1Login(email.trim(), password);
       if (user.role === 'owner' || user.role === 'super_admin') navigate('/admin');
       else if (user.role === 'support_agent') navigate('/staff');
       else if (!user.onboarding_completed) navigate('/onboarding');
