@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, HeadphonesIcon, Send, MessageCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { getCachedUser } from '../lib/cache';
+import { d1Request } from '../lib/d1Api';
 import Select from '../components/Select';
 import { ALL_SUPPORT_CATEGORIES } from '../constants/supportCategories';
 
@@ -14,15 +13,15 @@ export default function ContactSupport() {
 
   const load = async () => {
     setLoading(true);
-    const me = await getCachedUser();
-    if (!me) { setLoading(false); return; }
-    const { data } = await supabase
-      .from('support_tickets')
-      .select('id, category, subject, status, created_at, assigned_to')
-      .eq('user_id', me.id)
-      .order('created_at', { ascending: false });
-    setTickets(data || []);
-    setLoading(false);
+    try {
+      const { data } = await d1Request<{ data: any[] }>('/api/support/tickets');
+      setTickets(data || []);
+    } catch (error) {
+      console.error('Could not load support tickets:', error);
+      setTickets([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -74,7 +73,7 @@ export default function ContactSupport() {
                 : t.status === 'closed' ? 'bg-gray-200 text-gray-600'
                 : 'bg-green-100 text-green-700'
               }`}>{t.status || 'open'}</span>
-              {t.assigned_to && (
+              {t.assigned_agent_ref && (
                 <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                   Agent assigned
                 </span>
@@ -106,21 +105,27 @@ function NewSupportSheet({ onClose, onSent }: { onClose: () => void; onSent: () 
     if (message.trim().length < 5) return setErr('Message is too short.');
 
     setBusy(true);
-    const me = await getCachedUser();
-    if (!me) { setBusy(false); return setErr('Not signed in.'); }
+    const normalizedCategory = (() => {
+      const value = category.toLowerCase();
+      if (value.includes('payment') || value.includes('wallet') || value.includes('withdraw') || value.includes('refund') || value.includes('escrow') || value.includes('charge')) return 'payments';
+      if (value.includes('login') || value.includes('account') || value.includes('password') || value.includes('email') || value.includes('verification')) return 'account';
+      if (value.includes('harassment') || value.includes('fake profile') || value.includes('spam') || value.includes('underage') || value.includes('violence')) return 'security';
+      if (value.includes('listing') || value.includes('seller') || value.includes('item') || value.includes('order')) return 'marketplace';
+      if (value.includes('bug') || value.includes('performance') || value.includes('feature')) return 'technical';
+      return 'other';
+    })();
 
-    const { error } = await supabase.from('support_tickets').insert({
-      user_id: me.id,
-      category,
-      subject: subject.trim(),
-      body: message.trim(),
-      status: 'open',
-      created_at: new Date().toISOString(),
-    });
-
-    setBusy(false);
-    if (error) { setErr(error.message); return; }
-    onSent();
+    try {
+      await d1Request<{ id: string; ticket_number: string }>('/api/support/tickets', {
+        method: 'POST',
+        body: JSON.stringify({ subject: subject.trim(), description: message.trim(), category: normalizedCategory }),
+      });
+      onSent();
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Could not send your support request.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
