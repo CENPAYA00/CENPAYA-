@@ -28,15 +28,6 @@ export async function rateLimit(env:Env,key:string,max:number,windowSeconds:numb
   const row=await env.DB.prepare("SELECT count FROM rate_limits WHERE key=?").bind(key).first<{count:number}>();
   return (row?.count||0)<=max;
 }
-export async function createSession(db:D1Database,userId:string,request:Request,env:Env):Promise<string>{
-  const token=crypto.getRandomValues(new Uint8Array(32));
-  const raw=[...token].map(x=>x.toString(16).padStart(2,"0")).join("");
-  const ttl=Math.min(Math.max(Number(env.SESSION_TTL_SECONDS||2592000),3600),7776000);
-  const expires=new Date(Date.now()+ttl*1000).toISOString();
-  await db.prepare("INSERT INTO user_sessions(id,user_id,session_token_hash,ip_address_hash,user_agent,status,expires_at,last_seen_at) VALUES(?,?,?,?,?,'active',?,?)")
-    .bind(uuid(),userId,await digest(raw),null,request.headers.get("User-Agent")?.slice(0,300)||null,expires,new Date().toISOString()).run();
-  return raw;
-}
 export async function sendOtp(env:Env,db:D1Database,userId:string,channel:"email"|"sms",destination:string,purpose:"verify_email"|"verify_phone"|"password_reset"):Promise<boolean>{
   if(!env.OTP_DELIVERY || !env.OTP_PEPPER)return false;
   const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,"0");
