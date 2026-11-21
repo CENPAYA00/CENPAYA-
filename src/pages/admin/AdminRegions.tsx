@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { d1Request } from '../../lib/d1Api';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { Plus, X, Globe } from 'lucide-react';
 
 export default function AdminRegions() {
@@ -11,7 +11,7 @@ export default function AdminRegions() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await d1Request<{ data: any[] }>('/api/admin/countries');
+      const result = await supabaseWorkerRequest<{ data: any[] }>('/api/admin/countries');
       setCountries(result.data || []);
     } catch (error) { console.warn('Could not load countries', error); setCountries([]); }
     setLoading(false);
@@ -21,7 +21,7 @@ export default function AdminRegions() {
 
   const toggleActive = async (c: any) => {
     try {
-      await d1Request(`/api/admin/countries/${encodeURIComponent(c.code)}`, {
+      await supabaseWorkerRequest(`/api/admin/countries/${encodeURIComponent(c.code)}`, {
         method: 'PATCH', body: JSON.stringify({ is_active: !c.is_active }),
       });
       load();
@@ -138,7 +138,7 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
 
     setBusy(true);
     try {
-      await d1Request(`/api/admin/countries/${encodeURIComponent(code.toUpperCase())}`, {
+      await supabaseWorkerRequest(`/api/admin/countries/${encodeURIComponent(code.toUpperCase())}`, {
         method: 'PUT', body: JSON.stringify({
           code: code.toUpperCase(), name: name.trim(), phone_prefix: phonePrefix.trim(),
           currency_code: currency.trim().toUpperCase(), currency_value_in_xaf: Number(currencyValue) || 1,
