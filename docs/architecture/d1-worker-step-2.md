@@ -12,7 +12,8 @@ Based on the private `cenpaya-db-export.zip` supplied for this project (exported
 
 - Adds migration 52 for D1-owned password hashes, password update timestamps, and unique account-identifier indexes.
 - Adds migration 53 for Google OAuth provider identities and one-time PKCE state.
-- Adds a D1 Worker with registration, OTP verification, password sign-in, Google OAuth callback/session creation, session revocation, profile read/update, public feed read/post creation, marketplace category/search/listing creation, direct messaging, notifications, and support ticket list/create.
+- Adds migration 54 for signup onboarding details and terms acceptance.
+- Adds a D1 Worker with registration, email OTP verification/resend, D1 password sign-in/reset, Google OAuth callback/session creation, session revocation, profile read/update, public feed read/post creation, marketplace category/search/listing creation, direct messaging, notifications, and support ticket list/create.
 - Routes the frontend search page through the Cloudflare AI Search integration and adds optional KV public-cache and Upstash Redis rate-limit adapters.
 - Keeps financial truth in Supabase. The D1 Worker does not create wallets, debit balances, settle orders, release escrow, activate boosts, or mark monetary referrals paid.
 - Marketplace listing creation starts in `draft`; publication/moderation remains a separate controlled workflow.
@@ -30,7 +31,7 @@ Based on the private `cenpaya-db-export.zip` supplied for this project (exported
 - Bind `OTP_DELIVERY` to the approved email/SMS delivery Worker. The auth registration and verification endpoints fail closed when that binding is unavailable; they do not pretend an OTP was sent.
 - Existing accounts have a NULL `password_hash` after migration and need to use password setup/reset before password sign-in.
 
-Migrations 52 and 53 are committed but have **not** been applied to the live D1 database. The Worker is not deployed; no live account or database data was changed.
+Migrations 52, 53, and 54 are committed but have **not** been applied to the live D1 database. The Worker is not deployed; no live account or database data was changed.
 
 ## Deliberately not claimed as complete
 
