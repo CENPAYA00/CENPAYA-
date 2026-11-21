@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Smartphone, AlertCircle, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
 
@@ -23,16 +24,17 @@ export default function ReferralWithdraw() {
     const load = async () => {
       const me = await getCachedUser();
       if (!me) return;
-      const [walletRes, userRes] = await Promise.all([
+      const [walletRes, profileRes] = await Promise.all([
         supabase.from('wallets').select('referral_earnings_available').eq('user_id', me.id).single(),
-        supabase.from('users').select('phone, momo_number, momo_provider').eq('id', me.id).single(),
+        d1Request<{ data: any }>('/api/me/personal-details'),
       ]);
+      const profile = profileRes.data;
       if (walletRes.data) setAvailable(walletRes.data.referral_earnings_available || 0);
-      if (userRes.data?.momo_number) {
-        setPhone(userRes.data.momo_number);
-        if (userRes.data.momo_provider) setProvider(userRes.data.momo_provider as Method);
-      } else if (userRes.data?.phone) {
-        setPhone(userRes.data.phone);
+      if (profile?.momo_number) {
+        setPhone(profile.momo_number);
+        if (profile.momo_provider) setProvider(profile.momo_provider as Method);
+      } else if (profile?.phone) {
+        setPhone(profile.phone);
       }
     };
     load();
