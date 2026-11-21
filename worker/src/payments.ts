@@ -270,8 +270,9 @@ export async function handleAuthenticatedPaymentApi(
 
     const provider = text(body.provider, 24).toUpperCase();
     const paymentMethod = text(body.payment_method, 32).toUpperCase();
-    const mobile = phone(body.phone);
-    if (!isGateway(provider) || !["MTN_MOMO", "ORANGE_MONEY", "AIRTEL_MONEY", "MOOV_MONEY"].includes(paymentMethod) || !mobile) {
+    const { data: userInfo, error: userInfoError } = await userDb.from("users").select("phone,momo_number,email").eq("id", userId).maybeSingle();
+    const mobile = phone(body.phone) || phone(userInfo?.momo_number || userInfo?.phone);
+    if (userInfoError || !isGateway(provider) || !["MTN_MOMO", "ORANGE_MONEY", "AIRTEL_MONEY", "MOOV_MONEY"].includes(paymentMethod) || !mobile) {
       return jsonResponse({ success: false, error: "invalid_subscription_payment_request" }, 400, headers);
     }
     const { data: optionData, error: optionError } = await userDb.rpc("cenpaya_momo_membership_options", {
@@ -308,12 +309,8 @@ export async function handleAuthenticatedPaymentApi(
       } catch { return jsonResponse({ success: false, error: "idempotency_service_unavailable" }, 503, headers); }
     } else return jsonResponse({ success: false, error: "idempotency_service_unavailable" }, 503, headers);
 
-    let email = "";
-    if (provider === "FAPSHI") {
-      const { data: userInfo, error: userInfoError } = await userDb.from("users").select("email").eq("id", userId).maybeSingle();
-      email = typeof userInfo?.email === "string" ? userInfo.email.trim() : "";
-      if (userInfoError || !email) return jsonResponse({ success: false, error: "verified_email_required_for_fapshi" }, 400, headers);
-    }
+    const email = typeof userInfo?.email === "string" ? userInfo.email.trim() : "";
+    if (provider === "FAPSHI" && !email) return jsonResponse({ success: false, error: "verified_email_required_for_fapshi" }, 400, headers);
     try {
       const initiated = await startTopup(provider, creds, env, started.payment_id, Number(started.gross_amount), provider === "CAMPAY" ? mobile : null, email, "CenPaya premium membership");
       const attached = object(await callRpc(db, "cenpaya_momo_membership_attach", { p_payment_id: started.payment_id, p_provider_reference: initiated.reference }));
