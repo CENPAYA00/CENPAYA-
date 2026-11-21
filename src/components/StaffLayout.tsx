@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Home, Inbox, Flag, LogOut } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Me, d1Logout } from '../lib/d1Api';
 
 export default function StaffLayout() {
   const navigate = useNavigate();
@@ -11,24 +11,20 @@ export default function StaffLayout() {
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      let user = null;
+      try {
+        ({ user } = await d1Me());
+      } catch {
+        if (!cancelled) navigate('/');
+        return;
+      }
       if (cancelled) return;
       if (!user) { navigate('/'); return; }
 
-      const { data } = await supabase
-        .from('users')
-        .select('role, banned')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      const role = data?.role;
-      const banned = data?.banned;
-
+      const role = user.role;
       const allowed = ['support_agent', 'super_admin', 'owner'].includes(role);
-      if (banned !== false || !allowed) {
-        alert(`Access denied. Your role is: ${role ?? 'unknown'}`);
+      if (!allowed) {
+        alert(`Access denied. Your role is: ${role || 'unknown'}`);
         navigate('/home');
         return;
       }
@@ -40,7 +36,7 @@ export default function StaffLayout() {
   }, [navigate]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await d1Logout();
     navigate('/');
   };
 
