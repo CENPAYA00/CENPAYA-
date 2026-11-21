@@ -1,6 +1,6 @@
 /* src/hooks/useDemoAutoReply.ts */
 import { useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 
 const DEMO_REPLIES = [
   "Yes, it's still available 👍",
@@ -47,8 +47,6 @@ type DemoArgs = {
   myUserId: string | null;
 };
 
-type ParticipantRow = { user_id: string };
-
 export function useDemoAutoReply({
   channelId,
   otherUsername,
@@ -89,21 +87,9 @@ export function useDemoAutoReply({
         const pool = Math.random() < 0.9 ? DEMO_REPLIES : DEMO_REPLIES_FR;
         const body = pool[Math.floor(Math.random() * pool.length)];
 
-        const { data: participants } = await supabase
-          .from('chat_participants')
-          .select('user_id')
-          .eq('channel_id', channelId)
-          .neq('user_id', myUserId)
-          .maybeSingle<ParticipantRow>();
-
-        const demoUserId = participants?.user_id;
-        if (!demoUserId) return;
-
-        await supabase.from('chat_messages').insert({
-          channel_id: channelId,
-          sender_id: demoUserId,
-          body,
-          message_type: 'text',
+        await d1Request(`/api/chat/threads/${encodeURIComponent(channelId)}/demo-reply`, {
+          method: 'POST',
+          body: JSON.stringify({ message_text: body }),
         });
 
         lastRepliedAt.current = Date.now();
