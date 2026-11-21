@@ -2,7 +2,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { Env } from "./env.js";
 import { jsonResponse, readJsonObject } from "./http-utils.js";
 import { verifyHs256Jwt } from "./jwt.js";
-import { createPaymentServiceClient } from "./supabase.js";
+import { createPaymentWorkerClient } from "./supabase.js";
 
 type Gateway = "FAPSHI" | "CAMPAY";
 type Credentials = { api_public_key?: string; api_secret_key?: string; webhook_secret?: string };
@@ -209,7 +209,7 @@ export async function handleAuthenticatedPaymentApi(
     }
 
     let db: SupabaseClient, creds: Credentials;
-    try { db = service(env); creds = await credentials(db, providerName, env); }
+    try { db = await serviceClient(env, userId); creds = await credentials(db, providerName, env); }
     catch { return jsonResponse({ success: false, error: "payment_provider_not_configured" }, 503, headers); }
 
     const claimed = await callRpc(db, "claim_wallet_topup_initiation", { p_topup_id: topupId });
@@ -262,7 +262,7 @@ export async function handleAuthenticatedPaymentApi(
     }
 
     let db: SupabaseClient, creds: Credentials;
-    try { db = service(env); creds = await credentials(db, gateway, env); }
+    try { db = await serviceClient(env, userId); creds = await credentials(db, gateway, env); }
     catch { return jsonResponse({ success: false, error: "payment_provider_not_configured" }, 503, headers); }
 
     let withdrawalId: unknown;
@@ -366,7 +366,7 @@ export async function handleGatewayWebhook(request: Request, env: Env): Promise<
   if (!payload) return jsonResponse({ ok: false, error: "invalid_webhook_body" }, 400);
 
   let db: SupabaseClient, creds: Credentials;
-  try { db = service(env); creds = await credentials(db, provider, env); }
+  try { db = await serviceClient(env); creds = await credentials(db, provider, env); }
   catch { return jsonResponse({ ok: false, error: "payment_service_not_configured" }, 503); }
   if (!creds.webhook_secret) return jsonResponse({ ok: false, error: "webhook_secret_not_configured" }, 503);
 

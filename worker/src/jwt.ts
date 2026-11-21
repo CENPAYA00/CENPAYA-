@@ -134,8 +134,9 @@ function parsePrivateJwk(raw: string): JsonWebKey & { kid?: string; d?: string }
   return jwk;
 }
 
-export async function signSupabaseUserJwt(
+async function signSupabaseJwt(
   subject: string,
+  role: "authenticated" | "cenpaya_payment_worker",
   env: {
     SUPABASE_JWT_ALGORITHM?: string;
     SUPABASE_JWT_SECRET?: string;
@@ -152,7 +153,7 @@ export async function signSupabaseUserJwt(
 
   const claims = {
     aud: "authenticated",
-    role: "authenticated",
+    role,
     sub: subject,
     iat: nowSeconds,
     exp: nowSeconds + 60,
@@ -195,6 +196,32 @@ export async function signSupabaseUserJwt(
   }
 
   return signingInput + "." + base64UrlEncode(new Uint8Array(signature));
+}
+
+export async function signSupabaseUserJwt(
+  subject: string,
+  env: {
+    SUPABASE_JWT_ALGORITHM?: string;
+    SUPABASE_JWT_SECRET?: string;
+    SUPABASE_JWT_PRIVATE_JWK?: string;
+    SUPABASE_JWT_KID?: string;
+  },
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<string> {
+  return signSupabaseJwt(subject, "authenticated", env, nowSeconds);
+}
+
+export async function signSupabasePaymentWorkerJwt(
+  subject: string,
+  env: {
+    SUPABASE_JWT_ALGORITHM?: string;
+    SUPABASE_JWT_SECRET?: string;
+    SUPABASE_JWT_PRIVATE_JWK?: string;
+    SUPABASE_JWT_KID?: string;
+  },
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<string> {
+  return signSupabaseJwt(subject, "cenpaya_payment_worker", env, nowSeconds);
 }
 
 export function isUuid(value: string): boolean {
