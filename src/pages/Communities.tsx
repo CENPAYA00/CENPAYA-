@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { Plus, Network, Crown, X } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 
@@ -13,18 +13,15 @@ export default function Communities() {
 
   const load = async () => {
     setLoading(true);
-    const me = await getCachedUser();
-    if (me) {
-      const { data: u } = await supabase
-        .from('users')
-        .select('is_subscribed, is_membership_exempt')
-        .eq('id', me.id)
-        .single();
-      setIsPremium(!!(u?.is_subscribed || u?.is_membership_exempt));
-    }
-    const { data } = await supabase.rpc('list_my_communities');
-    setCommunities(Array.isArray(data) ? data : []);
-    setLoading(false);
+    try {
+      const [communityResult, meResult] = await Promise.all([
+        d1Request<{ data: any[] }>('/api/communities'),
+        d1Request<{ user: any }>('/api/me'),
+      ]);
+      setCommunities(communityResult.data || []);
+      setIsPremium(!!(meResult.user?.is_premium || (meResult.user?.membership_tier && meResult.user.membership_tier !== 'free')));
+    } catch (error: any) { alert(error.message || 'Could not load communities'); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
@@ -121,18 +118,11 @@ function CreateCommunitySheet({ onClose, onCreated }: { onClose: () => void; onC
     setErr('');
     if (name.trim().length < 3) return setErr('Name must be at least 3 characters.');
     setBusy(true);
-    const { data, error } = await supabase.rpc('create_community', {
-      p_name: name.trim(),
-      p_description: description.trim() || null,
-      p_avatar_url: avatarUrl.trim() || null,
-    });
-    if (error || !data?.ok) {
-      setErr(error?.message || data?.error || 'Could not create community.');
-      setBusy(false);
-      return;
-    }
-    onCreated(data.community_id);
-    setBusy(false);
+    try {
+      const result = await d1Request<{ id: string }>('/api/communities', { method: 'POST', body: JSON.stringify({ name: name.trim(), description: description.trim() || null, avatar_url: avatarUrl.trim() || null }) });
+      onCreated(result.id);
+    } catch (error: any) { setErr(error.message || 'Could not create community.'); setBusy(false); return; }
+
   };
 
   return (
