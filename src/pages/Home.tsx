@@ -1,6 +1,7 @@
 /* src/pages/Home.tsx */
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react'; // Removed 'Search' icon
 import { getCachedUser, getCached, setCached } from '../lib/cache';
@@ -35,50 +36,25 @@ export default function Home() {
   }, []);
 
   const fetchPosts = useCallback(async (currentUserId?: string) => {
-    const { data } = await supabase.rpc('get_home_feed', { p_limit: 40, p_offset: 0 });
-
-    let feed: any[] = [];
-    if (data?.ok && Array.isArray(data.feed)) feed = data.feed;
-    else {
-      const { data: raw } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('moderation_status', 'approved')
-        .order('created_at', { ascending: false })
-        .limit(40);
-      feed = raw || [];
-    }
-
-    if (feed.length > 0) {
-      const userIds = [...new Set(feed.map((p: any) => p.user_id))];
-      
-      const [usersRes, followsRes, likesRes, savedRes] = await Promise.all([
-        supabase.from('public_profiles').select('id, username').in('id', userIds),
-        currentUserId ? supabase.from('user_follows').select('followed_id').eq('follower_id', currentUserId) : Promise.resolve({ data: [] }),
-        currentUserId ? supabase.from('post_likes').select('post_id').eq('user_id', currentUserId).in('post_id', feed.map(p => p.id)) : Promise.resolve({ data: [] }),
-        currentUserId ? supabase.from('saved_posts').select('post_id').eq('user_id', currentUserId).in('post_id', feed.map(p => p.id)) : Promise.resolve({ data: [] }),
-      ]);
-
-      const usernameMap: Record<string, string> = {};
-      (usersRes.data || []).forEach((u: any) => { usernameMap[u.id] = u.username; });
-
-      const followedSet = new Set((followsRes.data || []).map((f: any) => f.followed_id));
-      setFollowingIds(followedSet);
-
-      const enriched = feed.map((p: any) => ({ 
-        ...p, 
-        username: usernameMap[p.user_id] || 'User',
-        is_following_author: followedSet.has(p.user_id)
+    try {
+      const { data } = await d1Request<{ data: any[] }>('/api/feed?limit=40');
+      const feed = (data || []).map((post: any) => ({
+        ...post,
+        user_id: post.author_id,
+        username: post.username || post.display_name || 'User',
+        is_demo: false,
+        likes_count: post.likes_count || 0,
+        comments_count: post.comments_count || 0,
       }));
-      
-      setPosts(enriched);
-      setCached('home_posts', enriched);
-
-      if (currentUserId) {
-        setLikedPosts(new Set((likesRes.data || []).map((l: any) => l.post_id)));
-        setSavedPosts(new Set((savedRes.data || []).map((s: any) => s.post_id)));
-      }
-    } else setPosts([]);
+      setPosts(feed);
+      setCached('home_posts', feed);
+      setFollowingIds(new Set());
+      setLikedPosts(new Set());
+      setSavedPosts(new Set());
+    } catch (error) {
+      console.error('Could not load D1 home feed:', error);
+      setPosts([]);
+    }
     setLoading(false);
   }, []);
 
