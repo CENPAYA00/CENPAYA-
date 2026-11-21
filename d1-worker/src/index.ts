@@ -367,7 +367,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const updated=await readUser(env.DB,user.id);return json({success:true,user:updated?safeUser(updated):null});
   }
   const publicProfile=path.match(/^\/api\/profiles\/([^/]+)$/);
-  if(publicProfile&&method==="GET"){
+  if(publicProfile&&method==="GET"&&publicProfile[1]!=="suggestions"){
     const key=decodeURIComponent(publicProfile[1]);
     const cached=await cacheGet(env,"public-profile:"+key.toLowerCase());
     if(cached)return json({success:true,data:cached,source:"cache"});
