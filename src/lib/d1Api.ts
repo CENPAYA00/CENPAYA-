@@ -7,6 +7,7 @@ export type D1User = {
   display_name: string;
   email: string | null;
   phone: string | null;
+  country_iso?: string | null;
   email_verified: boolean;
   phone_verified: boolean;
   role: string;
