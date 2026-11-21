@@ -33,7 +33,7 @@ Do not put secret values in Git, browser bundles, Wrangler vars, D1 rows, or log
 
 The payment role is minted only inside the Worker using the active Supabase JWT signing key, has a 60-second lifetime, and is never returned to the browser.
 
-The service binding targets the existing Worker name `cenpaya-d1-worker`. The existing D1 Worker branch now implements private `POST /internal/v1/identity/assert`, authenticated with `X-CenPaya-Internal-Secret`, returning `{ "assertion": "<short-lived-HS256-JWT>" }`. The D1 Worker also exposes a secret-protected internal rate-limit consumer used for financial initiation. These branch changes must be deployed to the D1 Worker and both shared secrets must match before authenticated Supabase routes can work; otherwise requests fail closed.
+The service binding targets the existing Worker name `cenpaya-d1-worker`. The existing D1 Worker branch now implements private `POST /internal/v1/identity/assert`, authenticated with `X-CenPaya-Internal-Secret`, returning `{ "assertion": "<short-lived-HS256-JWT>" }`. The D1 Worker also exposes a secret-protected one-time assertion consumer (replay protection) and rate-limit consumer used for financial initiation. These branch changes must be deployed to the D1 Worker and both shared secrets must match before authenticated Supabase routes can work; otherwise requests fail closed.
 
 The Worker also fails closed if the D1 subject is not a UUID, the active Supabase JWT signing key is not configured, or the same UUID does not exist in the existing `public.users.id` table. It never creates or maps users by email/phone.
 
