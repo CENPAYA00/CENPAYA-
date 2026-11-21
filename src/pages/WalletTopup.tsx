@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Smartphone, AlertCircle, Check } from 'lucide-react';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
@@ -21,8 +22,7 @@ export default function WalletTopup() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError) throw authError;
+      const { user } = await d1Me();
       if (!user) return;
       const [userRes, countriesRes] = await Promise.all([
         supabase.from('users').select('country_iso, phone, momo_number, momo_provider').eq('id', user.id).single(),
@@ -51,8 +51,7 @@ export default function WalletTopup() {
 
     setBusy(true);
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError) throw authError;
+      const { user } = await d1Me();
       if (!user) throw new Error('Please log in to top up your wallet.');
 
       const { data, error } = await supabase.functions.invoke('initiate-payment', {
