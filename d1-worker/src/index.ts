@@ -291,8 +291,13 @@ async function handle(request:Request,env:Env):Promise<Response>{
   }
   if(path==="/api/auth/password/reset"&&method==="POST"){
     const b=await body(request);if(!b)return fail("Valid JSON body required");
-    const userId=str(b.user_id,64),code=str(b.code,6),password=str(b.new_password,128);
-    if(!UUID.test(userId)||!/^\d{6}$/.test(code)||password.length<12)return fail("Valid user, six-digit code, and new password (12+ characters) required");
+    const identifier=str(b.identifier,254).toLowerCase(),requestedUserId=str(b.user_id,64),code=str(b.code,6),password=str(b.new_password,128);
+    if((!identifier&&!UUID.test(requestedUserId))||!/^[0-9]{6}$/.test(code)||password.length<12)return fail("Email/username, six-digit code, and new password (12+ characters) required");
+    const account=identifier
+      ? await env.DB.prepare("SELECT id FROM users WHERE (lower(email)=? OR lower(username)=? OR phone=?) AND deleted_at IS NULL AND banned=0").bind(identifier,identifier,identifier).first<{id:string}>()
+      : await env.DB.prepare("SELECT id FROM users WHERE id=? AND deleted_at IS NULL AND banned=0").bind(requestedUserId).first<{id:string}>();
+    if(!account)return fail("Invalid or expired reset code",400);
+    const userId=account.id;
     if(!await rateLimit(env,"password-reset-verify:"+userId,8,900))return fail("Too many reset attempts",429);
     if(!await verifyOtp(env,env.DB,userId,"password_reset",code))return fail("Invalid or expired reset code",400);
     const hash=await passwordHash(password);
