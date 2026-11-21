@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request, setD1SessionToken } from '../lib/d1Api';
+import GoogleButton from '../components/GoogleButton';
 import { useNavigate, Link } from 'react-router-dom';
 
 export default function Login() {
@@ -14,36 +15,22 @@ export default function Login() {
     e.preventDefault();
     setErrorMsg('');
     setLoading(true);
-
-    const { data: { user }, error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
-
-    if (error) {
-      setErrorMsg(error.message);
+    try {
+      const result = await d1Request<{ token: string; user: { role?: string; onboarding_completed?: boolean } }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ identifier: email.trim().toLowerCase(), password }),
+      });
+      setD1SessionToken(result.token);
+      const user = result.user;
+      if (user.role === 'owner' || user.role === 'super_admin') navigate('/admin');
+      else if (user.role === 'support_agent') navigate('/staff');
+      else if (!user.onboarding_completed) navigate('/complete-profile');
+      else navigate('/home');
+    } catch (error: any) {
+      setErrorMsg(error?.message || 'Unable to sign in. Please try again.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    if (user) {
-      const { data: profile } = await supabase
-        .from('users')
-        .select('role, onboarding_completed')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (profile?.role === 'owner' || profile?.role === 'super_admin') {
-        navigate('/admin');
-      } else if (profile?.role === 'support_agent') {
-        navigate('/staff');
-      } else if (!profile?.onboarding_completed) {
-        navigate('/onboarding');
-      } else {
-        navigate('/home');
-      }
-    }
-    setLoading(false);
   };
 
   return (
@@ -111,6 +98,11 @@ export default function Login() {
           >
             {loading ? 'Logging in...' : 'Log In'}
           </button>
+
+          <div className="my-4">
+            <div className="text-center text-[10px] text-gray-400 mb-3">OR CONTINUE WITH</div>
+            <GoogleButton />
+          </div>
 
           <div className="text-center mt-5 pt-5 border-t border-gray-100 dark:border-darkline">
             <p className="text-sm text-gray-500">
