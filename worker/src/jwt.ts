@@ -25,16 +25,14 @@ function base64UrlDecode(value: string): Uint8Array {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-function decodeJsonSegment<T>(segment: string): T {
-  const bytes = base64UrlDecode(segment);
-  return JSON.parse(new TextDecoder().decode(bytes)) as T;
+function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let i = 0; i < left.length; i += 1) difference |= left[i] ^ right[i];
-  return difference === 0;
+function decodeJsonSegment<T>(segment: string): T {
+  return JSON.parse(new TextDecoder().decode(base64UrlDecode(segment))) as T;
 }
 
 async function hmacKey(secret: string, usages: KeyUsage[]): Promise<CryptoKey> {
@@ -77,7 +75,7 @@ export async function verifyD1IdentityAssertion(
   const valid = await crypto.subtle.verify(
     "HMAC",
     key,
-    base64UrlDecode(parts[2]),
+    asArrayBuffer(base64UrlDecode(parts[2])),
     encoder.encode(signingInput),
   );
   if (!valid) throw new Error("invalid_assertion_signature");
@@ -112,7 +110,7 @@ export async function verifyD1IdentityAssertion(
   return claims.sub;
 }
 
-function parsePrivateJwk(raw: string): JsonWebKey & { kid?: string } {
+function parsePrivateJwk(raw: string): JsonWebKey & { kid?: string; d?: string } {
   const jwk = JSON.parse(raw) as JsonWebKey & { kid?: string; d?: string };
   if (!jwk || typeof jwk !== "object" || !jwk.d) throw new Error("invalid_supabase_private_jwk");
   return jwk;
@@ -163,11 +161,7 @@ export async function signSupabaseUserJwt(
   } else if (algorithm === "RS256") {
     if (!jwk || jwk.kty !== "RSA") throw new Error("supabase_rsa_private_jwk_required");
     key = await crypto.subtle.importKey(
-      "jwk",
-      jwk,
-      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-      false,
-      ["sign"],
+      "jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"],
     );
     signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, encoder.encode(signingInput));
   } else {
@@ -175,16 +169,10 @@ export async function signSupabaseUserJwt(
       throw new Error("supabase_es256_private_jwk_required");
     }
     key = await crypto.subtle.importKey(
-      "jwk",
-      jwk,
-      { name: "ECDSA", namedCurve: "P-256" },
-      false,
-      ["sign"],
+      "jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"],
     );
     signature = await crypto.subtle.sign(
-      { name: "ECDSA", hash: "SHA-256" },
-      key,
-      encoder.encode(signingInput),
+      { name: "ECDSA", hash: "SHA-256" }, key, encoder.encode(signingInput),
     );
   }
 

@@ -98,8 +98,8 @@ export async function handleAuthenticatedApi(
     const { data, error } = await supabase.from("wallets")
       .select("available_funds,referral_earnings_available")
       .eq("user_id", userId)
-      .maybeSingle()
-      .abortSignal(AbortSignal.timeout(5_000));
+      .abortSignal(AbortSignal.timeout(5_000))
+      .maybeSingle();
     if (error) return failure("wallet_lookup_failed", 502, headers);
     return success(data, headers);
   }
