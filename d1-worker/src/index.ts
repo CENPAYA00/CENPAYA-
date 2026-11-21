@@ -237,13 +237,23 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(path==="/api/auth/register"&&method==="POST"){
     const b=await body(request); if(!b)return fail("Valid JSON body required");
     const username=str(b.username,30).toLowerCase(),display=str(b.display_name,100),email=str(b.email,254).toLowerCase()||null,phone=str(b.phone,32)||null,password=str(b.password,128);
+    const gender=str(b.gender,30),dob=str(b.date_of_birth,10),preferredLanguage=str(b.preferred_lang,5)||"en";
     if(!/^[a-z0-9_]{3,30}$/.test(username)||!display||password.length<12||(!email&&!phone))return fail("Valid username, display name, email or phone, and password (12+ characters) required");
-    if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return fail("Invalid email address");
+    if(!["male","female","other","prefer_not_to_say"].includes(gender)||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(dob)||!["en","fr"].includes(preferredLanguage)||b.terms_accepted!==true)return fail("Valid date of birth, gender, language, and acceptance of the terms are required");
+    const birth=new Date(dob+"T00:00:00.000Z");
+    if(Number.isNaN(birth.getTime())||birth.toISOString().slice(0,10)!==dob)return fail("Invalid date of birth");
+    const today=new Date();
+    let age=today.getUTCFullYear()-birth.getUTCFullYear();
+    if(today.getUTCMonth()<birth.getUTCMonth()||(today.getUTCMonth()===birth.getUTCMonth()&&today.getUTCDate()<birth.getUTCDate()))age--;
+    if(age<13||age>120)return fail("You must be at least 13 years old and enter a valid date of birth");
+    if(email&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email))return fail("Invalid email address");
     if(!await rateLimit(env,"register:"+await digest(email||phone||username),5,3600))return fail("Too many registration attempts",429);
     const duplicate=await env.DB.prepare("SELECT id FROM users WHERE lower(username)=? OR (? IS NOT NULL AND lower(email)=?) OR (? IS NOT NULL AND phone=?)").bind(username,email,email,phone,phone).first();
     if(duplicate)return fail("Account details already in use",409);
     const id=uuid(),hash=await passwordHash(password);
     await env.DB.prepare("INSERT INTO users(id,username,display_name,email,phone,password_hash) VALUES(?,?,?,?,?,?)").bind(id,username,display,email,phone,hash).run();
+    await env.DB.prepare("INSERT INTO user_onboarding_details(user_id,gender,date_of_birth,preferred_language,terms_accepted_at) VALUES(?,?,?,?, "+NOW+")")
+      .bind(id,gender,dob,preferredLanguage).run();
     const channel=email?"email":"sms",purpose=email?"verify_email":"verify_phone";
     let delivered=false;
     try{delivered=await sendOtp(env,env.DB,id,channel,email||phone!,purpose);}catch{delivered=false;}
