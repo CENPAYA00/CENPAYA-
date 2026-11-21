@@ -1,11 +1,10 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { Env } from "./env.js";
 import { jsonResponse, readJsonObject } from "./http-utils.js";
-import { verifyHs256Jwt } from "./jwt.js";
 import { createPaymentWorkerClient } from "./supabase.js";
 
 type Gateway = "FAPSHI" | "CAMPAY";
-type Credentials = { api_public_key?: string; api_secret_key?: string; webhook_secret?: string };
+type Credentials = { api_public_key?: string; api_secret_key?: string };
 type ProviderStatus = { status: string; amount: number; currency: string };
 const BODY_LIMIT = 16_384;
 const TIMEOUT_MS = 12_000;
@@ -35,27 +34,6 @@ function phone(value: unknown): string | null {
   let digits = value.replace(/[^0-9]/g, "");
   if (digits.length === 9 && digits.startsWith("6")) digits = "237" + digits;
   return /^2376[0-9]{8}$/.test(digits) ? digits : null;
-}
-function equalSecret(a: string, b: string): boolean {
-  const left = new TextEncoder().encode(a), right = new TextEncoder().encode(b);
-  if (left.length !== right.length) return false;
-  let diff = 0;
-  for (let i = 0; i < left.length; i += 1) diff |= left[i] ^ right[i];
-  return diff === 0;
-}
-async function webhookBody(request: Request): Promise<Record<string, unknown> | null> {
-  try {
-    const raw = await request.text();
-    if (new TextEncoder().encode(raw).byteLength > BODY_LIMIT) return null;
-    if (request.headers.get("content-type")?.toLowerCase().includes("application/x-www-form-urlencoded")) {
-      const result: Record<string, unknown> = {};
-      new URLSearchParams(raw).forEach((value, key) => { result[key] = value; });
-      return result;
-    }
-    return object(JSON.parse(raw));
-  } catch {
-    return null;
-  }
 }
 const SYSTEM_WORKER_SUBJECT = "00000000-0000-4000-8000-000000000001";
 
@@ -547,143 +525,4 @@ export async function handleAuthenticatedPaymentApi(
   }
 
   return null;
-}
-
-export async function handleGatewayWebhook(request: Request, env: Env): Promise<Response> {
-  const path = new URL(request.url).pathname;
-  const provider: Gateway | null = path.endsWith("/fapshi") ? "FAPSHI" : path.endsWith("/campay") ? "CAMPAY" : null;
-  if (request.method !== "POST" || !provider) return jsonResponse({ ok: false, error: "not_found" }, 404);
-  const payload = await webhookBody(request);
-  if (!payload) return jsonResponse({ ok: false, error: "invalid_webhook_body" }, 400);
-
-  let db: SupabaseClient, creds: Credentials;
-  try { db = await serviceClient(env); creds = await credentials(db, provider, env); }
-  catch { return jsonResponse({ ok: false, error: "payment_service_not_configured" }, 503); }
-  if (!creds.webhook_secret) return jsonResponse({ ok: false, error: "webhook_secret_not_configured" }, 503);
-
-  if (provider === "FAPSHI") {
-    if (!equalSecret(request.headers.get("x-wh-secret") || "", creds.webhook_secret)) {
-      return jsonResponse({ ok: false, error: "invalid_webhook_signature" }, 401);
-    }
-  } else {
-    const signature = request.headers.get("x-campay-signature") || text(payload.signature, 8192);
-    try {
-      if (!signature) throw new Error("signature_missing");
-      await verifyHs256Jwt(signature, creds.webhook_secret);
-    } catch {
-      return jsonResponse({ ok: false, error: "invalid_webhook_signature" }, 401);
-    }
-  }
-
-  const externalId = provider === "FAPSHI"
-    ? text(payload.externalId || payload.external_id || payload.userId, 100)
-    : text(payload.external_reference, 100);
-  const reference = provider === "FAPSHI"
-    ? text(payload.transId || payload.trans_id, 200)
-    : text(payload.reference, 200);
-  if (!externalId || !reference) return jsonResponse({ ok: false, error: "missing_payment_reference" }, 400);
-
-  if (/^[0-9a-f-]{36}$/i.test(externalId)) {
-    let membership: Record<string, unknown> = {};
-    try { membership = object(await callRpc(db, "cenpaya_momo_membership_get", { p_payment_id: externalId })); }
-    catch { return jsonResponse({ ok: false, error: "membership_payment_record_unavailable" }, 503); }
-    if (membership.id) {
-      if (String(membership.provider).toUpperCase() !== provider) return jsonResponse({ ok: false, error: "membership_provider_mismatch" }, 409);
-      if (membership.provider_reference && membership.provider_reference !== reference) return jsonResponse({ ok: false, error: "membership_reference_mismatch" }, 409);
-      if (!membership.provider_reference) {
-        const attached = object(await callRpc(db, "cenpaya_momo_membership_attach", { p_payment_id: externalId, p_provider_reference: reference }));
-        if (attached.ok !== true) return jsonResponse({ ok: false, error: "membership_reference_mismatch" }, 409);
-      }
-      let verified: ProviderStatus;
-      try { verified = await providerStatus(provider, creds, env, reference); }
-      catch { return jsonResponse({ ok: false, error: "membership_payment_status_unavailable" }, 503); }
-      if (verified.status === "SUCCESSFUL" || verified.status === "FAILED") {
-        const result = object(await callRpc(db, "cenpaya_momo_membership_confirm", {
-          p_payment_id: externalId, p_provider_reference: reference,
-          p_success: verified.status === "SUCCESSFUL", p_paid_amount: verified.amount, p_currency: verified.currency,
-          p_reason: verified.status === "FAILED" ? "Provider reported failed payment" : null,
-        }));
-        return jsonResponse({ ok: result.ok === true, status: result.status || (result.ok === true ? "succeeded" : "needs_review") }, result.ok === true ? 200 : 409);
-      }
-      return jsonResponse({ ok: true, status: "pending" }, 202);
-    }
-  }
-  let topup: Record<string, unknown> = {};
-  try {
-    topup = object(await callRpc(db, "worker_get_topup_payment_details", { p_topup_id: externalId }));
-  } catch {
-    return jsonResponse({ ok: false, error: "payment_record_unavailable" }, 503);
-  }
-
-  if (topup.id && String(topup.provider).toUpperCase() === provider) {
-    if (String(topup.transaction_id).startsWith("pending:") || String(topup.transaction_id).startsWith("initiating:")) {
-      const recorded = await callRpc(db, "record_wallet_topup_provider_reference", {
-        p_topup_id: topup.id, p_provider: provider, p_provider_transaction_id: reference, p_checkout_url: null,
-      });
-      if (recorded !== true) return jsonResponse({ ok: false, error: "payment_reference_mismatch" }, 409);
-    } else if (topup.transaction_id !== reference) {
-      return jsonResponse({ ok: false, error: "payment_reference_mismatch" }, 409);
-    }
-    let verified: ProviderStatus;
-    try { verified = await providerStatus(provider, creds, env, reference); }
-    catch { return jsonResponse({ ok: false, error: "payment_status_unavailable" }, 503); }
-    if (verified.amount !== Number(topup.amount) || verified.currency !== String(topup.currency_code).toUpperCase()) {
-      return jsonResponse({ ok: false, error: "payment_amount_or_currency_mismatch" }, 409);
-    }
-    if (verified.status === "SUCCESSFUL") {
-      const result = await callRpc(db, "settle_wallet_topup_from_gateway", {
-        p_topup_id: topup.id, p_provider: provider, p_provider_transaction_id: reference,
-        p_amount: verified.amount, p_currency_code: verified.currency,
-      });
-      return jsonResponse({ ok: result === true }, result === true ? 200 : 409);
-    }
-    if (verified.status === "FAILED") {
-      const result = await callRpc(db, "fail_wallet_topup_from_gateway", {
-        p_topup_id: topup.id, p_provider: provider, p_provider_transaction_id: reference,
-      });
-      return jsonResponse({ ok: result === true }, result === true ? 200 : 409);
-    }
-    return jsonResponse({ ok: true, status: "pending" }, 202);
-  }
-
-  let withdrawal: Record<string, unknown> = {};
-  try {
-    withdrawal = object(await callRpc(db, "worker_get_withdrawal_payment_details", {
-      p_withdrawal_id: externalId,
-    }));
-  } catch {
-    return jsonResponse({ ok: false, error: "withdrawal_record_unavailable" }, 503);
-  }
-  if (!withdrawal.id || String(withdrawal.gateway_provider || "").toUpperCase() !== provider) {
-    return jsonResponse({ ok: false, error: "payment_reference_not_found" }, 404);
-  }
-  if (
-    withdrawal.gateway_reference &&
-    !String(withdrawal.gateway_reference).startsWith("initiating:") &&
-    withdrawal.gateway_reference !== reference
-  ) {
-    return jsonResponse({ ok: false, error: "withdrawal_reference_mismatch" }, 409);
-  }
-  if (!withdrawal.gateway_reference || String(withdrawal.gateway_reference).startsWith("initiating:")) {
-    const recorded = await callRpc(db, "record_withdrawal_provider_reference", {
-      p_withdrawal_id: withdrawal.id, p_gateway_provider: provider, p_gateway_reference: reference,
-    });
-    if (recorded !== true) return jsonResponse({ ok: false, error: "withdrawal_reference_mismatch" }, 409);
-  }
-  let verified: ProviderStatus;
-  try { verified = await providerStatus(provider, creds, env, reference); }
-  catch { return jsonResponse({ ok: false, error: "payout_status_unavailable" }, 503); }
-  if (verified.amount !== Number(withdrawal.net_disbursement) || verified.currency !== String(withdrawal.currency_code).toUpperCase()) {
-    return jsonResponse({ ok: false, error: "payout_amount_or_currency_mismatch" }, 409);
-  }
-  if (verified.status === "SUCCESSFUL" || verified.status === "FAILED") {
-    const result = await callRpc(db, "finalize_withdrawal_from_gateway", {
-      p_withdrawal_id: withdrawal.id, p_gateway_provider: provider,
-      p_outcome: verified.status === "SUCCESSFUL" ? "completed" : "failed",
-      p_gateway_reference: reference,
-      p_failure_reason: verified.status === "FAILED" ? "Provider reported failed payout" : null,
-    });
-    return jsonResponse({ ok: result === true }, result === true ? 200 : 409);
-  }
-  return jsonResponse({ ok: true, status: "pending" }, 202);
 }
