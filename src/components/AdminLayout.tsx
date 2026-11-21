@@ -5,6 +5,7 @@ import {
   LogOut, FileText, Key, Globe, MessageSquare, CreditCard, Shield, Flag, UserPlus, Home
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Me, d1Logout } from '../lib/d1Api';
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -20,37 +21,18 @@ export default function AdminLayout() {
 
     const check = async () => {
       let user = null;
-      for (let i = 0; i < 10; i++) {
-        const { data } = await supabase.auth.getSession();
-        if (data?.session?.user) { user = data.session.user; break; }
-        await new Promise(r => setTimeout(r, 200));
-      }
-      if (!user) {
-        const { data } = await supabase.auth.getUser();
-        user = data?.user ?? null;
+      try {
+        ({ user } = await d1Me());
+      } catch {
+        if (!cancelled) navigate('/');
+        return;
       }
       if (cancelled) return;
       if (!user) { navigate('/'); return; }
 
-      const { data, error } = await supabase
-        .from('users')
-        .select('role, banned')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      if (error) {
-        alert('Could not verify admin access. Check the console.');
-        navigate('/home');
-        return;
-      }
-
-      const role = data?.role;
-      const banned = data?.banned;
-
-      if (banned !== false || (role !== 'owner' && role !== 'super_admin')) {
-        alert(`Access denied. Your role is: ${role ?? 'unknown'}`);
+      const role = user.role;
+      if (role !== 'owner' && role !== 'super_admin') {
+        alert(`Access denied. Your role is: ${role || 'unknown'}`);
         navigate('/home');
         return;
       }
@@ -86,7 +68,7 @@ export default function AdminLayout() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await d1Logout();
     navigate('/');
   };
 
