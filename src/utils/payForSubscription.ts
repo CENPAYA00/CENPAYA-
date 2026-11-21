@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { d1Me } from '../lib/d1Api';
 
 export type MobileMoneyMethod = 'mtn' | 'orange' | 'airtel' | 'moov' | 'wallet';
 
@@ -98,7 +99,7 @@ export async function payForSubscription(
       return { success: false, error: 'No provider supports this method in your country.' };
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user } = await d1Me();
     if (!user) return { success: false, error: 'Not logged in' };
 
     const { data, error } = await supabase.functions.invoke('initiate-payment', {
