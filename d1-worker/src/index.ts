@@ -414,13 +414,14 @@ async function handle(request:Request,env:Env):Promise<Response>{
     if(cached)return json({success:true,data:cached,source:"cache"});
     const index=env.AI.autorag(env.AI_SEARCH_NAME);
     const raw=await index.search({query:q,rewrite_query:true,max_num_results:limit});
-    const root=raw as {data?:unknown[];results?:unknown[]};
-    const results=Array.isArray(root?.data)?root.data:Array.isArray(root?.results)?root.results:[];
+    const root=raw as {data?:unknown[];results?:unknown[];hits?:{hits?:unknown[]}};
+    const results=Array.isArray(root?.data)?root.data:Array.isArray(root?.results)?root.results:Array.isArray(root?.hits?.hits)?root.hits.hits:[];
     const normalized=results.map((item:any)=>{
-      const metadata=item?.metadata||item?.attributes||item?.meta||{};
-      const content=typeof item?.content==="string"?item.content:typeof item?.text==="string"?item.text:typeof item?.snippet==="string"?item.snippet:"";
-      const entityKind=String(metadata.kind||metadata.entity_type||metadata.type||"post").toLowerCase();
-      return {id:String(metadata.id||metadata.entity_id||item?.id||""),kind:entityKind,title:String(metadata.title||metadata.name||content.slice(0,100)||"Search result"),subtitle:String(metadata.subtitle||metadata.username||metadata.location||""),cover:metadata.cover_url||metadata.image_url||metadata.thumbnail_url||null,meta:metadata.meta||"",is_demo:!!metadata.is_demo,score:item?.score??null,snippet:content.slice(0,320)};
+      const metadata=item?.metadata||item?.attributes||item?.meta||item?._source||{};
+      const content=typeof item?.content==="string"?item.content:typeof item?.text==="string"?item.text:typeof item?.snippet==="string"?item.snippet:typeof metadata?.content==="string"?metadata.content:"";
+      const rawKind=String(metadata.kind||metadata.entity_type||metadata.type||"post").toLowerCase();
+      const entityKind=rawKind.includes("listing")?"listing":rawKind.includes("service")?"service":rawKind.includes("post")?"post":rawKind;
+      return {id:String(metadata.id||metadata.entity_id||item?.id||item?._id||""),kind:entityKind,title:String(metadata.title||metadata.name||content.slice(0,100)||"Search result"),subtitle:String(metadata.subtitle||metadata.username||metadata.location||""),cover:metadata.cover_url||metadata.image_url||metadata.thumbnail_url||null,meta:metadata.meta||"",is_demo:!!metadata.is_demo,score:item?.score??item?._score??null,snippet:content.slice(0,320)};
     }).filter((item:any)=>item.id&& (kind==="all"||item.kind===kind|| (kind==="market"&&item.kind==="listing") || (kind==="services"&&item.kind==="service") || (kind==="home"&&item.kind==="post")));
     await cachePut(env,cacheKey,normalized,60);
     return json({success:true,data:normalized,source:"ai-search"});
