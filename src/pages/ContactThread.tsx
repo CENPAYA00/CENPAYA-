@@ -31,19 +31,6 @@ export default function ContactThread() {
       const u = await getCachedUser();
       setMe(u);
       await load();
-
-      if (!id) return;
-      const sub = supabase
-        .channel(`ticket_${id}`)
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'ticket_messages',
-          filter: `ticket_id=eq.${id}`,
-        }, () => { load(); })
-        .subscribe();
-
-      return () => { supabase.removeChannel(sub); };
     };
     init();
   }, [id]);
