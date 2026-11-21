@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request, d1UpdateProfile } from '../lib/d1Api';
 import { ArrowRight, Phone } from 'lucide-react';
-import { getCachedUser } from '../lib/cache';
 import Select from '../components/Select';
 
 const OCCUPATIONS = [
@@ -12,82 +11,46 @@ const OCCUPATIONS = [
   'Trader / Vendor', 'Civil Servant', 'Unemployed', 'Retired', 'Other',
 ];
 
+type Country = { country_code: string; name: string; phone_prefix: string | null; status: string };
+
 export default function Onboarding() {
   const navigate = useNavigate();
-  const [countries, setCountries] = useState<any[]>([]);
+  const [countries, setCountries] = useState<Country[]>([]);
   const [country, setCountry] = useState('CM');
-  const [regions, setRegions] = useState<string[]>([]);
   const [region, setRegion] = useState('');
-  const [cities, setCities] = useState<string[]>([]);
   const [city, setCity] = useState('');
   const [occupation, setOccupation] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('supported_countries')
-        .select('code, name, phone_prefix, flag_emoji, regions, cities')
-        .in('code', ['CM', 'GA', 'CG', 'TD', 'CF', 'GQ'])
-        .order('name');
+    d1Request<{ data: Country[] }>('/api/countries').then(({ data }) => {
       setCountries(data || []);
-    })();
+      if (data?.length && !data.some(item => item.country_code === 'CM')) setCountry(data[0].country_code);
+    }).catch(error => setErrorMsg(error instanceof Error ? error.message : 'Unable to load supported countries.'));
   }, []);
 
-  useEffect(() => {
-    const c = countries.find(x => x.code === country);
-    const rList: string[] = Array.isArray(c?.regions) ? c.regions : [];
-    setRegions(rList);
-    if (rList.length > 0) {
-      setRegion(rList[0]);
-      const citiesMap: Record<string, string[]> = c?.cities || {};
-      const cList = citiesMap[rList[0]] || [];
-      setCities(cList);
-      setCity(cList[0] || '');
-    } else {
-      setRegion('');
-      setCities([]);
-      setCity('');
-    }
-  }, [country, countries]);
-
-  useEffect(() => {
-    const c = countries.find(x => x.code === country);
-    const citiesMap: Record<string, string[]> = c?.cities || {};
-    const cList = citiesMap[region] || [];
-    setCities(cList);
-    setCity(cList[0] || '');
-  }, [region]);
-
-  const selectedCountry = countries.find(c => c.code === country);
+  const selectedCountry = countries.find(item => item.country_code === country);
 
   const handleSubmit = async () => {
     setErrorMsg('');
-    if (!region) return setErrorMsg('Please select your region.');
-    if (!city) return setErrorMsg('Please select your city.');
+    if (!selectedCountry) return setErrorMsg('Please select a supported country.');
+    if (!region.trim()) return setErrorMsg('Please enter your region.');
+    if (!city.trim()) return setErrorMsg('Please enter your city.');
     if (!occupation) return setErrorMsg('Please select your occupation.');
-
     setLoading(true);
-    const me = await getCachedUser();
-    if (!me) { setLoading(false); return setErrorMsg('Not logged in.'); }
-
-    const { data, error } = await supabase.rpc('complete_onboarding', {
-      p_country_iso: country,
-      p_location_city: `${region} - ${city}`,
-      p_region: region,
-      p_city: city,
-      p_occupation: occupation,
-    });
-
-    if (error || !data?.ok) {
-      setErrorMsg(error?.message || data?.error || 'Something went wrong.');
-      setLoading(false);
-      return;
-    }
-
-    navigate('/home');
-    setLoading(false);
+    try {
+      await d1UpdateProfile({
+        country_code: country,
+        location_region: region.trim(),
+        location_city: city.trim(),
+        occupation,
+        onboarding_completed: true,
+      });
+      navigate('/home', { replace: true });
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Unable to save your details.');
+    } finally { setLoading(false); }
   };
 
   return (
@@ -96,80 +59,37 @@ export default function Onboarding() {
         <h1 className="text-[22px] font-black text-navy dark:text-white">Welcome to CenPaya</h1>
         <p className="text-[12px] text-gray-500 mt-1">We need a few details before you start.</p>
       </div>
-
       <div className="flex-1 px-6 space-y-3 overflow-y-auto">
         <div className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
-          <Select
-            label="Country"
-            value={country}
-            onChange={setCountry}
-            options={countries.map(c => ({
-              value: c.code,
-              label: `${c.flag_emoji || ''} ${c.name} (${c.phone_prefix})`.trim(),
-            }))}
-            placeholder="Choose your country"
-          />
+          <Select label="Country" value={country} onChange={setCountry}
+            options={countries.map(item => ({ value: item.country_code, label: item.name }))} placeholder="Choose your country" />
         </div>
-
-        {regions.length > 0 && (
-          <div className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
-            <Select
-              label="Region"
-              value={region}
-              onChange={setRegion}
-              options={regions.map(r => ({ value: r, label: r }))}
-              placeholder="Choose your region"
-            />
-          </div>
-        )}
-
-        {cities.length > 0 && (
-          <div className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
-            <Select
-              label="Your city"
-              value={city}
-              onChange={setCity}
-              options={cities.map(c => ({ value: c, label: c }))}
-              placeholder="Choose your city"
-            />
-          </div>
-        )}
-
         <div className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
-          <Select
-            label="Occupation"
-            value={occupation}
-            onChange={setOccupation}
-            options={OCCUPATIONS.map(o => ({ value: o, label: o }))}
-            placeholder="Choose your occupation"
-          />
+          <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-2 block">Region / State</label>
+          <input value={region} onChange={event => setRegion(event.target.value)} placeholder="Enter your region"
+            className="w-full p-3 rounded-xl bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-sm" />
         </div>
-
+        <div className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
+          <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-2 block">Your city</label>
+          <input value={city} onChange={event => setCity(event.target.value)} placeholder="Enter your city"
+            className="w-full p-3 rounded-xl bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-sm" />
+        </div>
+        <div className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
+          <Select label="Occupation" value={occupation} onChange={setOccupation}
+            options={OCCUPATIONS.map(item => ({ value: item, label: item }))} placeholder="Choose your occupation" />
+        </div>
         {selectedCountry && (
           <div className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
-            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1 mb-2">
-              <Phone size={11} /> Your phone prefix
-            </label>
-            <p className="text-[15px] font-bold text-navy dark:text-white">{selectedCountry.phone_prefix}</p>
-            <p className="text-[9px] text-gray-400 mt-1">Added automatically to your MoMo number.</p>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1 mb-2"><Phone size={11} /> Your phone prefix</label>
+            <p className="text-[15px] font-bold text-navy dark:text-white">{selectedCountry.phone_prefix || 'Not available'}</p>
           </div>
         )}
-
-        {errorMsg && (
-          <div className="bg-red-50 border border-red-200 text-red-600 text-[11px] p-3 rounded-xl">
-            {errorMsg}
-          </div>
-        )}
+        {errorMsg && <div className="bg-red-50 border border-red-200 text-red-600 text-[11px] p-3 rounded-xl">{errorMsg}</div>}
       </div>
-
       <div className="p-6">
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="w-full bg-accent text-white font-bold py-3.5 rounded-xl text-[13px] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-        >
-          {loading ? 'Saving...' : 'Continue'}
-          {!loading && <ArrowRight size={15} />}
+        <button onClick={handleSubmit} disabled={loading || countries.length === 0}
+          className="w-full bg-accent text-white font-bold py-3.5 rounded-xl text-[13px] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
+          {loading ? 'Saving...' : 'Continue'} {!loading && <ArrowRight size={15} />}
         </button>
       </div>
     </div>
