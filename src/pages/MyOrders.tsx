@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, ShoppingBag } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { useI18n } from '../contexts/i18n';
 
@@ -42,16 +43,20 @@ export default function MyOrders() {
         data.map((o: any) => (o.buyer_id === me.id ? o.seller_id : o.buyer_id))
       )];
 
-      const [listingsRes, profilesRes] = await Promise.all([
-        supabase.from('listings').select('id, title').in('id', listingIds),
-        supabase.from('public_profiles').select('id, username').in('id', counterpartyIds),
+      const [listingRows, profileRows] = await Promise.all([
+        Promise.all(listingIds.filter(Boolean).map((listingId: string) =>
+          d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(listingId)}`).then(r => r.data).catch(() => null)
+        )),
+        Promise.all(counterpartyIds.filter(Boolean).map((userId: string) =>
+          d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(userId)}`).then(r => r.data).catch(() => null)
+        )),
       ]);
 
       const listingMap: Record<string, string> = {};
-      (listingsRes.data || []).forEach((l: any) => { listingMap[l.id] = l.title; });
+      listingRows.filter(Boolean).forEach((l: any) => { listingMap[l.id] = l.title; });
 
       const profileMap: Record<string, string> = {};
-      (profilesRes.data || []).forEach((p: any) => { profileMap[p.id] = p.username; });
+      profileRows.filter(Boolean).forEach((p: any) => { profileMap[p.id] = p.username; });
 
       setOrders(data.map((o: any) => {
         const role: 'buyer' | 'seller' = o.buyer_id === me.id ? 'buyer' : 'seller';
