@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Wallet, Smartphone, Shield, Check, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import Select from '../components/Select';
 
@@ -43,26 +44,22 @@ export default function Checkout() {
       let loadedItem: any = null;
 
       if (listingId) {
-        const { data } = await supabase.from('listings').select('*').eq('id', listingId).single();
+        const { data } = await d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(listingId)}`);
         loadedItem = data ? { ...data, _kind: 'listing' } : null;
       } else if (serviceId) {
-        const { data } = await supabase.from('services').select('*').eq('id', serviceId).single();
+        const { data } = await d1Request<{ data: any }>(`/api/market/listings/${encodeURIComponent(serviceId)}`);
         loadedItem = data ? { ...data, _kind: 'service' } : null;
 
         if (packageId) {
-          const { data: p } = await supabase.from('service_packages').select('*').eq('id', packageId).maybeSingle();
-          setPkg(p);
+          const { data: packages } = await d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(serviceId)}/packages`);
+          setPkg((packages || []).find((p: any) => p.id === packageId) || null);
         }
       }
 
       setItem(loadedItem);
 
       if (loadedItem?.seller_id) {
-        const { data: p } = await supabase
-          .from('public_profiles')
-          .select('id, username, avatar_url')
-          .eq('id', loadedItem.seller_id)
-          .maybeSingle();
+        const { data: p } = await d1Request<{ data: any }>(`/api/profiles/${encodeURIComponent(loadedItem.seller_id)}`);
         setSeller(p);
       }
 
@@ -79,21 +76,13 @@ export default function Checkout() {
         setFeeFixed(50);
       }
 
-      const { data: profile } = await supabase
-        .from('users')
-        .select('phone, country_iso, region, city')
-        .eq('id', me.id)
-        .maybeSingle();
+      const { data: profile } = await d1Request<{ data: any }>('/api/me/personal-details');
       setPayPhone(profile?.phone || '');
       setCountry(profile?.country_iso || 'CM');
       setRegion(profile?.region || '');
       setCity(profile?.city || '');
 
-      const { data: countryData } = await supabase
-        .from('supported_countries')
-        .select('code, name, phone_prefix, flag_emoji, regions, cities')
-        .eq('is_active', true)
-        .order('name');
+      const { data: countryData } = await d1Request<{ data: any[] }>('/api/countries');
       setCountries(countryData || []);
       const cRow = (countryData || []).find((x: any) => x.code === (profile?.country_iso || 'CM'));
       const rList: string[] = Array.isArray(cRow?.regions) ? cRow.regions : [];
