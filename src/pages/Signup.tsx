@@ -58,7 +58,7 @@ export default function Signup() {
     setLoading(true);
     const cleanEmail = email.trim().toLowerCase();
     const baseUsername = `${firstName.toLowerCase()}_${lastName.toLowerCase()}`
-      .replace(/\\s+/g, '')
+      .replace(/\s+/g, '')
       .replace(/[^a-z0-9_]/g, '')
       .slice(0, 22) || 'cenpaya_user';
     const suffix = Math.floor(Math.random() * 9000 + 1000).toString();
