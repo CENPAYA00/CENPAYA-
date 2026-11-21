@@ -1,5 +1,4 @@
-import { supabase } from '../lib/supabase';
-import { d1Me } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
 export type MobileMoneyMethod = 'mtn' | 'orange' | 'airtel' | 'moov' | 'wallet';
 
@@ -68,55 +67,14 @@ export async function payForSubscription(
   country: string = 'CM'
 ): Promise<{ success: boolean; paymentUrl?: string; error?: string }> {
   try {
-    // Wallet payment: deduct locally
-    if (method === 'wallet') {
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('available_funds')
-        .eq('user_id', userId)
-        .single();
-
-      if (!wallet || wallet.available_funds < amount) {
-        return { success: false, error: 'Insufficient wallet balance' };
-      }
-
-      await supabase
-        .from('wallets')
-        .update({ available_funds: wallet.available_funds - amount })
-        .eq('user_id', userId);
-
-      await supabase.rpc('mark_user_subscribed', {
-        p_user_id: userId,
-        p_payment_method: 'wallet',
-      });
-
-      return { success: true };
-    }
-
-    // External payment: pick aggregator
-    const provider = pickProvider(country, method);
-    if (!provider) {
-      return { success: false, error: 'No provider supports this method in your country.' };
-    }
-
-    const { user } = await d1Me();
-    if (!user) return { success: false, error: 'Not logged in' };
-
-    const { data, error } = await supabase.functions.invoke('initiate-payment', {
-      body: {
-        subscription: true,
-        user_id: userId,
-        provider: provider.toUpperCase(),
-        mobile_money_method: method.toUpperCase(),
-        amount: amount,
-      },
+    const provider = method === 'wallet' ? 'wallet' : pickProvider(country, method);
+    if (!provider) return { success: false, error: 'No configured payment provider supports this method in your country.' };
+    const result = await supabaseWorkerRequest<{ data?: { payment_url?: string } }>('/api/v1/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify({ method, provider, amount, country }),
     });
-
-    if (error) return { success: false, error: error.message };
-    if (!data?.payment_url) return { success: false, error: 'No payment URL returned' };
-
-    return { success: true, paymentUrl: data.payment_url };
-  } catch (err: any) {
-    return { success: false, error: err.message };
+    return { success: true, paymentUrl: result.data?.payment_url };
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Subscription payment failed.' };
   }
 }
