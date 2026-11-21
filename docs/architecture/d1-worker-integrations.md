@@ -44,7 +44,9 @@ The frontend search page now calls `GET /api/search?q=...&type=post|listing|serv
 and gets normalized entity results from the Worker. The AI Search index must
 include each indexed entity's stable D1 entity ID and kind/type in its metadata
 (`id`/ `entity_id`, and `kind`/ `entity_type`/ `type`). The Worker returns
-only results carrying a stable ID so the UI can open the matching CenPaya page.
+only results carrying a stable ID, then rechecks each hit against D1's public,
+published records before returning it so deleted, private, or unapproved records
+are not surfaced from a stale index. The UI opens the matching CenPaya page.
 D1 remains authoritative; the index is a retrieval layer, not a data store.
 
 ## Cloudflare KV
