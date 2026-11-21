@@ -115,9 +115,28 @@ async function finalizeProviderRejection(
   return false;
 }
 
+async function retryRpcTrue(
+  db: SupabaseClient, rpcName: string, args: Record<string, unknown>, operationId: string,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      if (await callRpc(db, rpcName, args) === true) return true;
+    } catch {
+      // These state transitions are idempotent; retry protects against transient
+      // network failures both before and after a database commit.
+    }
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+  }
+  console.error(JSON.stringify({
+    event: "payment_state_transition_unconfirmed", operation_id: operationId,
+    rpc: rpcName, attempts: 3, severity: "critical",
+  }));
+  return false;
+}
+
 async function enforcePaymentRateLimit(
   userId: string,
-  action: "topup" | "withdrawal",
+  action: "topup" | "withdrawal" | "payment_status",
   env: Env,
   headers: Headers,
 ): Promise<Response | null> {
@@ -376,7 +395,7 @@ export async function handleAuthenticatedPaymentApi(
 
     try {
       const started = await startTopup(providerName, creds, env, topupId, value, mobile, email);
-      const recorded = await callRpc(db, "record_wallet_topup_provider_reference", {
+      const recorded = await retryRpcTrue(db, "record_wallet_topup_provider_reference", {
         p_topup_id: topupId, p_provider: providerName,
         p_provider_transaction_id: started.reference, p_checkout_url: started.checkoutUrl,
       });
@@ -404,10 +423,40 @@ export async function handleAuthenticatedPaymentApi(
 
   const topupStatus = url.pathname.match(/^\/api\/v1\/wallet\/topups\/([0-9a-f-]{36})$/i);
   if (method === "GET" && topupStatus) {
+    const limited = await enforcePaymentRateLimit(userId, "payment_status", env, headers);
+    if (limited) return limited;
     const { data, error } = await userDb.rpc("get_wallet_topup_status", { p_topup_id: topupStatus[1] });
     if (error) return jsonResponse({ success: false, error: "topup_status_unavailable" }, 502, headers);
     if (!data) return jsonResponse({ success: false, error: "topup_not_found" }, 404, headers);
-    return jsonResponse({ success: true, data }, 200, headers);
+    let state = object(data);
+    if (state.status === "pending" && typeof state.provider_reference === "string" && state.provider_reference) {
+      try {
+        const provider = String(state.provider).toUpperCase();
+        if (isGateway(provider)) {
+          const db = await serviceClient(env, userId);
+          const creds = await credentials(db, provider, env);
+          const verified = await providerStatus(provider, creds, env, state.provider_reference);
+          if (verified.amount === Number(state.amount) && verified.currency === String(state.currency_code || "XAF").toUpperCase()) {
+            let rpcName = "";
+            let args: Record<string, unknown> = {};
+            if (verified.status === "SUCCESSFUL") {
+              rpcName = "settle_wallet_topup_from_gateway";
+              args = { p_topup_id: topupStatus[1], p_provider: provider, p_provider_transaction_id: state.provider_reference, p_amount: verified.amount, p_currency_code: verified.currency };
+            } else if (verified.status === "FAILED") {
+              rpcName = "fail_wallet_topup_from_gateway";
+              args = { p_topup_id: topupStatus[1], p_provider: provider, p_provider_transaction_id: state.provider_reference };
+            }
+            if (rpcName && await retryRpcTrue(db, rpcName, args, topupStatus[1])) {
+              const refreshed = await userDb.rpc("get_wallet_topup_status", { p_topup_id: topupStatus[1] });
+              if (!refreshed.error && refreshed.data) state = object(refreshed.data);
+            }
+          }
+        }
+      } catch {
+        // Preserve pending/reserved state whenever the provider result is uncertain.
+      }
+    }
+    return jsonResponse({ success: true, data: state }, 200, headers);
   }
 
   if (method === "POST" && url.pathname === "/api/v1/wallet/withdrawals") {
@@ -467,7 +516,7 @@ export async function handleAuthenticatedPaymentApi(
 
     try {
       const reference = await startPayout(gateway, creds, env, withdrawalId, value, mobile, destination, recipientName);
-      const recorded = await callRpc(db, "record_withdrawal_provider_reference", {
+      const recorded = await retryRpcTrue(db, "record_withdrawal_provider_reference", {
         p_withdrawal_id: withdrawalId, p_gateway_provider: gateway, p_gateway_reference: reference,
       });
       if (recorded !== true) throw new Error("reference_not_recorded");
@@ -511,9 +560,40 @@ export async function handleAuthenticatedPaymentApi(
 
   const withdrawalStatus = url.pathname.match(/^\/api\/v1\/wallet\/withdrawals\/([0-9a-f-]{36})$/i);
   if (method === "GET" && withdrawalStatus) {
-    const { data, error } = await userDb.from("user_withdrawals")
-      .select("id,requested_amount,fee_charged,net_disbursement,status,source_bucket,destination_phone,destination_provider,gateway_reference,failure_reason,created_at,processed_at,completed_at")
+    const limited = await enforcePaymentRateLimit(userId, "payment_status", env, headers);
+    if (limited) return limited;
+    const selectWithdrawal = () => userDb.from("user_withdrawals")
+      .select("id,requested_amount,fee_charged,net_disbursement,status,source_bucket,destination_phone,destination_provider,gateway_provider,gateway_reference,failure_reason,currency_code,created_at,processed_at,completed_at")
       .eq("id", withdrawalStatus[1]).eq("user_id", userId).maybeSingle();
+    let { data, error } = await selectWithdrawal();
+    if (error) return jsonResponse({ success: false, error: "withdrawal_status_unavailable" }, 502, headers);
+    if (!data) return jsonResponse({ success: false, error: "withdrawal_not_found" }, 404, headers);
+    const reference = String(data.gateway_reference || "");
+    const provider = String(data.gateway_provider || "").toUpperCase();
+    if (data.status === "pending" && reference && !reference.startsWith("initiating:") && isGateway(provider)) {
+      try {
+        const db = await serviceClient(env, userId);
+        const creds = await credentials(db, provider, env);
+        const verified = await providerStatus(provider, creds, env, reference);
+        if (verified.amount === Number(data.net_disbursement) && verified.currency === String(data.currency_code || "XAF").toUpperCase()) {
+          if (verified.status === "SUCCESSFUL" || verified.status === "FAILED") {
+            const finalized = await retryRpcTrue(db, "finalize_withdrawal_from_gateway", {
+              p_withdrawal_id: withdrawalStatus[1], p_gateway_provider: provider,
+              p_outcome: verified.status === "SUCCESSFUL" ? "completed" : "failed",
+              p_gateway_reference: reference,
+              p_failure_reason: verified.status === "FAILED" ? "Provider reported failed payout" : null,
+            }, withdrawalStatus[1]);
+            if (finalized) {
+              const refreshed = await selectWithdrawal();
+              data = refreshed.data;
+              error = refreshed.error;
+            }
+          }
+        }
+      } catch {
+        // Do not release reserved funds while provider status is unavailable.
+      }
+    }
     if (error) return jsonResponse({ success: false, error: "withdrawal_status_unavailable" }, 502, headers);
     if (!data) return jsonResponse({ success: false, error: "withdrawal_not_found" }, 404, headers);
     const visible = {
