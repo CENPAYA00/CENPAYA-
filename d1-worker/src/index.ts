@@ -1,5 +1,5 @@
 import type { Env, User } from "./types.js";
-import { uuid, constantTimeEqual, signD1IdentityAssertion, cacheGet, cachePut } from "./security.js";
+import { uuid, constantTimeEqual, signD1IdentityAssertion } from "./security.js";
 import { digest, passwordHash, verifyPassword } from "./security.js";
 import { handleGoogleOAuth } from "./oauth.js";
 import { rateLimit, readUser, auth, sendOtp, verifyOtp, safeUser } from "./auth.js";
@@ -216,6 +216,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   const user=await auth(request,env);
   const profileResponse=await handleProfileRoutes(request,env,{url,path,method,user});
   if(profileResponse)return profileResponse;
+  const communityResponse=await handleCommunityRoutes(request,env,{url,path,method,user});
+  if(communityResponse)return communityResponse;
   if(path==="/internal/v1/admin/overview"&&method==="GET"){
     const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
     const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
