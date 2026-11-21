@@ -34,7 +34,7 @@ function withCors(response: Response, request: Request, env: Env): Response {
 function sessionCookie(token:string,env:Env){const ttl=Math.max(300,Math.min(2592000,Number(env.SESSION_TTL_SECONDS||2592000)));return `cenpaya_session=${encodeURIComponent(token)}; Path=/; Max-Age=${ttl}; HttpOnly; Secure; SameSite=None`;}
 function clearSessionCookie(){return "cenpaya_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None";}
 function sessionJson(data:unknown,token:string,env:Env,status=200){return json(data,status,{"Set-Cookie":sessionCookie(token,env)});}
-function requestSessionToken(request:Request){const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\\s+(.+)$/i)?.[1];const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);return bearer||(cookie?decodeURIComponent(cookie):"");}
+function requestSessionToken(request:Request){const bearer=(request.headers.get("Authorization")||"").match(/^Bearer\s+(.+)$/i)?.[1];const cookie=(request.headers.get("Cookie")||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("cenpaya_session="))?.slice("cenpaya_session=".length);return bearer||(cookie?decodeURIComponent(cookie):"");}
 async function body(request: Request): Promise<Record<string,unknown>|null> {
   const type=request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
   if(type!=="application/json") return null;
@@ -198,7 +198,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
     return sessionJson({success:true,user:safeUser(user),token},token,env);
   }
   if(path==="/api/auth/logout"&&method==="POST"){
-    const token=(request.headers.get("Authorization")||"").replace(/^Bearer\s+/i,"");
+    const token=requestSessionToken(request);
     if(token)await env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at="+NOW+" WHERE session_token_hash=?").bind(await digest(token)).run();
     return json({success:true},200,{"Set-Cookie":clearSessionCookie()});
   }
