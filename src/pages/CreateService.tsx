@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { ArrowLeft, Upload, FileText, X, Image as ImageIcon } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import { compressImage } from '../utils/compressImage';
@@ -60,62 +60,46 @@ export default function CreateService() {
       const user = await getCachedUser();
       if (!user) throw new Error('Not logged in');
 
+      const uploadFile = async (file: File, folder: string) => {
+        const form = new FormData();
+        form.append('file', file, file.name);
+        form.append('folder', folder);
+        const token = getD1Token();
+        const response = await fetch(getD1ApiUrl('/api/market/media'), {
+          method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form,
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.url) throw new Error(result.error || 'File upload failed');
+        return result.url as string;
+      };
       const imageUrls: string[] = [];
-      for (const img of images) {
-        const compressed = await compressImage(img);
-        const ext = compressed.name.split('.').pop();
-        const path = `services/${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('listings').upload(path, compressed);
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('listings').getPublicUrl(path);
-        imageUrls.push(urlData.publicUrl);
-      }
-
+      for (const img of images) imageUrls.push(await uploadFile(await compressImage(img), 'services/images'));
       const docUrls: string[] = [];
-      for (const d of docs) {
-        const ext = d.name.split('.').pop();
-        const path = `service-docs/${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('listings').upload(path, d);
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('listings').getPublicUrl(path);
-        docUrls.push(urlData.publicUrl);
-      }
+      for (const doc of docs) docUrls.push(await uploadFile(doc, 'services/documents'));
 
       const finalPrice = usePriceRange ? Number(priceMin) : Number(price);
-      const payload: any = {
-        seller_id: user.id,
-        title: title.trim(),
-        category,
-        description: description.trim(),
-        thumbnail_url: imageUrls[0] || null,
-        images: imageUrls.length > 0 ? imageUrls : null,
-        starting_price: finalPrice,
-        delivery_days: Number(deliveryDays) || 3,
-        is_active: true,
-        moderation_status: 'approved',
-        documents: docUrls.length > 0 ? docUrls : null,
-      };
-
-      if (usePriceRange) {
-        payload.price_is_range = true;
-        payload.price_min = Number(priceMin);
-        payload.price_max = priceMax ? Number(priceMax) : Number(priceMin);
-      } else {
-        payload.price_is_range = false;
-        payload.price_min = finalPrice;
-        payload.price_max = finalPrice;
-      }
-
-      const { data: service, error } = await supabase
-        .from('services')
-        .insert(payload)
-        .select()
-        .single();
-
-      if (error) throw error;
+      const result = await d1Request<{ id: string }>('/api/market/listings', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          category_id: category,
+          listing_type: 'service',
+          country_code: user.country_code || user.country_iso || 'CM',
+          price_type: usePriceRange ? 'negotiable' : 'fixed',
+          price_amount: finalPrice,
+          currency_code: 'XAF',
+          delivery_days: Number(deliveryDays) || 3,
+          images_json: imageUrls,
+          documents_json: docUrls,
+          price_is_range: usePriceRange,
+          price_min: usePriceRange ? Number(priceMin) : finalPrice,
+          price_max: usePriceRange ? (priceMax ? Number(priceMax) : Number(priceMin)) : finalPrice,
+        }),
+      });
 
       alert('Service published!');
-      navigate(`/service/${service.id}`);
+      navigate(`/service/${result.id}`);
     } catch (e: any) {
       setErrorMsg(e.message || 'Could not publish service.');
     }
