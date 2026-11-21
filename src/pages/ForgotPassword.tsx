@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Mail, Check } from 'lucide-react';
-import { d1RequestPasswordReset, d1ResetPassword, setD1Token } from '../lib/d1Api';
+import { d1RequestPasswordReset, d1ResetPassword } from '../lib/d1Api';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -26,8 +26,8 @@ export default function ForgotPassword() {
     if (password !== confirmPassword) return setErrorMsg('The passwords do not match.');
     setLoading(true);
     try {
-      const { token } = await d1ResetPassword(email.trim().toLowerCase(), code.trim(), password);
-      setD1Token(token); setComplete(true);
+      await d1ResetPassword(email.trim().toLowerCase(), code.trim(), password);
+      setComplete(true);
     } catch (error) { setErrorMsg(error instanceof Error ? error.message : 'Unable to reset password.'); }
     finally { setLoading(false); }
   };
