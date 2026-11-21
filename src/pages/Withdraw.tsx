@@ -63,10 +63,14 @@ export default function Withdraw() {
         body: JSON.stringify({ amount: Number(amount), gateway_provider: 'FAPSHI', destination_provider: provider, source_bucket: walletSource === 'funds' ? 'available' : 'referral', destination_phone: `${prefix} ${phone.trim()}`, idempotency_key: crypto.randomUUID() }),
       });
 
-      alert('Withdrawal successful!');
+      alert('Withdrawal request submitted. Provider confirmation is still pending.');
       navigate('/wallet');
-    } catch (e: any) {
-      setErrorMsg(e.message || 'Withdrawal failed');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Withdrawal failed';
+      if (/insufficient/i.test(message)) setErrorMsg('Insufficient available balance.');
+      else if (/payment_provider_rejected_request/i.test(message)) setErrorMsg('The payout provider rejected the withdrawal. Check the destination details.');
+      else if (/payment_initiation_uncertain_contact_support|network|timeout/i.test(message)) setErrorMsg('Withdrawal status is uncertain. Check your wallet transactions before retrying, or contact support.');
+      else setErrorMsg(message);
     } finally {
       setBusy(false);
     }
