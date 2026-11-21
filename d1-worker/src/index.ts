@@ -152,8 +152,24 @@ async function handle(request:Request,env:Env):Promise<Response>{
     const channel=email?"email":"sms",purpose=email?"verify_email":"verify_phone";
     let delivered=false;
     try{delivered=await sendOtp(env,env.DB,id,channel,email||phone!,purpose);}catch{delivered=false;}
-    if(!delivered){await env.DB.prepare("DELETE FROM users WHERE id=?").bind(id).run();return fail("Verification delivery is not configured or unavailable",503);}
+    if(!delivered)return json({success:false,error:"Verification delivery is unavailable; retry OTP delivery for this account.",user_id:id},503);
     return json({success:true,user_id:id,verification_required:true,channel},201);
+  }
+  if(path==="/api/auth/otp/resend"&&method==="POST"){
+    const b=await body(request);if(!b)return fail("Valid JSON body required");
+    const identifier=str(b.identifier,254).toLowerCase(),purpose=str(b.purpose,20);
+    if(!identifier||!["verify_email","verify_phone"].includes(purpose))return fail("Identifier and valid verification purpose required");
+    if(!await rateLimit(env.DB,"otp-resend:"+await digest(identifier+":"+purpose),3,600))return fail("Too many OTP requests",429);
+    const account=await env.DB.prepare("SELECT id,email,phone,email_verified,phone_verified FROM users WHERE (lower(email)=? OR lower(username)=? OR phone=?) AND deleted_at IS NULL AND banned=0").bind(identifier,identifier,identifier).first<{id:string;email:string|null;phone:string|null;email_verified:number;phone_verified:number}>();
+    if(account){
+      const emailPurpose=purpose==="verify_email"&&!account.email_verified&&!!account.email;
+      const phonePurpose=purpose==="verify_phone"&&!account.phone_verified&&!!account.phone;
+      if(emailPurpose||phonePurpose){
+        const channel=emailPurpose?"email":"sms",destination=emailPurpose?account.email!:account.phone!;
+        try{await sendOtp(env,env.DB,account.id,channel,destination,purpose as "verify_email"|"verify_phone");}catch{}
+      }
+    }
+    return json({success:true,message:"If verification is still required, a new code has been requested."});
   }
   if(path==="/api/auth/verify"&&method==="POST"){
     const b=await body(request);if(!b)return fail("Valid JSON body required");
