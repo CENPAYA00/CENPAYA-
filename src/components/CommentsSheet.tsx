@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Send } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 
 type CommentRow = {
@@ -41,68 +41,17 @@ export default function CommentsSheet({ postId, me, onClose, onCommentAdded }: P
     let alive = true;
     setLoading(true);
     setText('');
-
     const fetchComments = async () => {
-      const { data } = await supabase
-        .from('post_comments')
-        .select('id, body, user_id, created_at, moderation_status')
-        .eq('post_id', postId)
-        .eq('moderation_status', 'approved')
-        .order('created_at', { ascending: true })
-        .limit(100);
-
-      if (!alive) return;
-      const rows = (data || []) as CommentRow[];
-      if (rows.length === 0) { setItems([]); setLoading(false); return; }
-
-      const ids = [...new Set(rows.map((r) => r.user_id))];
-      const { data: profiles } = await supabase
-        .from('public_profiles')
-        .select('id, username, avatar_url')
-        .in('id', ids);
-
-      const map: Record<string, any> = {};
-      (profiles || []).forEach((p: any) => { map[p.id] = p; });
-
-      if (!alive) return;
-      setItems(rows.map((r) => ({
-        ...r,
-        username: map[r.user_id]?.username || 'user',
-        avatar_url: map[r.user_id]?.avatar_url || null,
-      })));
-      setLoading(false);
+      try {
+        const result = await d1Request<{ data: CommentRow[] }>(`/api/posts/${encodeURIComponent(postId)}/comments`);
+        if (!alive) return;
+        setItems((result.data || []).map(row => ({ ...row, username: row.username || 'user' })));
+      } catch (error: any) { if (alive) alert(error.message || 'Could not load comments'); }
+      finally { if (alive) setLoading(false); }
     };
-
-    fetchComments();
-
-    const channel = supabase
-      .channel(`comments-${postId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'post_comments', filter: `post_id=eq.${postId}` },
-        async (payload) => {
-          const m = payload.new as CommentRow;
-          if (m.moderation_status !== 'approved') return;
-          
-          const { data: prof } = await supabase
-            .from('public_profiles')
-            .select('username, avatar_url')
-            .eq('id', m.user_id)
-            .maybeSingle();
-
-          setItems((prev) => {
-            if (!prev) return prev;
-            if (prev.some((c) => c.id === m.id)) return prev;
-            return [...prev, { ...m, username: prof?.username || 'user', avatar_url: prof?.avatar_url }];
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      alive = false;
-      supabase.removeChannel(channel);
-    };
+    void fetchComments();
+    const poll = window.setInterval(() => { void fetchComments(); }, 5000);
+    return () => { alive = false; window.clearInterval(poll); };
   }, [postId]);
 
   useEffect(() => {
@@ -123,36 +72,21 @@ export default function CommentsSheet({ postId, me, onClose, onCommentAdded }: P
   const send = async () => {
     const body = text.trim();
     if (!body || !postId) return;
-    const u = me || (await getCachedUser())?.id;
-    if (!u) { alert('Please log in to comment.'); return; }
-    
+    const userId = me || (await getCachedUser())?.id;
+    if (!userId) { alert('Please log in to comment.'); return; }
     setSending(true);
     setText('');
-
-    const temp: CommentRow = {
-      id: 't' + Date.now(),
-      body,
-      user_id: u,
-      created_at: new Date().toISOString(),
-      moderation_status: 'approved',
-      username: 'You',
-      pending: true,
-    };
-    
-    setItems((p) => [...p, temp]);
-    onCommentAdded?.(postId);
-
-    const { error } = await supabase
-      .from('post_comments')
-      .insert({ post_id: postId, user_id: u, body });
-
-    if (error) {
-      setItems((p) => p.filter((c) => c.id !== temp.id));
+    const temp: CommentRow = { id: 't' + Date.now(), body, user_id: userId, created_at: new Date().toISOString(), moderation_status: 'approved', username: 'You', pending: true };
+    setItems(p => [...p, temp]);
+    try {
+      await d1Request(`/api/posts/${encodeURIComponent(postId)}/comments`, { method: 'POST', body: JSON.stringify({ body }) });
+      setItems(p => p.filter(c => c.id !== temp.id));
+      onCommentAdded?.(postId);
+    } catch (error: any) {
+      setItems(p => p.filter(c => c.id !== temp.id));
       setText(body);
-    } else {
-      setItems((p) => p.filter((c) => c.id !== temp.id));
-    }
-    setSending(false);
+      alert(error.message || 'Could not send comment');
+    } finally { setSending(false); }
   };
 
   if (!postId) return null;
