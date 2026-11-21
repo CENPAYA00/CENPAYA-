@@ -15,7 +15,7 @@ Do not import the export's CSV/JSON/SQL row data into Git. It includes personal 
 
 The Worker entry point in `src/index.ts` now delegates security primitives to `src/security.ts`, account/session verification and OTP helpers to `src/auth.ts`, session creation to `src/sessions.ts`, and Google OAuth flows to `src/oauth.ts`. Shared request and environment types live in `src/types.ts`. Existing route behavior remains in the entry point while it is progressively separated into domain route modules.
 
-The D1 Worker implements two private service-binding endpoints used by the Supabase financial Worker:
+The D1 Worker implements three private service-binding endpoints used by the Supabase financial Worker:
 
 - `POST /internal/v1/identity/assert`: requires the shared `D1_INTERNAL_CALL_SECRET` header and a valid D1 bearer session. It returns a signed HS256 identity assertion with a 120-second lifetime and a unique `jti`.
 - `POST /internal/v1/identity/consume`: atomically records each verified assertion `jti` in the existing rate-limit table; a repeated `jti` receives HTTP 409.
