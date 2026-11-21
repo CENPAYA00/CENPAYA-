@@ -4,17 +4,8 @@
 
 begin;
 
-do $role$
-begin
-  create role cenpaya_payment_worker nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
-exception when duplicate_object then null;
-end;
-$role$;
-alter role cenpaya_payment_worker nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
-grant cenpaya_payment_worker to authenticator;
-grant usage on schema public to cenpaya_payment_worker;
-revoke all on all tables in schema public from cenpaya_payment_worker;
-revoke all on all sequences in schema public from cenpaya_payment_worker;
+-- Uses the existing authenticated role with a private, signed Worker app_metadata claim.
+-- No custom Postgres role is created or granted.
 
 alter table public.wallet_topups
   add column if not exists idempotency_key text,
@@ -61,7 +52,7 @@ end;
 $function$;
 
 revoke all on function public.worker_upsert_vault_secret(uuid, text, text, text)
-  from public, anon, authenticated, service_role, cenpaya_payment_worker;
+  from public, anon, authenticated, service_role;
 
 create or replace function public.admin_set_gateway_credentials(
   p_provider_name text,
@@ -161,7 +152,7 @@ as $function$
 declare
   v_result jsonb;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   if p_environment not in ('sandbox', 'production') then raise exception 'invalid environment'; end if;
 
   select jsonb_object_agg(v.key_name, s.decrypted_secret) into v_result
@@ -183,7 +174,7 @@ as $function$
 declare
   v_result jsonb;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   select jsonb_build_object(
     'id', id, 'user_id', user_id, 'provider', provider, 'transaction_id', transaction_id,
     'amount', amount, 'currency_code', currency_code, 'status', status
@@ -203,7 +194,7 @@ as $function$
 declare
   v_result jsonb;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   select jsonb_build_object(
     'id', id, 'user_id', user_id, 'gateway_provider', gateway_provider,
     'gateway_reference', gateway_reference, 'requested_amount', requested_amount,
@@ -271,7 +262,7 @@ language plpgsql security definer
 set search_path = public
 as $function$
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   update public.wallet_topups
      set transaction_id = 'initiating:' || id::text
    where id = p_topup_id and user_id = auth.uid()
@@ -311,7 +302,7 @@ as $function$
 declare
   v_row public.wallet_topups%rowtype;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   if p_provider_transaction_id is null or length(p_provider_transaction_id) = 0 or length(p_provider_transaction_id) > 200 then
     raise exception 'invalid provider transaction reference';
   end if;
@@ -342,7 +333,7 @@ as $function$
 declare
   v_row public.wallet_topups%rowtype;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   select * into v_row from public.wallet_topups where id = p_topup_id for update;
   if not found or upper(v_row.provider) <> upper(p_provider)
      or v_row.transaction_id <> p_provider_transaction_id
@@ -366,7 +357,7 @@ as $function$
 declare
   v_row public.wallet_topups%rowtype;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   select * into v_row from public.wallet_topups where id = p_topup_id for update;
   if not found or upper(v_row.provider) <> upper(p_provider)
      or v_row.transaction_id <> p_provider_transaction_id then return false; end if;
@@ -390,7 +381,7 @@ declare
   v_existing uuid;
   v_id uuid;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   if p_user_id is null or p_idempotency_key is null
      or length(p_idempotency_key) < 8 or length(p_idempotency_key) > 128
      or auth.uid() is distinct from p_user_id
@@ -428,7 +419,7 @@ language plpgsql security definer
 set search_path = public
 as $function$
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   update public.user_withdrawals set gateway_reference = 'initiating:' || id::text
    where id = p_withdrawal_id and user_id = auth.uid()
      and status = 'pending' and upper(gateway_provider) = upper(p_gateway_provider)
@@ -447,7 +438,7 @@ as $function$
 declare
   v_row public.user_withdrawals%rowtype;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   if p_gateway_reference is null or length(p_gateway_reference) = 0 or length(p_gateway_reference) > 200 then
     raise exception 'invalid gateway reference';
   end if;
@@ -479,7 +470,7 @@ declare
   v_after bigint;
   v_today date := (now() at time zone 'Africa/Douala')::date;
 begin
-  if auth.role() <> 'cenpaya_payment_worker' then raise exception 'payment worker role only'; end if;
+  if (auth.role() <> 'authenticated' or coalesce(auth.jwt() -> 'app_metadata' ->> 'cenpaya_payment_worker', 'false') <> 'true') then raise exception 'payment worker role only'; end if;
   if p_outcome not in ('completed', 'failed') then raise exception 'invalid withdrawal outcome'; end if;
 
   select * into v_row from public.user_withdrawals where id = p_withdrawal_id for update;
@@ -553,48 +544,48 @@ end;
 $function$;
 
 revoke all on function public.worker_upsert_vault_secret(uuid, text, text, text)
-  from public, anon, authenticated, service_role, cenpaya_payment_worker;
+  from public, anon, authenticated, service_role;
 revoke all on function public.worker_get_gateway_credentials(text, text)
   from public, anon, authenticated, service_role;
-grant execute on function public.worker_get_gateway_credentials(text, text) to cenpaya_payment_worker;
+grant execute on function public.worker_get_gateway_credentials(text, text) to authenticated;
 
 revoke all on function public.worker_get_topup_payment_details(uuid)
   from public, anon, authenticated, service_role;
-grant execute on function public.worker_get_topup_payment_details(uuid) to cenpaya_payment_worker;
+grant execute on function public.worker_get_topup_payment_details(uuid) to authenticated;
 
 revoke all on function public.worker_get_withdrawal_payment_details(uuid)
   from public, anon, authenticated, service_role;
-grant execute on function public.worker_get_withdrawal_payment_details(uuid) to cenpaya_payment_worker;
+grant execute on function public.worker_get_withdrawal_payment_details(uuid) to authenticated;
 
 revoke all on function public.create_wallet_topup_intent(bigint, text, text) from public, anon;
 grant execute on function public.create_wallet_topup_intent(bigint, text, text) to authenticated;
 revoke all on function public.claim_wallet_topup_initiation(uuid)
   from public, anon, authenticated, service_role;
-grant execute on function public.claim_wallet_topup_initiation(uuid) to cenpaya_payment_worker;
+grant execute on function public.claim_wallet_topup_initiation(uuid) to authenticated;
 revoke all on function public.get_wallet_topup_status(uuid) from public, anon;
 grant execute on function public.get_wallet_topup_status(uuid) to authenticated;
 revoke all on function public.record_wallet_topup_provider_reference(uuid, text, text, text)
   from public, anon, authenticated, service_role;
-grant execute on function public.record_wallet_topup_provider_reference(uuid, text, text, text) to cenpaya_payment_worker;
+grant execute on function public.record_wallet_topup_provider_reference(uuid, text, text, text) to authenticated;
 revoke all on function public.settle_wallet_topup_from_gateway(uuid, text, text, numeric, text)
   from public, anon, authenticated, service_role;
-grant execute on function public.settle_wallet_topup_from_gateway(uuid, text, text, numeric, text) to cenpaya_payment_worker;
+grant execute on function public.settle_wallet_topup_from_gateway(uuid, text, text, numeric, text) to authenticated;
 revoke all on function public.fail_wallet_topup_from_gateway(uuid, text, text)
   from public, anon, authenticated, service_role;
-grant execute on function public.fail_wallet_topup_from_gateway(uuid, text, text) to cenpaya_payment_worker;
+grant execute on function public.fail_wallet_topup_from_gateway(uuid, text, text) to authenticated;
 
 revoke all on function public.create_withdrawal_idempotent(uuid, bigint, text, text, text, text, text)
   from public, anon, authenticated, service_role;
-grant execute on function public.create_withdrawal_idempotent(uuid, bigint, text, text, text, text, text) to cenpaya_payment_worker;
+grant execute on function public.create_withdrawal_idempotent(uuid, bigint, text, text, text, text, text) to authenticated;
 revoke all on function public.claim_withdrawal_provider_payout(uuid, text)
   from public, anon, authenticated, service_role;
-grant execute on function public.claim_withdrawal_provider_payout(uuid, text) to cenpaya_payment_worker;
+grant execute on function public.claim_withdrawal_provider_payout(uuid, text) to authenticated;
 revoke all on function public.record_withdrawal_provider_reference(uuid, text, text)
   from public, anon, authenticated, service_role;
-grant execute on function public.record_withdrawal_provider_reference(uuid, text, text) to cenpaya_payment_worker;
+grant execute on function public.record_withdrawal_provider_reference(uuid, text, text) to authenticated;
 revoke all on function public.finalize_withdrawal_from_gateway(uuid, text, text, text, text)
   from public, anon, authenticated, service_role;
-grant execute on function public.finalize_withdrawal_from_gateway(uuid, text, text, text, text) to cenpaya_payment_worker;
+grant execute on function public.finalize_withdrawal_from_gateway(uuid, text, text, text, text) to authenticated;
 
 revoke all on function public.admin_set_gateway_credentials(text, text, text, text, text) from public, anon;
 grant execute on function public.admin_set_gateway_credentials(text, text, text, text, text) to authenticated;
