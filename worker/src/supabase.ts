@@ -18,9 +18,9 @@ export function createPublicSupabaseClient(env: Env): SupabaseClient {
 }
 
 /**
- * Uses a short-lived JWT for the restricted cenpaya_payment_worker Postgres role.
- * The role has no table privileges and can execute only the protected payment
- * functions installed by the Worker SQL migration. Never uses service_role.
+ * Uses a short-lived JWT with the existing authenticated Postgres role and a
+ * private app_metadata.cenpaya_payment_worker claim. Privileged RPCs validate
+ * that signed claim internally. Never uses service_role or a custom DB role.
  */
 export async function createPaymentWorkerClient(env: Env, subject: string): Promise<SupabaseClient> {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
