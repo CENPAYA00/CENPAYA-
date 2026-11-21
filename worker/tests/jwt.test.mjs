@@ -31,6 +31,21 @@ void describe("D1 identity assertion verification", () => {
     assert.equal(await verifyD1IdentityAssertion(token, secret, now), userId);
   });
 
+  void it("allows bounded clock skew while keeping assertions short-lived", async () => {
+    const now = 1_800_000_000;
+    const withinFutureSkew = await signHmacJwt({
+      iss: "cenpaya-d1-worker", aud: "cenpaya-supabase-worker",
+      sub: userId, iat: now + 15, exp: now + 120, jti: "fresh-random-assertion-id-1234",
+    }, secret);
+    assert.equal(await verifyD1IdentityAssertion(withinFutureSkew, secret, now), userId);
+
+    const withinExpirySkew = await signHmacJwt({
+      iss: "cenpaya-d1-worker", aud: "cenpaya-supabase-worker",
+      sub: userId, iat: now - 120, exp: now - 5, jti: "fresh-random-assertion-id-5678",
+    }, secret);
+    assert.equal(await verifyD1IdentityAssertion(withinExpirySkew, secret, now), userId);
+  });
+
   void it("rejects a modified signature", async () => {
     const now = 1_800_000_000;
     const token = await signHmacJwt({
@@ -51,9 +66,9 @@ void describe("D1 identity assertion verification", () => {
     for (const claims of [
       { ...base, aud: "wrong-audience" },
       { ...base, sub: "not-a-uuid" },
-      { ...base, iat: now + 1 },
-      { ...base, exp: now + 31 },
-      { ...base, exp: now },
+      { ...base, iat: now + 16 },
+      { ...base, exp: now + 121 },
+      { ...base, exp: now - 16 },
     ]) {
       const token = await signHmacJwt(claims, secret);
       await assert.rejects(() => verifyD1IdentityAssertion(token, secret, now));
