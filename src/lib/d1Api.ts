@@ -1,4 +1,5 @@
-const API_BASE = (import.meta.env.VITE_D1_API_URL || "").replace(/\\/+$/, "");
+let API_BASE = import.meta.env.VITE_D1_API_URL || "";
+while (API_BASE.endsWith("/")) API_BASE = API_BASE.slice(0, -1);
 
 export function d1ApiUrl(path: string): string {
   if (!API_BASE) throw new Error("D1 API URL is not configured (VITE_D1_API_URL).");
