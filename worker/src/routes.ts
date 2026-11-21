@@ -181,9 +181,12 @@ export async function handleAuthenticatedApi(
       const amountValue = listing.price_is_range === true ? listing.price_min : listing.price;
       const amount = typeof amountValue === "number" ? amountValue : Number(amountValue);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000_000) return failure("listing_price_invalid", 409, headers);
+      const { data: member, error: memberError } = await supabase.from("users").select("is_subscribed").eq("id", userId).maybeSingle();
+      if (memberError) return failure("checkout_membership_unavailable", 503, headers);
+      const suffix = member?.is_subscribed ? "member" : "non_member";
       const [{ data: pct, error: pctError }, { data: fixed, error: fixedError }] = await Promise.all([
-        supabase.rpc("setting", { p_key: "fee_pct_non_member" }),
-        supabase.rpc("setting", { p_key: "fee_fixed_non_member" }),
+        supabase.rpc("setting", { p_key: "fee_pct_" + suffix }),
+        supabase.rpc("setting", { p_key: "fee_fixed_" + suffix }),
       ]);
       if (pctError || fixedError) return failure("checkout_fee_unavailable", 503, headers);
       const feePct = Number(pct), feeFixed = Number(fixed);
@@ -199,8 +202,9 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && path === "/api/v1/checkout/orders") {
     const body = await readJsonObject(request, 16_384);
     const listingId = typeof body?.listing_id === "string" ? body.listing_id.trim() : "";
-    const paymentMethod = body?.payment_method === "momo" ? "momo" : body?.payment_method === "wallet" ? "wallet" : "";
-    if (!body || !listingId || listingId.length > 128 || !paymentMethod ||
+    const paymentMethod = body?.payment_method === "wallet" ? "wallet" : "";
+    const idempotencyKey = typeof body?.idempotency_key === "string" ? body.idempotency_key.trim() : "";
+    if (!body || !listingId || listingId.length > 128 || !paymentMethod || idempotencyKey.length < 16 ||
         !env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) {
       return failure("invalid_checkout_request", 400, headers);
     }
@@ -226,9 +230,12 @@ export async function handleAuthenticatedApi(
         amount > 1_000_000_000_000 || listing.status === "deleted" || listing.status === "inactive") {
       return failure("listing_not_available", 409, headers);
     }
+    const { data: member, error: memberError } = await supabase.from("users").select("is_subscribed").eq("id", userId).maybeSingle();
+    if (memberError) return failure("checkout_membership_unavailable", 503, headers);
+    const suffix = member?.is_subscribed ? "member" : "non_member";
     const [{ data: feePctData, error: feePctError }, { data: feeFixedData, error: feeFixedError }] = await Promise.all([
-      supabase.rpc("setting", { p_key: "fee_pct_non_member" }),
-      supabase.rpc("setting", { p_key: "fee_fixed_non_member" }),
+      supabase.rpc("setting", { p_key: "fee_pct_" + suffix }),
+      supabase.rpc("setting", { p_key: "fee_fixed_" + suffix }),
     ]);
     if (feePctError || feeFixedError) return failure("checkout_fee_unavailable", 503, headers);
     const feePct = Number(feePctData);
@@ -239,6 +246,19 @@ export async function handleAuthenticatedApi(
     }
     const cleanText = (value: unknown, max: number) =>
       typeof value === "string" ? value.trim().slice(0, max) : "";
+    const total = amount + Math.round(amount * feePct / 100) + feeFixed;
+    const { data: wallet, error: walletError } = await supabase.from("wallets").select("available_funds").eq("user_id", userId).maybeSingle();
+    if (walletError) return failure("wallet_balance_unavailable", 502, headers);
+    if (!wallet || Number(wallet.available_funds) < total) return failure("insufficient_wallet_balance", 409, headers);
+    try {
+      const idemResponse = await env.D1_IDENTITY.fetch("https://d1.internal/internal/v1/idempotency/consume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET },
+        body: JSON.stringify({ user_id: userId, scope: "marketplace_order", idempotency_key: idempotencyKey }),
+      });
+      if (idemResponse.status === 409) return failure("idempotency_conflict", 409, headers);
+      if (!idemResponse.ok) return failure("idempotency_service_unavailable", 503, headers);
+    } catch { return failure("idempotency_service_unavailable", 503, headers); }
     const payload = {
       buyer_id: userId,
       seller_id: sellerId,
@@ -257,7 +277,7 @@ export async function handleAuthenticatedApi(
       payment_method: paymentMethod,
       payment_phone: paymentMethod === "momo" ? cleanText(body.payment_phone, 32) || null : null,
     };
-    if (paymentMethod === "momo" && !payload.payment_phone) return failure("payment_phone_required", 400, headers);
+    if (paymentMethod !== "wallet") return failure("marketplace_mobile_money_checkout_unavailable", 501, headers);
     const { data: order, error } = await supabase.from("orders").insert(payload).select("id").single();
     if (error || !order?.id) return failure("order_creation_failed", 409, headers);
     return success({ id: order.id, amount, fee_pct: feePct, fee_fixed: feeFixed }, headers);
