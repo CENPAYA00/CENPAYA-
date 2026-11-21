@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Search as SearchIcon, X, Clock, User as UserIcon, Store, Briefcase, FileText } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { getCachedUser } from '../lib/cache';
+import { d1Request } from '../lib/d1Api';
 import DemoBadge from '../components/DemoBadge';
 
 type Context = 'home' | 'market' | 'services';
@@ -32,7 +31,6 @@ export default function Search() {
   const [recent, setRecent] = useState<string[]>([]);
   const [people, setPeople] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [meId, setMeId] = useState<string | null>(null);
 
   useEffect(() => { setContext(contextParam); }, [contextParam]);
 
@@ -44,19 +42,11 @@ export default function Search() {
   }, []);
 
   useEffect(() => {
-    const load = async () => {
-      const me = await getCachedUser();
-      setMeId(me?.id || null);
-
-      const { data } = await supabase
-        .from('public_profiles')
-        .select('id, username, avatar_url, occupation, city')
-        .limit(20);
-
-      const filtered = (data || []).filter((u: any) => u.id !== me?.id).slice(0, 8);
-      setPeople(filtered);
-    };
-    load();
+    let active = true;
+    d1Request<{ data: any[] }>('/api/profiles/suggestions')
+      .then(({ data }) => { if (active) setPeople(data || []); })
+      .catch(() => { if (active) setPeople([]); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -73,87 +63,14 @@ export default function Search() {
     const run = async () => {
       setLoading(true);
       try {
-        let list: Result[] = [];
-
-        if (context === 'home') {
-          const { data } = await supabase
-            .from('posts')
-            .select('id, user_id, content, image_url, post_type, is_demo, created_at')
-            .eq('moderation_status', 'approved')
-            .is('archived_at', null)
-            .ilike('content', `%${debounced}%`)
-            .limit(30);
-
-          const userIds = [...new Set((data || []).map((p: any) => p.user_id))];
-          const { data: profiles } = await supabase
-            .from('public_profiles')
-            .select('id, username')
-            .in('id', userIds.length ? userIds : ['00000000-0000-0000-0000-000000000000']);
-          const nameMap: Record<string, string> = {};
-          (profiles || []).forEach((p: any) => { nameMap[p.id] = p.username; });
-
-          list = (data || []).map((p: any) => ({
-            id: p.id,
-            kind: 'post',
-            title: (p.content || 'Post').slice(0, 80),
-            subtitle: `@${nameMap[p.user_id] || 'user'}`,
-            cover: p.image_url ? p.image_url.split(',')[0] : null,
-            meta: new Date(p.created_at).toLocaleDateString(),
-            is_demo: p.is_demo,
-          }));
-        }
-
-        if (context === 'market') {
-          const { data, error } = await supabase.rpc('get_market_listings', {
-            p_search: debounced,
-            p_category: null,
-            p_limit: 40,
-            p_offset: 0,
-          });
-          if (error) console.warn(error);
-          const listings = (data?.listings || []) as any[];
-          list = listings.map((l: any) => ({
-            id: l.id,
-            kind: 'listing',
-            title: l.title,
-            subtitle: l.location_city || l.location_region || l.location_country || '',
-            cover: Array.isArray(l.images) ? l.images[0] : null,
-            meta: (l.price_is_range
-              ? `${Number(l.price_min).toLocaleString()} – ${Number(l.price_max ?? l.price_min).toLocaleString()}`
-              : `${Number(l.price || 0).toLocaleString()}`) + ' XAF',
-            is_demo: l.is_demo,
-          }));
-        }
-
-        if (context === 'services') {
-          const { data } = await supabase
-            .from('services')
-            .select('id, title, category, starting_price, thumbnail_url, images, is_demo, seller_username:seller_id')
-            .eq('is_active', true)
-            .eq('moderation_status', 'approved')
-            .ilike('title', `%${debounced}%`)
-            .limit(40);
-
-          const sellerIds = [...new Set((data || []).map((s: any) => s.seller_username))];
-          const { data: profiles } = await supabase
-            .from('public_profiles')
-            .select('id, username')
-            .in('id', sellerIds.length ? sellerIds : ['00000000-0000-0000-0000-000000000000']);
-          const nameMap: Record<string, string> = {};
-          (profiles || []).forEach((p: any) => { nameMap[p.id] = p.username; });
-
-          list = (data || []).map((s: any) => ({
-            id: s.id,
-            kind: 'service',
-            title: s.title,
-            subtitle: `@${nameMap[s.seller_username] || 'seller'}${s.category ? ` · ${s.category}` : ''}`,
-            cover: s.thumbnail_url || (Array.isArray(s.images) ? s.images[0] : null),
-            meta: `From ${Number(s.starting_price || 0).toLocaleString()} XAF`,
-            is_demo: s.is_demo,
-          }));
-        }
-
-        if (!cancelled) setResults(list);
+        const type = context === 'home' ? 'post' : context === 'market' ? 'listing' : 'service';
+        const response = await d1Request<{ data: Result[] }>(
+          '/api/search?q=' + encodeURIComponent(debounced) + '&type=' + type + '&limit=40'
+        );
+        if (!cancelled) setResults((response.data || []) as Result[]);
+      } catch (error) {
+        console.warn('AI Search request failed', error);
+        if (!cancelled) setResults([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
