@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, Send, Headphones, MessageCircle, ChevronRight, Phone, Clock } from 'lucide-react';
@@ -37,16 +38,15 @@ export default function Wallet() {
       const { user } = await d1Me();
       if (!user) { setLoading(false); return; }
 
-      const [walletRes, userRes, escrowRes, countriesRes] = await Promise.all([
-        supabase.from('wallets').select('*').eq('user_id', user.id).single(),
+      const [walletRes, userRes, countriesRes] = await Promise.all([
+        supabaseWorkerRequest<{ data: any }>('/api/v1/wallet'),
         supabase.from('users').select('username, country_iso, momo_number, momo_provider, is_subscribed').eq('id', user.id).single(),
-        supabase.from('buyer_escrow_summary').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('supported_countries').select('code, name, phone_prefix, flag_emoji').eq('is_active', true).order('code'),
       ]);
 
       setWallet(walletRes.data);
       setUser(userRes.data);
-      setEscrow(escrowRes.data);
+      setEscrow(walletRes.data?.escrow_summary || null);
       setCountries(countriesRes.data || []);
 
       if (userRes.data?.momo_number) setMomoNumber(userRes.data.momo_number);
