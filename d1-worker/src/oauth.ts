@@ -10,6 +10,7 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify(data),
 const fail = (message: string, status = 400) => json({ success: false, error: message }, status);
 const str = (value: unknown, max = 500) => typeof value === "string" ? value.trim().slice(0, max) : "";
 const allowedOrigins = (env: Env) => (env.ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
+const sessionCookie = (token:string,env:Env) => { const ttl=Math.max(300,Math.min(2592000,Number(env.SESSION_TTL_SECONDS||2592000))); return "cenpaya_session="+encodeURIComponent(token)+"; Path=/; Max-Age="+ttl+"; HttpOnly; Secure; SameSite=None"; };
 
 export async function handleGoogleOAuth(
   request: Request, env: Env, url: URL, path: string, method: string,
@@ -70,8 +71,8 @@ export async function handleGoogleOAuth(
       if(!user||user.banned||user.account_status!=="active")throw new Error("CenPaya account is unavailable");
       const session=await createSession(env.DB,userId,request,env);
       const destination=new URL("/",pending.return_to);
-      destination.hash=new URLSearchParams({d1_token:session,auth_provider:"google"}).toString();
-      return Response.redirect(destination.toString(),302);
+      destination.hash=new URLSearchParams({auth_provider:"google"}).toString();
+      return new Response(null,{status:302,headers:{Location:destination.toString(),"Set-Cookie":sessionCookie(session,env),"Cache-Control":"no-store"}});
     }catch(error){
       console.error("Google OAuth callback failed",error instanceof Error?error.message:"unknown");
       return Response.redirect(new URL("/?google_error=sign_in_failed",pending.return_to).toString(),302);
