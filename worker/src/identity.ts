@@ -56,7 +56,7 @@ export async function authenticateD1Session(request: Request, env: Env): Promise
   } catch {
     throw new IdentityError("service_unavailable", 503);
   }
-  if (!assertion) throw new IdentityError("invalid_identity_response", 503);
+  if (!assertion) throw new IdentityError("service_unavailable", 503);
 
   let verifiedAssertion: { userId: string; jti: string; expiresAt: number };
   try {
