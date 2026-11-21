@@ -149,6 +149,10 @@ function success(data: unknown, headers: Headers) {
 function failure(error: string, status: number, headers: Headers) {
   return jsonResponse({ success: false, error }, status, headers);
 }
+function onlyKeys(body: Record<string, unknown>, allowed: string[]): boolean {
+  const keys = new Set(allowed);
+  return Object.keys(body).every((key) => keys.has(key));
+}
 function normalizedAdminPath(pathname: string): string {
   return pathname.startsWith("/api/admin/") ? "/api/v1/admin/" + pathname.slice("/api/admin/".length) : pathname;
 }
@@ -268,7 +272,7 @@ export async function handleAuthenticatedApi(
   const escrowAction = path.match(/^\/api\/v1\/admin\/escrows\/([0-9a-f-]{36})\/action$/i);
   if (method === "POST" && escrowAction) {
     const body = await readJsonObject(request);
-    if (!body) return failure("invalid_json_body", 400, headers);
+    if (!body || !onlyKeys(body, ["kind", "action", "reason"])) return failure("invalid_json_body", 400, headers);
     const kind = body.kind === "service" ? "service" : body.kind === "order" ? "order" : "";
     const action = ["release", "refund", "cancel", "dispute"].includes(String(body.action)) ? String(body.action) : "";
     const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 1000) : "";
@@ -282,7 +286,7 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && adminBan) {
     const body = await readJsonObject(request);
     const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
-    if (!body || reason.length < 10 || reason.length > 1000) return failure("invalid_ban_request", 400, headers);
+    if (!body || !onlyKeys(body, ["reason"]) || reason.length < 10 || reason.length > 1000) return failure("invalid_ban_request", 400, headers);
     const result = await rpc(supabase, "admin_ban_user", { p_target_id: adminBan[1], p_reason: reason });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
@@ -296,8 +300,8 @@ export async function handleAuthenticatedApi(
     const amount = body?.amount;
     const gateway = typeof body?.gateway === "string" ? body.gateway.toUpperCase() : "";
     const destination = typeof body?.destination === "string" ? body.destination.trim() : "";
-    if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0 ||
-        ! /^[A-Z0-9_]{2,40}$/.test(gateway) || destination.length < 7 || destination.length > 80) {
+    if (!body || !onlyKeys(body, ["amount", "gateway", "destination"]) || !Number.isSafeInteger(amount) || Number(amount) <= 0 ||
+        !/^[A-Z0-9_]{2,40}$/.test(gateway) || destination.length < 7 || destination.length > 80) {
       return failure("invalid_platform_gains_withdrawal", 400, headers);
     }
     const result = await rpc(supabase, "admin_withdraw_platform_gains", {
@@ -309,7 +313,7 @@ export async function handleAuthenticatedApi(
     const body = await readJsonObject(request);
     const amount = body?.amount;
     const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
-    if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0 || reason.length < 3 || reason.length > 500) {
+    if (!body || !onlyKeys(body, ["amount", "reason"]) || !Number.isSafeInteger(amount) || Number(amount) <= 0 || reason.length < 3 || reason.length > 500) {
       return failure("invalid_admin_wallet_topup", 400, headers);
     }
     const result = await rpc(supabase, "admin_topup_my_wallet", { p_amount: Number(amount), p_reason: reason });
@@ -320,7 +324,7 @@ export async function handleAuthenticatedApi(
     const amount = body?.amount;
     const momo = typeof body?.momo_number === "string" ? body.momo_number.trim() : "";
     const provider = typeof body?.provider === "string" ? body.provider.toLowerCase() : "";
-    if (!body || !Number.isSafeInteger(amount) || Number(amount) < 1000 || momo.length < 8 || momo.length > 32 ||
+    if (!body || !onlyKeys(body, ["amount", "momo_number", "provider"]) || !Number.isSafeInteger(amount) || Number(amount) < 1000 || momo.length < 8 || momo.length > 32 ||
         !["mtn_momo", "orange_money", "airtel_money", "moov_money"].includes(provider)) {
       return failure("invalid_admin_wallet_withdrawal", 400, headers);
     }
@@ -332,7 +336,7 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && path === "/api/v1/admin/gains/withdraw-to-wallet") {
     const body = await readJsonObject(request);
     const amount = body?.amount;
-    if (!body || !Number.isSafeInteger(amount) || Number(amount) <= 0) {
+    if (!body || !onlyKeys(body, ["amount"]) || !Number.isSafeInteger(amount) || Number(amount) <= 0) {
       return failure("invalid_gains_withdrawal", 400, headers);
     }
     const result = await rpc(supabase, "admin_withdraw_gains_to_wallet", { p_amount: Number(amount) });
@@ -345,7 +349,9 @@ export async function handleAuthenticatedApi(
     const secretKey = typeof body?.api_secret_key === "string" ? body.api_secret_key.trim() : "";
     const webhookSecret = typeof body?.webhook_secret === "string" ? body.webhook_secret.trim() : null;
     const environment = typeof body?.environment === "string" ? body.environment : "production";
-    if (!body || !provider || provider.length > 80 || !publicKey || publicKey.length > 2048 ||
+    if (!body || !onlyKeys(body, ["provider_name", "api_public_key", "api_secret_key", "webhook_secret", "environment"]) ||
+        (body.webhook_secret !== undefined && body.webhook_secret !== null && typeof body.webhook_secret !== "string") ||
+        !provider || provider.length > 80 || !publicKey || publicKey.length > 2048 ||
         !secretKey || secretKey.length > 4096 || (webhookSecret !== null && webhookSecret.length > 4096) ||
         !["sandbox", "production"].includes(environment)) {
       return failure("invalid_gateway_credentials_request", 400, headers);
@@ -360,7 +366,7 @@ export async function handleAuthenticatedApi(
     const body = await readJsonObject(request);
     const provider = typeof body?.provider_name === "string" ? body.provider_name.trim() : "";
     const environment = typeof body?.environment === "string" ? body.environment : "production";
-    if (!body || !provider || provider.length > 80 || !["sandbox", "production"].includes(environment)) {
+    if (!body || !onlyKeys(body, ["provider_name", "environment"]) || !provider || provider.length > 80 || !["sandbox", "production"].includes(environment)) {
       return failure("invalid_gateway_credentials_request", 400, headers);
     }
     const result = await rpc(supabase, "admin_remove_gateway_credentials", {
@@ -372,7 +378,7 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && adminRole) {
     const body = await readJsonObject(request);
     const role = typeof body?.role === "string" ? body.role : "";
-    if (!body || !["user", "support_agent", "super_admin"].includes(role)) return failure("invalid_role_assignment", 400, headers);
+    if (!body || !onlyKeys(body, ["role"]) || !["user", "support_agent", "super_admin"].includes(role)) return failure("invalid_role_assignment", 400, headers);
     const result = await rpc(supabase, "admin_assign_role", { p_target_user_id: adminRole[1], p_new_role: role });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
@@ -380,7 +386,7 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && adminPermission) {
     const body = await readJsonObject(request);
     const permission = typeof body?.permission_key === "string" ? body.permission_key.trim() : "";
-    if (!body || !/^[a-z0-9_.:-]{2,100}$/i.test(permission)) return failure("invalid_permission_grant", 400, headers);
+    if (!body || !onlyKeys(body, ["permission_key"]) || !/^[a-z0-9_.:-]{2,100}$/i.test(permission)) return failure("invalid_permission_grant", 400, headers);
     const result = await rpc(supabase, "admin_grant_permission", {
       p_target_user_id: adminPermission[1], p_permission_key: permission,
     });
@@ -390,7 +396,7 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && adminMembership) {
     const body = await readJsonObject(request);
     const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
-    if (!body || reason.length < 5 || reason.length > 1000) return failure("invalid_membership_grant", 400, headers);
+    if (!body || !onlyKeys(body, ["reason"]) || reason.length < 5 || reason.length > 1000) return failure("invalid_membership_grant", 400, headers);
     const result = await rpc(supabase, "admin_grant_membership", {
       p_target_user_id: adminMembership[1], p_reason: reason,
     });
@@ -410,7 +416,7 @@ export async function handleAuthenticatedApi(
     const evidence = body?.evidence_urls;
     const ip = body?.ip_address;
     const validActions = ["flag", "suspend", "ban", "unban", "lift_suspension", "extend_suspension", "note"];
-    if (!body || !validActions.includes(action) || reason.length < 10 || reason.length > 1000 ||
+    if (!body || !onlyKeys(body, ["action", "reason", "duration_hours", "evidence_urls", "ip_address"]) || !validActions.includes(action) || reason.length < 10 || reason.length > 1000 ||
         (duration !== undefined && duration !== null && (!Number.isSafeInteger(duration) || Number(duration) < 1 || Number(duration) > 87600)) ||
         (evidence !== undefined && evidence !== null && (!Array.isArray(evidence) || evidence.length > 20 ||
           !evidence.every((item) => typeof item === "string" && item.length <= 2048))) ||
@@ -428,8 +434,8 @@ export async function handleAuthenticatedApi(
     const body = await readJsonObject(request);
     const outcome = typeof body?.outcome === "string" ? body.outcome : "";
     const notes = typeof body?.notes === "string" ? body.notes.trim() : null;
-    if (!body || !["buyer_wins", "seller_wins", "split", "withdrawn"].includes(outcome) ||
-        (notes !== null && notes.length > 2000)) return failure("invalid_dispute_resolution", 400, headers);
+    if (!body || !onlyKeys(body, ["outcome", "notes"]) || (body.notes !== undefined && typeof body.notes !== "string") ||
+        !["buyer_wins", "seller_wins", "split", "withdrawn"].includes(outcome) || (notes !== null && notes.length > 2000)) return failure("invalid_dispute_resolution", 400, headers);
     const result = await rpc(supabase, "admin_resolve_dispute", {
       p_dispute_id: adminDispute[1], p_outcome: outcome, p_notes: notes,
     });
@@ -440,7 +446,8 @@ export async function handleAuthenticatedApi(
     const body = await readJsonObject(request);
     const decision = typeof body?.decision === "string" ? body.decision : "";
     const reason = typeof body?.reason === "string" ? body.reason.trim() : null;
-    if (!body || !["approved", "rejected"].includes(decision) || (reason !== null && reason.length > 1000)) {
+    if (!body || !onlyKeys(body, ["decision", "reason"]) || (body.reason !== undefined && typeof body.reason !== "string") ||
+        !["approved", "rejected"].includes(decision) || (reason !== null && reason.length > 1000)) {
       return failure("invalid_kyc_review", 400, headers);
     }
     const result = await rpc(supabase, "admin_review_kyc", {
@@ -457,8 +464,8 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && adminRpc) {
     const name = adminRpc[1];
     const body = await readJsonObject(request, 64_000);
-    if (!body) return failure("invalid_json_body", 400, headers);
-    const args = body.args === undefined ? {} :
+    if (!body || !onlyKeys(body, ["args"])) return failure("invalid_json_body", 400, headers);
+    const args = body.args === undefined ? {}
       body.args && typeof body.args === "object" && !Array.isArray(body.args)
         ? body.args as Record<string, unknown> : null;
     if (!args || !validAdminRpcArgs(name, args)) {
