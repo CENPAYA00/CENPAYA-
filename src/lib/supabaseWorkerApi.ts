@@ -36,7 +36,7 @@ export async function supabaseWorkerRequest<T>(path: string, options: RequestIni
     response = await fetch(getSupabaseWorkerUrl(path), {
       ...options,
       headers,
-      credentials: 'omit',
+      credentials: 'include',
       cache: 'no-store',
     });
   } catch {
