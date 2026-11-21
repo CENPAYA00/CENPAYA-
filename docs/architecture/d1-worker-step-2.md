@@ -11,7 +11,9 @@ Based on the private `cenpaya-db-export.zip` supplied for this project (exported
 ## Changes in this integration branch
 
 - Adds migration 52 for D1-owned password hashes, password update timestamps, and unique account-identifier indexes.
-- Adds a D1 Worker with registration, OTP verification, password sign-in, session revocation, profile read/update, public feed read/post creation, marketplace category/search/listing creation, direct messaging, notifications, and support ticket list/create.
+- Adds migration 53 for Google OAuth provider identities and one-time PKCE state.
+- Adds a D1 Worker with registration, OTP verification, password sign-in, Google OAuth callback/session creation, session revocation, profile read/update, public feed read/post creation, marketplace category/search/listing creation, direct messaging, notifications, and support ticket list/create.
+- Routes the frontend search page through the Cloudflare AI Search integration and adds optional KV public-cache and Upstash Redis rate-limit adapters.
 - Keeps financial truth in Supabase. The D1 Worker does not create wallets, debit balances, settle orders, release escrow, activate boosts, or mark monetary referrals paid.
 - Marketplace listing creation starts in `draft`; publication/moderation remains a separate controlled workflow.
 - Uses the existing D1 views `public_profiles` and `public_marketplace_search` and existing tables/columns from the export.
@@ -21,10 +23,14 @@ Based on the private `cenpaya-db-export.zip` supplied for this project (exported
 - Apply `d1-worker/migrations/00052_d1_password_auth.sql` to D1 only after checking the live database has no duplicate usernames, emails, or phone numbers.
 - Set `ALLOWED_ORIGINS` to the exact CenPaya frontend origins.
 - Set `OTP_PEPPER` as a Worker secret.
+- Configure Google OAuth (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `FRONTEND_URL`) and register the exact callback URI with Google.
+- Bind the existing Cloudflare AI Search/Workers AI binding as `AI` and set `AI_SEARCH_NAME` to the existing index/project name.
+- Optionally bind the rebuildable public-data KV namespace as `CACHE` and configure Upstash Redis REST URL/token for rate limiting.
+- Bind `OTP_DELIVERY` to the Cenpaya API email-delivery Worker that owns Resend and Brevo credentials. See `d1-worker-integrations.md` for the contract.
 - Bind `OTP_DELIVERY` to the approved email/SMS delivery Worker. The auth registration and verification endpoints fail closed when that binding is unavailable; they do not pretend an OTP was sent.
 - Existing accounts have a NULL `password_hash` after migration and need to use password setup/reset before password sign-in.
 
-The migration file is committed but has **not** been applied to the live D1 database. The Worker is not deployed; no live account or database data was changed.
+Migrations 52 and 53 are committed but have **not** been applied to the live D1 database. The Worker is not deployed; no live account or database data was changed.
 
 ## Deliberately not claimed as complete
 
