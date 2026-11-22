@@ -31,14 +31,22 @@ async function notify(env: Env, recipientId: string, actorId: string, type: stri
 const PROFILE_SELECT = "u.id,u.username,u.display_name,u.avatar_url,u.bio,u.location_city,u.occupation,u.created_at";
 
 async function canViewProfile(db: D1Database, viewerId: string | null, profileId: string, visibility: string): Promise<boolean> {
-  if (visibility === "public" || viewerId === profileId) return true;
-  if (!viewerId) return false;
+  if (viewerId === profileId) return true;
+  if (!viewerId) return visibility === "public";
+  const blocked = await db.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(viewerId,profileId,profileId,viewerId).first();
+  if (blocked) return false;
+  if (visibility === "public") return true;
   if (visibility === "followers") return !!(await db.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId, profileId).first());
   return false;
 }
 
 async function canViewPost(db: D1Database, viewerId: string | null, authorId: string, visibility: string): Promise<boolean> {
-  if (visibility === "public" || viewerId === authorId) return true;
+  if (viewerId === authorId) return true;
+  if (viewerId) {
+    const blocked = await db.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(viewerId,authorId,authorId,viewerId).first();
+    if (blocked) return false;
+  }
+  if (visibility === "public") return true;
   if (!viewerId) return false;
   if (visibility === "followers") {
     return !!(await db.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId, authorId).first());
