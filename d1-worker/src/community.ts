@@ -106,5 +106,83 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     return json({success:true,data:rows.results});
   }
 
+  const chatPeer = path.match(/^\/api\/chat\/threads\/([^/]+)\/peer$/);
+  if (chatPeer && method === "GET") {
+    if (!user) return fail("Unauthorized", 401);
+    const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatPeer[1], user.id).first();
+    if (!member) return fail("Conversation not found", 404);
+    const peer = await env.DB.prepare(`SELECT u.id,u.username,u.display_name,u.avatar_url,u.bio,u.last_active_at FROM chat_thread_members m JOIN users u ON u.id=m.user_id WHERE m.thread_id=? AND m.user_id<>? AND m.left_at IS NULL AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL LIMIT 1`).bind(chatPeer[1], user.id).first();
+    return peer ? json({ success: true, data: peer }) : fail("Conversation partner not found", 404);
+  }
+  const chatSettings = path.match(/^\/api\/chat\/threads\/([^/]+)\/settings$/);
+  if (chatSettings && method === "PATCH") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatSettings[1], user.id).first();
+    if (!member) return fail("Conversation not found", 404);
+    const sets: string[] = [], values: unknown[] = [];
+    if (b.chat_theme !== undefined) {
+      const theme = str(b.chat_theme, 20);
+      if (!["emerald", "ocean", "sunset", "midnight"].includes(theme)) return fail("Invalid chat theme");
+      sets.push("chat_theme=?"); values.push(theme);
+    }
+    if (b.disappearing_seconds !== undefined) {
+      const seconds = b.disappearing_seconds;
+      if (seconds !== null && (!Number.isSafeInteger(seconds) || Number(seconds) < 60 || Number(seconds) > 2592000)) return fail("Invalid disappearing-message duration");
+      sets.push("disappearing_seconds=?"); values.push(seconds);
+    }
+    if (!sets.length) return fail("No supported chat settings supplied");
+    values.push(chatSettings[1], user.id);
+    await env.DB.prepare("UPDATE chat_thread_members SET " + sets.join(",") + " WHERE thread_id=? AND user_id=?").bind(...values).run();
+    return json({ success: true });
+  }
+  if (path === "/api/chat/alerts" && method === "GET") {
+    if (!user) return fail("Unauthorized", 401);
+    const after = url.searchParams.get("after");
+    const unread = await env.DB.prepare(`SELECT COUNT(*) AS count FROM chat_messages m JOIN chat_thread_members mine ON mine.thread_id=m.thread_id
+      WHERE mine.user_id=? AND mine.left_at IS NULL AND m.sender_id<>? AND m.created_at>COALESCE(mine.last_read_at,'1970-01-01T00:00:00.000Z')`).bind(user.id, user.id).first<{ count: number }>();
+    const messages = await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,m.message_text,m.created_at,u.username AS sender_username
+      FROM chat_messages m JOIN chat_thread_members mine ON mine.thread_id=m.thread_id
+      JOIN users u ON u.id=m.sender_id
+      WHERE mine.user_id=? AND mine.left_at IS NULL AND m.sender_id<>?
+      AND m.created_at>COALESCE(mine.last_read_at,'1970-01-01T00:00:00.000Z')
+      ${after ? "AND m.created_at>?" : ""}
+      ORDER BY m.created_at ASC LIMIT 50`).bind(user.id, user.id, ...(after ? [after] : [])).all();
+    return json({ success: true, data: { unread_count: Number(unread?.count || 0), messages: messages.results } });
+  }
+
+  const supportTicket = path.match(/^\/api\/support\/tickets\/([^/]+)$/);
+  if (supportTicket && method === "GET") {
+    if (!user) return fail("Unauthorized", 401);
+    const ticket = await env.DB.prepare("SELECT id,ticket_number,subject,description,category,priority,status,assigned_agent_ref,last_message_at,created_at,updated_at FROM support_tickets WHERE id=? AND user_id=?").bind(supportTicket[1], user.id).first<Record<string, unknown>>();
+    if (!ticket) return fail("Support ticket not found", 404);
+    const messages = await env.DB.prepare(`SELECT m.id,COALESCE(m.sender_user_id,m.support_agent_ref) AS sender_id,
+      CASE WHEN m.sender_type='support' THEN 'staff' ELSE 'user' END AS sender_role,
+      COALESCE(u.username,'Support') AS sender_username,m.message_text AS body,m.created_at
+      FROM support_ticket_messages m LEFT JOIN users u ON u.id=m.sender_user_id
+      WHERE m.ticket_id=? AND m.is_internal_note=0 AND m.status<>'deleted' ORDER BY m.created_at ASC LIMIT 300`).bind(supportTicket[1]).all();
+    return json({ success: true, data: { ticket, messages: messages.results } });
+  }
+  const supportRead = path.match(/^\/api\/support\/tickets\/([^/]+)\/read$/);
+  if (supportRead && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const result = await env.DB.prepare("UPDATE support_tickets SET user_last_read_at=" + NOW + " WHERE id=? AND user_id=?").bind(supportRead[1], user.id).run();
+    return result.meta.changes ? json({ success: true }) : fail("Support ticket not found", 404);
+  }
+  const supportMessages = path.match(/^\/api\/support\/tickets\/([^/]+)\/messages$/);
+  if (supportMessages && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const message = str(b.body, 4000);
+    if (!message) return fail("Message cannot be empty");
+    const ticket = await env.DB.prepare("SELECT id,status FROM support_tickets WHERE id=? AND user_id=?").bind(supportMessages[1], user.id).first<{ id: string; status: string }>();
+    if (!ticket) return fail("Support ticket not found", 404);
+    if (ticket.status === "closed" || ticket.status === "resolved") return fail("This support ticket is closed", 409);
+    const id = uuid();
+    await env.DB.prepare("INSERT INTO support_ticket_messages(id,ticket_id,sender_type,sender_user_id,message_text) VALUES(?,?,'user',?,?)").bind(id, ticket.id, user.id, message).run();
+    await env.DB.prepare("UPDATE support_tickets SET status=CASE WHEN status='waiting_for_user' THEN 'in_progress' ELSE status END WHERE id=?").bind(ticket.id).run();
+    return json({ success: true, id }, 201);
+  }
+
   return null;
 }
