@@ -11,11 +11,13 @@ type Notif = {
   entity_id: string | null;
   title: string;
   body: string | null;
+  link_url?: string | null;
   is_read: boolean;
   created_at: string;
 };
 
 function notificationPath(item: Notif): string | null {
+  if (item.link_url && item.link_url.startsWith("/") && !item.link_url.startsWith("//")) return item.link_url;
   if (!item.entity_id) return null;
   switch (item.entity_type) {
     case 'post': return `/post/${item.entity_id}`;
