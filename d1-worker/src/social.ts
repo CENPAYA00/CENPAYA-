@@ -292,8 +292,9 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     if (method === "GET") {
       const row = await env.DB.prepare("SELECT profile_visibility,allow_tagging,tagging_visibility,default_post_visibility FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ profile_visibility: string; allow_tagging: number; tagging_visibility: string; default_post_visibility: string }>();
       const userRow = await env.DB.prepare("SELECT profile_visibility FROM users WHERE id=?").bind(user.id).first<{ profile_visibility: string }>();
+      const storedVisibility = row?.profile_visibility || userRow?.profile_visibility || "public";
       return json({ success: true, data: {
-        profile_visibility: (row?.profile_visibility || userRow?.profile_visibility || "public") === "private" ? "nobody" : (row?.profile_visibility || userRow?.profile_visibility || "public"),
+        profile_visibility: storedVisibility === "private" ? "nobody" : storedVisibility,
         allow_tagging: row?.tagging_visibility || (row?.allow_tagging === 0 ? "nobody" : "everyone"),
         default_post_visibility: row?.default_post_visibility || "public"
       } });
@@ -314,17 +315,21 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
   if (path === "/api/me/tagging-settings" && (method === "GET" || method === "PATCH")) {
     if (!user) return fail("Unauthorized", 401);
     if (method === "GET") {
-      const row = await env.DB.prepare("SELECT tagging_visibility,mentioning_visibility FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ tagging_visibility: string; mentioning_visibility: string }>();
-      return json({ success: true, data: { allow_tagging: row?.tagging_visibility || "everyone", allow_mentioning: row?.mentioning_visibility || "everyone" } });
+      const row = await env.DB.prepare("SELECT tagging_audience,mentioning_visibility FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ tagging_audience: string; mentioning_visibility: string }>();
+      const audience = row?.tagging_audience || "everyone";
+      const mentions = row?.mentioning_visibility || "everyone";
+      return json({ success: true, data: { allow_tagging: audience === "following" ? "followers" : audience, allow_mentioning: mentions === "following" ? "followers" : mentions } });
     }
     const b = await body(request); if (!b) return fail("Valid JSON body required");
-    const current = await env.DB.prepare("SELECT tagging_visibility,mentioning_visibility FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ tagging_visibility: string; mentioning_visibility: string }>();
-    const tagging = str(b.allow_tagging, 20) || current?.tagging_visibility || "everyone";
-    const mentioning = str(b.allow_mentioning, 20) || current?.mentioning_visibility || "everyone";
-    const valid = ["everyone", "followers", "friends", "nobody"];
+    const current = await env.DB.prepare("SELECT tagging_audience,mentioning_visibility FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ tagging_audience: string; mentioning_visibility: string }>();
+    const tagging = str(b.allow_tagging, 20) || (current?.tagging_audience === "following" ? "followers" : current?.tagging_audience) || "everyone";
+    const mentioning = str(b.allow_mentioning, 20) || (current?.mentioning_visibility === "following" ? "followers" : current?.mentioning_visibility) || "everyone";
+    const valid = ["everyone", "followers", "nobody"];
     if (!valid.includes(tagging) || !valid.includes(mentioning)) return fail("Invalid tagging or mentioning preference");
-    await env.DB.prepare("INSERT INTO user_privacy_settings(user_id,tagging_visibility,mentioning_visibility,allow_tagging) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET tagging_visibility=excluded.tagging_visibility,mentioning_visibility=excluded.mentioning_visibility,allow_tagging=excluded.allow_tagging,updated_at=" + NOW)
-      .bind(user.id, tagging, mentioning, tagging === "nobody" ? 0 : 1).run();
+    const storedTagging = tagging === "followers" ? "following" : tagging;
+    const storedMentioning = mentioning === "followers" ? "following" : mentioning;
+    await env.DB.prepare("INSERT INTO user_privacy_settings(user_id,tagging_audience,mentioning_visibility) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET tagging_audience=excluded.tagging_audience,mentioning_visibility=excluded.mentioning_visibility,updated_at=" + NOW)
+      .bind(user.id, storedTagging, storedMentioning).run();
     return json({ success: true });
   }
 
