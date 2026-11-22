@@ -42,7 +42,8 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
       if(taken)return fail("Phone number is already in use",409);
     }
     values.push(user.id);
-    const onboardingSet=b.onboarding_completed===true?",onboarding_completed=1":"";\n    const phoneVerificationReset=fields.includes("phone")?",phone_verified=0,phone_verified_at=NULL":"";
+    const onboardingSet=b.onboarding_completed===true?",onboarding_completed=1":"";
+    const phoneVerificationReset=fields.includes("phone")?",phone_verified=0,phone_verified_at=NULL":"";
     await env.DB.prepare("UPDATE users SET "+sets.join(",")+onboardingSet+phoneVerificationReset+",updated_at="+NOW+" WHERE id=?").bind(...values).run();
     const updated=await readUser(env.DB,user.id);return json({success:true,user:updated?safeUser(updated):null});
   }
