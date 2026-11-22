@@ -2,18 +2,20 @@
 
 The supplied export (2026-11-21) records 51 applied migrations and a live schema of 73 application tables, 3 views, 146 explicit indexes, and 68 triggers. The archive also contains user/profile/listing records; those data files are not committed here.
 
-Migration 52, `../database/d1/migrations/0052_oauth_worker_identity_support.sql`, reconciles the Worker with the export:
-- Adds `users.password_hash`, required by the existing password registration/login code but absent from the exported `users` table.
-- Adds `oauth_states` and `oauth_identities`, required by the Google OAuth routes but absent from the export.
-- Registration stores gender, date of birth, preferred language, and terms acceptance in existing `users` columns; the absent `user_onboarding_details` table is no longer referenced.
+Canonical migrations 52–55 reconcile the Worker with the 2026-11-21 export and frontend requirements:
+- **52** adds `users.password_hash`, `password_updated_at`, and the OAuth PKCE state/identity tables.
+- **53** adds persisted tagging/mentioning/default-post visibility and SMS/order notification preferences.
+- **54** adds per-member chat themes and disappearing-message settings, typed chat media/shared-post fields and read receipts, support read timestamps, and per-post feed preferences.
+- **55** adds per-field profile-detail visibility and dedicated user, chat-message, and community report tables.
+- Registration stores gender, date of birth, preferred language, and terms acceptance in existing `users` columns; no separate onboarding table is required.
 
 The export's views (`public_profiles`, `public_marketplace_search`, `stale_unverified_otps`) are present in the snapshot and used by the Worker. Backup tables are archival copies, not live application tables.
 
-Do not import the export's CSV/JSON/SQL row data into Git. It includes personal user data. This is the single canonical D1 migration directory for both the Worker and the main application. Wrangler is configured to read it through `migrations_dir = "../database/d1/migrations"`. Do not add parallel migration files under `d1-worker/migrations/`. Apply migrations 52, 53, and 54 only when the target D1 migration tracker is at version 51.
+Do not import the export's CSV/JSON/SQL row data into Git. It includes personal user data. This is the single canonical D1 migration directory for both the Worker and the main application. Wrangler is configured to read it through `migrations_dir = "../database/d1/migrations"`. Do not add parallel migration files under `d1-worker/migrations/`. Apply migrations 52, 53, 54, and 55 in order only after verifying the target D1 migration tracker. The supplied export is at version 51; do not reapply migrations if the live tracker has already advanced.
 
 ## Worker module layout and internal services
 
-The Worker entry point in `src/index.ts` now delegates security primitives to `src/security.ts`, account/session verification and OTP helpers to `src/auth.ts`, session creation to `src/sessions.ts`, and Google OAuth flows to `src/oauth.ts`. Shared request and environment types live in `src/types.ts`. `src/index.ts` is now a small 61-line entry point for CORS, health checks, and route dispatch. Authentication endpoints live in `src/auth-routes.ts`; protected service-to-service endpoints (identity assertions, replay protection, rate limits, admin overview, and idempotency) live in `src/internal.ts`; profile/country routes live in `src/profiles.ts`; follows, friend requests, post reactions/comments/bookmarks/shares, privacy, account details and notification preferences live in `src/social.ts`; marketplace/feed/listing routes live in `src/marketplace.ts`; direct chat, chat settings, support conversations, notifications and support routes live in `src/community.ts`; Google OAuth remains in `src/oauth.ts`; session storage remains in `src/sessions.ts`; and AI Search lives in `src/search.ts`.
+The Worker entry point in `src/index.ts` now delegates security primitives to `src/security.ts`, account/session verification and OTP helpers to `src/auth.ts`, session creation to `src/sessions.ts`, and Google OAuth flows to `src/oauth.ts`. Shared request and environment types live in `src/types.ts`. `src/index.ts` is now a small 61-line entry point for CORS, health checks, and route dispatch. Authentication endpoints live in `src/auth-routes.ts`; protected service-to-service endpoints (identity assertions, replay protection, rate limits, admin overview, and idempotency) live in `src/internal.ts`; profile/country routes live in `src/profiles.ts`; follows, friend requests, post reactions/comments/bookmarks/shares, privacy, account details and notification preferences live in `src/social.ts`; marketplace/feed/listing routes live in `src/marketplace.ts`; direct/group chat, chat settings, reporting, notifications and support routes live in `src/community.ts`; Google OAuth remains in `src/oauth.ts`; session storage remains in `src/sessions.ts`; and AI Search lives in `src/search.ts`.
 
 The D1 Worker implements three private service-binding endpoints used by the Supabase financial Worker:
 
