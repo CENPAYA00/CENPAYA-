@@ -159,6 +159,8 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     }
     if (action === "my-state" && method === "GET") {
       if (!user) return fail("Unauthorized", 401);
+      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null }>();
+      if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
       const [liked, saved] = await Promise.all([
         env.DB.prepare("SELECT 1 FROM post_reactions WHERE post_id=? AND user_id=?").bind(postId, user.id).first(),
         env.DB.prepare("SELECT 1 FROM post_bookmarks WHERE post_id=? AND user_id=?").bind(postId, user.id).first(),
@@ -190,8 +192,8 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const b = await body(request);
       const visibility = str(b?.visibility, 20) || "public";
       if (!["public", "followers", "friends", "private"].includes(visibility)) return fail("Invalid share visibility");
-      const post = await env.DB.prepare("SELECT id FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first();
-      if (!post) return fail("Post not found", 404);
+      const post = await env.DB.prepare("SELECT author_id,visibility FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string }>();
+      if (!post || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
       await env.DB.prepare("INSERT OR IGNORE INTO post_shares(id,post_id,user_id,share_message,visibility) VALUES(?,?,?,?,?)").bind(uuid(), postId, user.id, str(b?.message, 500) || null, visibility).run();
       return json({ success: true });
     }
