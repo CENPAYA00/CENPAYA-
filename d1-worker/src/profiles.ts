@@ -1,6 +1,7 @@
 import type { Env, User } from "./types.js";
 import { cacheGet, cachePut } from "./security.js";
 import { readUser, safeUser } from "./auth.js";
+import { hydrateUserMedia } from "./media.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
@@ -17,12 +18,13 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
   const {url,path,method,user}=context;
   if(path==="/api/me"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
-    return json({success:true,user:safeUser(user)});
+    const [profile]=await hydrateUserMedia(env,url.origin,[safeUser(user) as unknown as Record<string,unknown>]);
+    return json({success:true,user:profile});
   }
   if(path==="/api/me/profile"&&method==="PATCH"){
     if(!user)return fail("Unauthorized",401);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
-    const allowed=["username","phone","display_name","bio","avatar_url","cover_url","country_code","preferred_language","location_city","location_region","occupation","profile_visibility"];
+    const allowed=["username","phone","display_name","bio","country_code","preferred_language","location_city","location_region","occupation","profile_visibility"];
     const fields=allowed.filter(k=>Object.prototype.hasOwnProperty.call(b,k));
     if(!fields.length)return fail("No supported profile fields supplied");
     const values:(string|null)[]=[];
@@ -45,7 +47,7 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
     const onboardingSet=b.onboarding_completed===true?",onboarding_completed=1":"";
     const phoneVerificationReset=fields.includes("phone")?",phone_verified=0,phone_verified_at=NULL":"";
     await env.DB.prepare("UPDATE users SET "+sets.join(",")+onboardingSet+phoneVerificationReset+",updated_at="+NOW+" WHERE id=?").bind(...values).run();
-    const updated=await readUser(env.DB,user.id);return json({success:true,user:updated?safeUser(updated):null});
+    const updated=await readUser(env.DB,user.id);const [profile]=updated?await hydrateUserMedia(env,url.origin,[safeUser(updated) as unknown as Record<string,unknown>]):[null];return json({success:true,user:profile});
   }
   if(path==="/api/app-settings/video_posts_enabled"&&method==="GET"){
     const setting=await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='video_posts_enabled'").first<{value_json:string}>();
@@ -63,7 +65,7 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||20),1),30);
     const rows=await env.DB.prepare("SELECT id,username,display_name,avatar_url FROM users WHERE account_status='active' AND banned=0 AND deleted_at IS NULL AND (lower(username) LIKE lower(?) OR lower(display_name) LIKE lower(?)) ORDER BY followers_count DESC,created_at DESC LIMIT ?")
       .bind("%"+q+"%","%"+q+"%",limit).all();
-    return json({success:true,data:rows.results});
+    return json({success:true,data:await hydrateUserMedia(env,url.origin,rows.results as Array<Record<string,unknown>>)});
   }
   const publicProfile=path.match(/^\/api\/profiles\/([^/]+)$/);
   if(publicProfile&&publicProfile[1]!=="suggestions"&&method==="GET"){
@@ -94,11 +96,12 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
       created_at:canSee(rules.joined)?profile.created_at:null
     };
     delete (data as Record<string,unknown>).profile_visibility;
-    return json({success:true,data});
+    const [hydrated]=await hydrateUserMedia(env,url.origin,[data as Record<string,unknown>]);
+    return json({success:true,data:hydrated});
   }
   if(path==="/api/profiles/suggestions"&&method==="GET"){
     const rows=await env.DB.prepare("SELECT id,username,avatar_url FROM public_profiles ORDER BY created_at DESC LIMIT 12").all();
-    return json({success:true,data:rows.results});
+    return json({success:true,data:await hydrateUserMedia(env,url.origin,rows.results as Array<Record<string,unknown>>)});
   }
   if(path==="/api/countries"&&method==="GET"){
     const cached=await cacheGet(env,"supported-countries");
