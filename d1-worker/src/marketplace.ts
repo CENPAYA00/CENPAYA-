@@ -193,7 +193,8 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const priceMin=priceIsRange?Number(b.price_min??priceAmount):Number(priceAmount);
     const priceMax=priceIsRange?Number(b.price_max??priceMin):Number(priceAmount);
     if(priceIsRange&&(!Number.isSafeInteger(priceMin)||!Number.isSafeInteger(priceMax)||priceMin<0||priceMax<priceMin))return fail("Invalid price range");
-    const deliveryDays=Math.min(Math.max(Math.floor(Number(b.delivery_days||3)),1),365);
+    const requestedDeliveryDays=Number(b.delivery_days??3);
+    const deliveryDays=Number.isFinite(requestedDeliveryDays)?Math.min(Math.max(Math.floor(requestedDeliveryDays),1),365):3;
     if(priceIsRange&&priceType!=="negotiable")return fail("Price ranges require negotiable pricing");
     const region=str(b.region,100)||null,city=str(b.city,100)||null;
     const availability=str(b.availability,40)||null;
