@@ -182,6 +182,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       JOIN chat_thread_members other ON other.thread_id=t.id AND other.user_id<>mine.user_id AND other.left_at IS NULL
       JOIN users u ON u.id=other.user_id
       WHERE mine.user_id=? AND mine.left_at IS NULL AND t.thread_type='direct' AND t.id<>?
+      AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=mine.user_id AND b.blocked_id=other.user_id) OR (b.blocker_id=other.user_id AND b.blocked_id=mine.user_id))
       ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 50`).bind(user.id, forwardTargets[1]).all();
     return json({ success: true, data: rows.results });
   }
@@ -191,7 +192,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const b = await body(request); if (!b) return fail("Valid JSON body required");
     const targetThread = str(b.thread_id, 64);
     const [source, target] = await Promise.all([
-      env.DB.prepare("SELECT m.thread_id,m.message_text,m.message_type,m.media_key,m.media_url,m.media_duration_seconds,m.shared_post_id,m.status FROM chat_messages m JOIN chat_thread_members tm ON tm.thread_id=m.thread_id WHERE m.id=? AND tm.user_id=? AND tm.left_at IS NULL").bind(forwardMessage[1], user.id).first<Record<string, unknown>>(),
+      env.DB.prepare("SELECT m.thread_id,m.message_text,m.message_type,m.media_key,m.media_url,m.media_duration_seconds,m.shared_post_id,m.status FROM chat_messages m JOIN chat_thread_members tm ON tm.thread_id=m.thread_id WHERE m.id=? AND tm.user_id=? AND tm.left_at IS NULL AND NOT EXISTS(SELECT 1 FROM chat_thread_members other JOIN user_blocks b ON (b.blocker_id=tm.user_id AND b.blocked_id=other.user_id) OR (b.blocker_id=other.user_id AND b.blocked_id=tm.user_id) WHERE other.thread_id=m.thread_id AND other.user_id<>tm.user_id)").bind(forwardMessage[1], user.id).first<Record<string, unknown>>(),
       env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(targetThread, user.id).first()
     ]);
     if (!source || source.status === "deleted" || !target) return fail("Message or destination not found", 404);
