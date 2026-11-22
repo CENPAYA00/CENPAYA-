@@ -47,9 +47,9 @@ export default function Home() {
       }));
       setPosts(feed);
       setCached('home_posts', feed);
-      setFollowingIds(new Set());
-      setLikedPosts(new Set());
-      setSavedPosts(new Set());
+      setFollowingIds(new Set(feed.filter((post: any) => post.is_following_author).map((post: any) => post.author_id)));
+      setLikedPosts(new Set(feed.filter((post: any) => post.is_liked).map((post: any) => post.id)));
+      setSavedPosts(new Set(feed.filter((post: any) => post.is_saved).map((post: any) => post.id)));
     } catch (error) {
       console.error('Could not load D1 home feed:', error);
       setPosts([]);
