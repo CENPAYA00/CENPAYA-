@@ -19,15 +19,16 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   if(path==="/api/chat/threads"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const rows=await env.DB.prepare(`SELECT t.id,t.thread_type,t.title,t.created_by,t.last_message_at,t.created_at,
+      otherUser.username AS other_username,otherUser.avatar_url AS other_avatar,
       (SELECT m.message_text FROM chat_messages m WHERE m.thread_id=t.id ORDER BY m.created_at DESC LIMIT 1) AS last_message,
       (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id=t.id AND m.sender_id<>? AND m.created_at>COALESCE(tm.last_read_at,'1970-01-01T00:00:00.000Z')) AS unread_count
       FROM chat_thread_members tm JOIN chat_threads t ON t.id=tm.thread_id
-      WHERE tm.user_id=? AND tm.left_at IS NULL AND t.thread_type='direct' ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 100`).bind(user.id,user.id).all();
-    const data = await Promise.all(rows.results.map(async (row: any) => {
-      const { media_key, ...message } = row;
-      return { ...message, media_url: media_key ? await signMediaUrl(env, url.origin, media_key) : message.media_url };
-    }));
-    return json({success:true,data});
+      LEFT JOIN chat_thread_members other ON other.thread_id=t.id AND other.user_id<>tm.user_id
+      LEFT JOIN users otherUser ON otherUser.id=other.user_id
+      WHERE tm.user_id=? AND tm.left_at IS NULL AND t.thread_type='direct'
+      AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=tm.user_id AND b.blocked_id=other.user_id) OR (b.blocker_id=other.user_id AND b.blocked_id=tm.user_id))
+      ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 100`).bind(user.id,user.id).all();
+    return json({success:true,data:rows.results});
   }
   if(path==="/api/chat/direct"&&method==="POST"){
     if(!user)return fail("Unauthorized",401);
@@ -40,7 +41,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if(blocked)return fail("Messaging is unavailable for this user",403);
     const directKey=[user.id,other].sort().join(":");
     const existing=await env.DB.prepare("SELECT id FROM chat_threads WHERE direct_key=?").bind(directKey).first<{id:string}>();
-    if(existing){await env.DB.prepare("UPDATE chat_thread_members SET left_at=NULL WHERE thread_id=? AND user_id=?").bind(existing.id,user.id).run();return json({success:true,id:existing.id,existing:true});}
+    if(existing){await env.DB.prepare("UPDATE chat_thread_members SET left_at=NULL WHERE thread_id=? AND user_id IN (?,?)").bind(existing.id,user.id,other).run();return json({success:true,id:existing.id,existing:true});}
     const id=uuid();
     try{
       await env.DB.batch([
@@ -64,7 +65,12 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       u.username,u.display_name,u.avatar_url FROM chat_messages m JOIN users u ON u.id=m.sender_id
       WHERE m.thread_id=? ${before?"AND m.created_at < ?":""}
       ORDER BY m.created_at DESC LIMIT ?`).bind(threadId,...(before?[before]:[]),limit).all();
-    return json({success:true,data:rows.results.reverse()});
+    const ordered=rows.results.reverse();
+    const data=await Promise.all(ordered.map(async(row:any)=>{
+      const {media_key,...message}=row;
+      return {...message,media_url:media_key?await signMediaUrl(env,url.origin,String(media_key)):message.media_url};
+    }));
+    return json({success:true,data});
   }
   if(chatMessages&&method==="POST"){
     if(!user)return fail("Unauthorized",401);
