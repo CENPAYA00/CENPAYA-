@@ -57,10 +57,11 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
     return json({value});
   }
   if(path==="/api/profiles/search"&&method==="GET"){
+    if(!user)return fail("Unauthorized",401);
     const q=str(url.searchParams.get("q"),60).replace(/[%_]/g,"").trim();
     if(q.length<2)return json({success:true,data:[]});
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||20),1),30);
-    const rows=await env.DB.prepare("SELECT id,username,display_name,avatar_url FROM public_profiles WHERE lower(username) LIKE lower(?) OR lower(display_name) LIKE lower(?) ORDER BY followers_count DESC,created_at DESC LIMIT ?")
+    const rows=await env.DB.prepare("SELECT id,username,display_name,avatar_url FROM users WHERE account_status='active' AND banned=0 AND deleted_at IS NULL AND (lower(username) LIKE lower(?) OR lower(display_name) LIKE lower(?)) ORDER BY followers_count DESC,created_at DESC LIMIT ?")
       .bind("%"+q+"%","%"+q+"%",limit).all();
     return json({success:true,data:rows.results});
   }
