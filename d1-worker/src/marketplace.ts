@@ -115,7 +115,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const feeling=str(b.feeling,100)||null,feelingEmoji=str(b.feeling_emoji,24)||null;
     const feelingKind=str(b.feeling_kind,20)||null;
     if(feelingKind&&!["feeling","activity"].includes(feelingKind))return fail("Invalid feeling type");
-    const mediaStatements=[];
+    const mediaStatements: D1PreparedStatement[] = [];
     for(let index=0;index<mediaUrls.length;index++){
       const key=await extractMediaKey(mediaUrls[index],env,url);
       if(!key||!key.startsWith(["posts",user.id,""].join("/")))return fail("A post image upload is invalid or expired");
@@ -128,7 +128,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const rawTagged=Array.isArray(b.tagged_user_ids)?b.tagged_user_ids:[];
     if(rawTagged.length>20)return fail("You can tag up to 20 people in one post");
     const taggedIds=[...new Set(rawTagged.filter((value):value is string=>typeof value==="string").map(value=>value.trim()))].filter(value=>value&&value!==user.id);
-    const tagStatements=[];
+    const tagStatements: D1PreparedStatement[] = [];
     for(const targetId of taggedIds){
       if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId))return fail("Invalid tagged user");
       const target=await env.DB.prepare("SELECT id FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first();
@@ -210,7 +210,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
       if(!key||!key.startsWith(expectedPrefix))return fail("A document upload is invalid or expired");
       documentKeys.push(key);
     }
-    const mediaStatements=[];
+    const mediaStatements: D1PreparedStatement[] = [];
     for(let index=0;index<imageKeys.length;index++){
       const key=imageKeys[index];
       const object=await env.MEDIA_BUCKET!.head(key);
