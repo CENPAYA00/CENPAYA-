@@ -195,11 +195,15 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     return peer ? json({ success: true, data: peer }) : fail("Conversation partner not found", 404);
   }
   const chatSettings = path.match(/^\/api\/chat\/threads\/([^/]+)\/settings$/);
-  if (chatSettings && method === "PATCH") {
+  if (chatSettings && (method === "GET" || method === "PATCH")) {
     if (!user) return fail("Unauthorized", 401);
-    const b = await body(request); if (!b) return fail("Valid JSON body required");
     const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatSettings[1], user.id).first();
     if (!member) return fail("Conversation not found", 404);
+    if (method === "GET") {
+      const settings = await env.DB.prepare("SELECT chat_theme,disappearing_seconds FROM chat_thread_members WHERE thread_id=? AND user_id=?").bind(chatSettings[1], user.id).first();
+      return json({ success: true, data: settings || { chat_theme: "emerald", disappearing_seconds: null } });
+    }
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
     const sets: string[] = [], values: unknown[] = [];
     if (b.chat_theme !== undefined) {
       const theme = str(b.chat_theme, 20);
@@ -261,6 +265,167 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const id = uuid();
     await env.DB.prepare("INSERT INTO support_ticket_messages(id,ticket_id,sender_type,sender_user_id,message_text) VALUES(?,?,'user',?,?)").bind(id, ticket.id, user.id, message).run();
     await env.DB.prepare("UPDATE support_tickets SET status=CASE WHEN status='waiting_for_user' THEN 'in_progress' ELSE status END WHERE id=?").bind(ticket.id).run();
+    return json({ success: true, id }, 201);
+  }
+
+  if (path === "/api/config/features" && method === "GET") {
+    const flags = await env.DB.prepare("SELECT key,enabled FROM feature_flags").all<{ key: string; enabled: number }>();
+    const enabled = new Map(flags.results.map(flag => [flag.key, !!flag.enabled]));
+    return json({ success: true, data: { voice_calls_enabled: enabled.get("voice_calls") || false } });
+  }
+
+  if (path === "/api/groups" && method === "GET") {
+    if (!user) return fail("Unauthorized", 401);
+    const rows = await env.DB.prepare(`SELECT t.id,COALESCE(t.title,'Group chat') AS name,u.avatar_url,t.last_message_at,
+      (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id=t.id AND m.sender_id<>? AND m.created_at>COALESCE(mine.last_read_at,'1970-01-01T00:00:00.000Z')) AS unread_count
+      FROM chat_thread_members mine JOIN chat_threads t ON t.id=mine.thread_id
+      LEFT JOIN users u ON u.id=t.created_by
+      WHERE mine.user_id=? AND mine.left_at IS NULL AND t.thread_type='group'
+      ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 100`).bind(user.id,user.id).all();
+    return json({ success: true, data: rows.results });
+  }
+  const groupMessages = path.match(/^\/api\/groups\/([^/]+)\/messages$/);
+  if (groupMessages && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const threadId = groupMessages[1];
+    const message = str(b.message_text, 4000);
+    const messageType = str(b.message_type, 20) || "text";
+    const sharedPostId = str(b.shared_post_id, 64);
+    if (!["text", "shared_post"].includes(messageType)) return fail("Unsupported group message type");
+    if (messageType === "text" && !message) return fail("Message text is required");
+    if (messageType === "shared_post" && !UUID.test(sharedPostId)) return fail("A valid shared post is required");
+    const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members m JOIN chat_threads t ON t.id=m.thread_id WHERE m.thread_id=? AND m.user_id=? AND m.left_at IS NULL AND t.thread_type='group'").bind(threadId,user.id).first();
+    if (!member) return fail("Group conversation not found", 404);
+    if (messageType === "shared_post") {
+      const post = await env.DB.prepare("SELECT id FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL AND (visibility='public' OR author_id=?)").bind(sharedPostId,user.id).first();
+      if (!post) return fail("Shared post not found", 404);
+    }
+    const id = uuid();
+    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,message_type,shared_post_id) VALUES(?,?,?,?,?,?)")
+      .bind(id,threadId,user.id,message || "Shared a post",messageType,messageType === "shared_post" ? sharedPostId : null).run();
+    await env.DB.prepare("UPDATE chat_thread_members SET last_read_at=" + NOW + " WHERE thread_id=? AND user_id=?").bind(threadId,user.id).run();
+    return json({ success: true, id }, 201);
+  }
+
+  const deleteThread = path.match(/^\/api\/chat\/threads\/([^/]+)$/);
+  if (deleteThread && method === "DELETE") {
+    if (!user) return fail("Unauthorized", 401);
+    const result = await env.DB.prepare("UPDATE chat_thread_members SET left_at=" + NOW + " WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(deleteThread[1],user.id).run();
+    return result.meta.changes ? json({ success: true }) : fail("Conversation not found", 404);
+  }
+
+  const demoReply = path.match(/^\/api\/chat\/threads\/([^/]+)\/demo-reply$/);
+  if (demoReply && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const message = str(b.message_text, 1000);
+    if (!message) return fail("Message text is required");
+    const peer = await env.DB.prepare(`SELECT u.id FROM chat_thread_members mine
+      JOIN chat_thread_members other ON other.thread_id=mine.thread_id AND other.user_id<>mine.user_id
+      JOIN chat_threads t ON t.id=mine.thread_id
+      JOIN users u ON u.id=other.user_id
+      WHERE mine.thread_id=? AND mine.user_id=? AND mine.left_at IS NULL AND other.left_at IS NULL
+      AND t.thread_type='direct' AND u.is_demo=1 AND u.account_status='active' AND u.deleted_at IS NULL LIMIT 1`).bind(demoReply[1],user.id).first<{ id: string }>();
+    if (!peer) return fail("Demo conversation not found", 404);
+    const id = uuid();
+    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text) VALUES(?,?,?,?)").bind(id,demoReply[1],peer.id,message).run();
+    return json({ success: true, id }, 201);
+  }
+
+  if (path === "/api/notifications" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const kind = str(b.kind, 20) || "system";
+    const title = str(b.title, 160);
+    const message = str(b.body, 1000);
+    if (kind !== "system" || !title) return fail("Invalid notification");
+    let entityType: string | null = null, entityId: string | null = null;
+    const link = str(b.link_url, 300);
+    const linkMatch = link.match(/^\/(post|listing|seller|chat)\/([0-9a-f-]{36})$/i);
+    if (linkMatch && UUID.test(linkMatch[2])) {
+      entityType = linkMatch[1] === "seller" ? "profile" : linkMatch[1] === "chat" ? "thread" : linkMatch[1];
+      entityId = linkMatch[2];
+    }
+    const id = uuid();
+    await env.DB.prepare("INSERT INTO notifications(id,recipient_id,actor_id,notification_type,entity_type,entity_id,title,body) VALUES(?,?,?,'system',?,?,?,?)")
+      .bind(id,user.id,user.id,entityType,entityId,title,message || null).run();
+    return json({ success: true, id }, 201);
+  }
+
+  if (path === "/api/report-reasons" && method === "GET") {
+    const targetType = str(url.searchParams.get("target_type"), 20);
+    const common = [
+      ["spam","Spam or misleading content"],["harassment","Harassment or bullying"],["hate_speech","Hate speech"],
+      ["violence","Violence or threats"],["nudity","Nudity or sexual content"],["misinformation","False information"],["scam","Fraud or scam"],["copyright","Copyright infringement"],["other","Other"]
+    ];
+    const reasonsByType: Record<string, string[]> = {
+      post: ["spam","harassment","hate_speech","violence","nudity","misinformation","scam","copyright","other"],
+      comment: ["spam","harassment","hate_speech","violence","nudity","misinformation","scam","copyright","other"],
+      user: ["spam","harassment","hate_speech","violence","nudity","misinformation","scam","impersonation","other"],
+      message: ["spam","harassment","hate_speech","violence","nudity","misinformation","scam","other"],
+      listing: ["fraud","scam","prohibited_item","misleading_information","counterfeit","spam","wrong_category","other"],
+      group: ["spam","harassment","hate_speech","violence","misinformation","inappropriate_content","scam","other"]
+    };
+    const codes = reasonsByType[targetType];
+    if (!codes) return fail("Invalid report target type");
+    const labels: Record<string, string> = {
+      fraud: "Fraud", prohibited_item: "Prohibited item", misleading_information: "Misleading information",
+      counterfeit: "Counterfeit goods", wrong_category: "Wrong category", impersonation: "Impersonation",
+      inappropriate_content: "Inappropriate content"
+    };
+    const rows = codes.map((code,index) => {
+      const base = common.find(item => item[0] === code);
+      return { code, label: labels[code] || base?.[1] || code, description: null, display_order: index };
+    });
+    return json({ success: true, data: rows });
+  }
+
+  if (path === "/api/reports" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const targetType = str(b.target_type, 20);
+    const targetId = str(b.target_id, 64);
+    const reason = str(b.reason_code, 40);
+    const details = str(b.notes, 2000) || null;
+    if (!UUID.test(targetId)) return fail("Invalid report target");
+    const allowed: Record<string, string[]> = {
+      post: ["spam","harassment","hate_speech","violence","nudity","misinformation","scam","copyright","other"],
+      comment: ["spam","harassment","hate_speech","violence","nudity","misinformation","scam","copyright","other"],
+      user: ["spam","harassment","hate_speech","violence","nudity","misinformation","scam","impersonation","other"],
+      message: ["spam","harassment","hate_speech","violence","nudity","misinformation","scam","other"],
+      listing: ["fraud","scam","prohibited_item","misleading_information","counterfeit","spam","wrong_category","other"],
+      group: ["spam","harassment","hate_speech","violence","misinformation","inappropriate_content","scam","other"]
+    };
+    if (!allowed[targetType]?.includes(reason)) return fail("Invalid report reason");
+    const id = uuid();
+    let result: D1Result;
+    if (targetType === "post") {
+      const target = await env.DB.prepare("SELECT id FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(targetId).first();
+      if (!target) return fail("Post not found", 404);
+      result = await env.DB.prepare("INSERT OR IGNORE INTO post_reports(id,post_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+    } else if (targetType === "comment") {
+      const target = await env.DB.prepare("SELECT id FROM post_comments WHERE id=? AND status='published' AND deleted_at IS NULL").bind(targetId).first();
+      if (!target) return fail("Comment not found", 404);
+      result = await env.DB.prepare("INSERT OR IGNORE INTO comment_reports(id,comment_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+    } else if (targetType === "listing") {
+      const target = await env.DB.prepare("SELECT id FROM marketplace_listings WHERE id=? AND status='active' AND deleted_at IS NULL").bind(targetId).first();
+      if (!target) return fail("Listing not found", 404);
+      result = await env.DB.prepare("INSERT OR IGNORE INTO marketplace_listing_reports(id,listing_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+    } else if (targetType === "user") {
+      const target = await env.DB.prepare("SELECT id FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first();
+      if (!target || targetId === user.id) return fail("User not found", 404);
+      result = await env.DB.prepare("INSERT OR IGNORE INTO user_reports(id,reported_user_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+    } else if (targetType === "message") {
+      const target = await env.DB.prepare("SELECT m.id FROM chat_messages m JOIN chat_thread_members tm ON tm.thread_id=m.thread_id WHERE m.id=? AND tm.user_id=? AND tm.left_at IS NULL AND m.sender_id<>? AND m.status<>'deleted'").bind(targetId,user.id,user.id).first();
+      if (!target) return fail("Message not found", 404);
+      result = await env.DB.prepare("INSERT OR IGNORE INTO chat_message_reports(id,message_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+    } else {
+      const target = await env.DB.prepare("SELECT id FROM communities WHERE id=? AND status='active'").bind(targetId).first();
+      if (!target) return fail("Group not found", 404);
+      result = await env.DB.prepare("INSERT OR IGNORE INTO community_reports(id,community_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+    }
+    if (!result.meta.changes) return fail("You have already reported this item", 409);
     return json({ success: true, id }, 201);
   }
 
