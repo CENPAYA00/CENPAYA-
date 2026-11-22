@@ -54,7 +54,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
         (p.visibility='friends' AND ? IS NOT NULL AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?))))
       ${before?"AND p.created_at < ?":""}
       ORDER BY COALESCE(p.published_at,p.created_at) DESC LIMIT ? OFFSET ?`)
-      .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,...(before?[before]:[]),limit,offset).all();
+      .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,...(before?[before]:[]),limit,offset).all();
     return json({success:true,data:rows.results});
   }
   if(path==="/api/posts"&&method==="POST"){
