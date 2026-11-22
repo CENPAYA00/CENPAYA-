@@ -279,7 +279,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
 
   if (path === "/api/config/features" && method === "GET") {
     const flags = await env.DB.prepare("SELECT key,enabled FROM feature_flags").all<{ key: string; enabled: number }>();
-    const enabled = new Map(flags.results.map(flag => [flag.key, !!flag.enabled]));
+    const enabled = new Map<string, boolean>(flags.results.map(flag => [flag.key, !!flag.enabled] as [string, boolean]));
     return json({ success: true, data: { voice_calls_enabled: enabled.get("voice_calls") || false } });
   }
 
