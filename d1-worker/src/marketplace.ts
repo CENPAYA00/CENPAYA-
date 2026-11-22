@@ -161,12 +161,13 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     return json({success:true,data:rows.results});
   }
   if(path==="/api/market/search"&&method==="GET"){
-    const q=str(url.searchParams.get("q"),100).replace(/[%_]/g,""),category=str(url.searchParams.get("category_id"),64),country=str(url.searchParams.get("country"),2).toUpperCase();
+    const q=str(url.searchParams.get("q"),100).replace(/[%_]/g,""),category=str(url.searchParams.get("category_id"),64),country=str(url.searchParams.get("country"),2).toUpperCase(),listingType=str(url.searchParams.get("type"),20);
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||24),1),50),offset=Math.max(Number(url.searchParams.get("offset")||0),0);
     const where:string[]=["l.status='active'","l.deleted_at IS NULL","l.moderation_status='approved'","u.account_status='active'","u.banned=0","u.deleted_at IS NULL"];const values:unknown[]=[];
     if(q){where.push("s.product_title LIKE ?");values.push("%"+q+"%");}
     if(category){where.push("s.category_id=?");values.push(category);}
     if(country){where.push("s.country_code=?");values.push(country);}
+    if(listingType==="product"||listingType==="service"){where.push("s.listing_type=?");values.push(listingType);}
     const rows=await env.DB.prepare("SELECT s.*,l.seller_id,l.description,l.price_type,l.price_is_range,l.price_min,l.price_max,l.images_json,l.documents_json,l.estimated_delivery_days,u.avatar_url AS seller_avatar_url,u.is_premium AS seller_is_premium FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_id WHERE "+where.join(" AND ")+" ORDER BY s.is_boosted DESC,s.published_date DESC LIMIT ? OFFSET ?").bind(...values,limit,offset).all();
     const data=await Promise.all(rows.results.map(async(row:any)=>{
       const images=(await Promise.all(jsonArray(row.images_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
