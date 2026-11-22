@@ -98,7 +98,7 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
   const folderValue = form.get("folder");
   if (!(file instanceof File) || typeof folderValue !== "string") return fail("A file and upload folder are required");
   const folder = folderValue.trim();
-  const mime = file.type.toLowerCase();
+  const mime = file.type.split(";")[0].trim().toLowerCase();
   const extension = extensionFor(mime);
   if (!extension) return fail("Unsupported media file type");
   if (kind === "chat") {
