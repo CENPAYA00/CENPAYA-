@@ -383,22 +383,22 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
 
   if (path === "/api/me/profile-details-visibility" && (method === "GET" || method === "PATCH")) {
     if (!user) return fail("Unauthorized", 401);
-    const defaults = { bio: "public", phone: "followers", email: "private", joined: "public", occupation: "public", city: "public", country: "public" };
+    const defaults = { bio: "public", phone: "followers", email: "private", joined: "public", occupation: "public", location: "followers" };
     if (method === "GET") {
-      const row = await env.DB.prepare("SELECT bio,phone,email,joined,occupation,city,country FROM user_profile_details_visibility WHERE user_id=?").bind(user.id).first<Record<string, string>>();
+      const row = await env.DB.prepare("SELECT bio,phone,email,joined,occupation,location FROM user_profile_details_visibility WHERE user_id=?").bind(user.id).first<Record<string, string>>();
       return json({ success: true, data: { ...defaults, ...(row || {}) } });
     }
     const b = await body(request); if (!b) return fail("Valid JSON body required");
-    const allowed = ["bio", "phone", "email", "joined", "occupation", "city", "country"] as const;
-    const current = await env.DB.prepare("SELECT bio,phone,email,joined,occupation,city,country FROM user_profile_details_visibility WHERE user_id=?").bind(user.id).first<Record<string, string>>();
+    const allowed = ["bio", "phone", "email", "joined", "occupation", "location"] as const;
+    const current = await env.DB.prepare("SELECT bio,phone,email,joined,occupation,location FROM user_profile_details_visibility WHERE user_id=?").bind(user.id).first<Record<string, string>>();
     const next: Record<string, string> = { ...defaults, ...(current || {}) };
     for (const key of allowed) {
       if (b[key] === undefined) continue;
       if (!["public", "followers", "private"].includes(String(b[key]))) return fail("Invalid profile detail visibility");
       next[key] = String(b[key]);
     }
-    await env.DB.prepare("INSERT INTO user_profile_details_visibility(user_id,bio,phone,email,joined,occupation,city,country) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET bio=excluded.bio,phone=excluded.phone,email=excluded.email,joined=excluded.joined,occupation=excluded.occupation,city=excluded.city,country=excluded.country,updated_at=" + NOW)
-      .bind(user.id, next.bio, next.phone, next.email, next.joined, next.occupation, next.city, next.country).run();
+    await env.DB.prepare("INSERT INTO user_profile_details_visibility(user_id,bio,phone,email,joined,occupation,location) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET bio=excluded.bio,phone=excluded.phone,email=excluded.email,joined=excluded.joined,occupation=excluded.occupation,location=excluded.location,updated_at=" + NOW)
+      .bind(user.id, next.bio, next.phone, next.email, next.joined, next.occupation, next.location).run();
     return json({ success: true });
   }
 
