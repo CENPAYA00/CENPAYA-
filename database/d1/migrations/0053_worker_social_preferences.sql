@@ -3,7 +3,7 @@
 
 ALTER TABLE user_privacy_settings
   ADD COLUMN tagging_visibility TEXT NOT NULL DEFAULT 'everyone'
-  CHECK (tagging_visibility IN ('everyone','friends','nobody'));
+  CHECK (tagging_visibility IN ('everyone','followers','friends','nobody'));
 
 ALTER TABLE user_privacy_settings
   ADD COLUMN default_post_visibility TEXT NOT NULL DEFAULT 'public'
