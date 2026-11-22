@@ -160,6 +160,48 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
   return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
 }
 
+export async function hydratePosts(env: Env, origin: string, rows: Array<Record<string, unknown>>): Promise<Array<Record<string, unknown>>> {
+  if (!rows.length) return rows;
+  const ids = rows.map(row => String(row.id || "")).filter(Boolean);
+  if (!ids.length) return rows;
+  const placeholders = ids.map(() => "?").join(",");
+  const [mediaResult, tagResult] = await Promise.all([
+    env.DB.prepare("SELECT id,post_id,media_type,r2_object_key,mime_type,file_size_bytes,width,height,duration_seconds,alt_text,position FROM post_media WHERE post_id IN (" + placeholders + ") ORDER BY post_id,position").bind(...ids).all<Record<string, unknown>>(),
+    env.DB.prepare("SELECT t.post_id,u.id,u.username,u.display_name,u.avatar_url FROM post_tagged_users t JOIN users u ON u.id=t.tagged_user_id WHERE t.post_id IN (" + placeholders + ") AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY t.created_at").bind(...ids).all<Record<string, unknown>>()
+  ]);
+  const mediaByPost = new Map<string, Array<Record<string, unknown>>>();
+  for (const item of mediaResult.results) {
+    const postId = String(item.post_id);
+    const { r2_object_key, ...metadata } = item;
+    const signedUrl = await signMediaUrl(env, origin, String(r2_object_key));
+    const values = mediaByPost.get(postId) || [];
+    values.push({ ...metadata, url: signedUrl });
+    mediaByPost.set(postId, values);
+  }
+  const tagsByPost = new Map<string, Array<Record<string, unknown>>>();
+  for (const tag of tagResult.results) {
+    const postId = String(tag.post_id);
+    const { post_id, ...taggedUser } = tag;
+    const values = tagsByPost.get(postId) || [];
+    values.push(taggedUser);
+    tagsByPost.set(postId, values);
+  }
+  return rows.map(row => {
+    const media = mediaByPost.get(String(row.id)) || [];
+    const urls = media.map(item => item.url).filter((value): value is string => typeof value === "string" && value.length > 0);
+    const backgroundId = typeof row.background_id === "string" ? row.background_id : null;
+    return {
+      ...row,
+      post_type: backgroundId && row.post_type === "text" ? "colored" : row.post_type,
+      bg_color: backgroundId,
+      media,
+      media_urls: urls,
+      image_url: urls.length ? urls.join(",") : (typeof row.image_url === "string" ? row.image_url : ""),
+      tagged_users: tagsByPost.get(String(row.id)) || []
+    };
+  });
+}
+
 export async function handleMediaRoutes(request: Request, env: Env, context: RouteContext): Promise<Response | null> {
   const { url, path, method, user } = context;
   if (path === "/api/posts/media" && method === "POST") {
