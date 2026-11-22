@@ -35,7 +35,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if(blocked)return fail("Messaging is unavailable for this user",403);
     const directKey=[user.id,other].sort().join(":");
     const existing=await env.DB.prepare("SELECT id FROM chat_threads WHERE direct_key=?").bind(directKey).first<{id:string}>();
-    if(existing)return json({success:true,id:existing.id,existing:true});
+    if(existing){await env.DB.prepare("UPDATE chat_thread_members SET left_at=NULL WHERE thread_id=? AND user_id=?").bind(existing.id,user.id).run();return json({success:true,id:existing.id,existing:true});}
     const id=uuid();
     try{
       await env.DB.batch([
@@ -55,7 +55,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members m JOIN chat_threads t ON t.id=m.thread_id WHERE m.thread_id=? AND m.user_id=? AND m.left_at IS NULL AND t.thread_type='direct'").bind(threadId,user.id).first();
     if(!member)return fail("Conversation not found",404);
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||50),1),100),before=url.searchParams.get("before");
-    const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,m.message_text,m.status,m.created_at,
+    const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,CASE WHEN m.status='deleted' THEN 'Message deleted' ELSE m.message_text END AS message_text,CASE WHEN m.status='deleted' THEN 'text' ELSE m.message_type END AS message_type,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_url END AS media_url,m.media_duration_seconds,m.shared_post_id,m.delivered_at,m.read_at,m.status,m.created_at,
       u.username,u.display_name,u.avatar_url FROM chat_messages m JOIN users u ON u.id=m.sender_id
       WHERE m.thread_id=? ${before?"AND m.created_at < ?":""}
       ORDER BY m.created_at DESC LIMIT ?`).bind(threadId,...(before?[before]:[]),limit).all();
@@ -191,7 +191,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     }
     if (b.disappearing_seconds !== undefined) {
       const seconds = b.disappearing_seconds;
-      if (seconds !== null && (!Number.isSafeInteger(seconds) || Number(seconds) < 60 || Number(seconds) > 2592000)) return fail("Invalid disappearing-message duration");
+      if (seconds !== null && (typeof seconds !== "number" || !Number.isSafeInteger(seconds) || seconds < 60 || seconds > 2592000)) return fail("Invalid disappearing-message duration");
       sets.push("disappearing_seconds=?"); values.push(seconds);
     }
     if (!sets.length) return fail("No supported chat settings supplied");
