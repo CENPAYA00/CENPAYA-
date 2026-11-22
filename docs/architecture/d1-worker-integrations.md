@@ -14,7 +14,7 @@ creates a D1 user, records the provider identity, and issues a D1 session.
 The session token is returned to the frontend in the URL fragment, not a query
 parameter, then stored by the frontend D1 API client.
 
-Apply canonical D1 migrations 52, 53, and 54, in order, before enabling D1 password auth, Google OAuth, D1 email-registration routes, persisted social preferences, and chat/support preferences. Configure these Worker
+Apply canonical D1 migrations 52, 53, 54, and 55, in order, before enabling D1 password auth, Google OAuth, D1 email-registration routes, persisted social/profile preferences, report submissions, and chat/support preferences. Configure these Worker
 variables/secrets:
 
 - `GOOGLE_CLIENT_ID` — Google OAuth client ID.
@@ -91,10 +91,17 @@ repository path, so this integration documents and consumes its established
 service-binding contract rather than inventing a new public API route or
 claiming its provider adapter has been changed.
 
+
+## Cloudflare R2 media storage — pending resource verification
+
+The D1 schema already contains `post_media`, `marketplace_listing_media`, and the chat media object-key field. The intended design is to keep binary files in one reusable private R2 bucket and keep only object keys and metadata in D1. Upload authorization must be short-lived; chat media must not be made publicly readable merely because its object key is known.
+
+No existing R2 bucket name or Worker binding has been verified in the connected repository tools. Do not guess a bucket name or add a made-up bucket binding. Before enabling `/api/chat/media` and `/api/market/media`, inspect the actual Cloudflare R2 buckets, bind the intended existing bucket to the Worker as `MEDIA_BUCKET`, and add the media URL signing secret. This is a remaining integration prerequisite, not a D1 schema blocker.
+
 ## Deployment order
 
 1. Confirm the exact Google callback URI and Cloudflare binding names.
-2. Confirm the target D1 database is at migration 51, then apply canonical migrations 52, 53, and 54 after review.
+2. Confirm the target D1 migration tracker, then apply canonical migrations 52, 53, 54, and 55 in order after review. The supplied 2026-11-21 export is at version 51.
 3. Configure Google OAuth variables/secrets and the existing AI/KV/service
    bindings on the D1 Worker.
 4. Confirm the CenPaya API Worker is bound as `OTP_DELIVERY` and its existing
