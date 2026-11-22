@@ -35,7 +35,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
   const followRoute = path.match(/^\/api\/profiles\/([^/]+)\/follow(?:\/(follow-status|followers|following|count))?$/);
   if (followRoute) {
     const targetId = decodeURIComponent(followRoute[1]);
-    const suffix = followRoute[2] || "";
+    const suffix = followRoute[2];
     if (!UUID.test(targetId)) return fail("Invalid user id", 400);
     if (suffix === "follow-status" && method === "GET") {
       if (!user) return fail("Unauthorized", 401);
@@ -54,7 +54,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const rows = await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at FROM user_follows f JOIN users u ON u.id=f.following_id WHERE f.follower_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(targetId).all();
       return json({ success: true, data: rows.results });
     }
-    if (suffix === "" && (method === "POST" || method === "DELETE")) {
+    if (suffix === "follow" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Unauthorized", 401);
       if (targetId === user.id) return fail("You cannot follow yourself", 400);
       const target = await env.DB.prepare("SELECT id FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first();
@@ -98,7 +98,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
   }
   if (path === "/api/me/follow-requests" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
-    const rows = await env.DB.prepare(`SELECT fr.id,fr.requester_id AS id,u.username,u.display_name,u.avatar_url,u.bio,fr.created_at FROM friend_requests fr JOIN users u ON u.id=fr.requester_id WHERE fr.recipient_id=? AND fr.status='pending' ORDER BY fr.created_at DESC LIMIT 100`).bind(user.id).all();
+    const rows = await env.DB.prepare(`SELECT fr.id AS request_id,fr.requester_id AS id,u.username,u.display_name,u.avatar_url,u.bio,fr.created_at FROM friend_requests fr JOIN users u ON u.id=fr.requester_id WHERE fr.recipient_id=? AND fr.status='pending' ORDER BY fr.created_at DESC LIMIT 100`).bind(user.id).all();
     return json({ success: true, data: rows.results });
   }
   const friendAction = path.match(/^\/api\/me\/follow-requests\/([^/]+)(?:\/(accept))?$/);
@@ -247,7 +247,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     if (!user) return fail("Unauthorized", 401);
     const read = async () => {
       const row = await env.DB.prepare("SELECT push_enabled,email_enabled,social_notifications_enabled,comment_notifications_enabled,follower_notifications_enabled FROM notification_preferences WHERE user_id=?").bind(user.id).first<Record<string, number>>();
-      return { push: !!(row?.push_enabled ?? 1), email: !!(row?.email_enabled ?? 1), sms: false, follows: !!(row?.follower_notifications_enabled ?? 1), comments: !!(row?.comment_notifications_enabled ?? 1), orders: !!(row?.social_notifications_enabled ?? 1) };
+      return { push: !!(row?.push_enabled ?? 1), email: !!(row?.email_enabled ?? 1), sms: false, follows: !!(row?.follower_notifications_enabled ?? 1), comments: !!(row?.comment_notifications_enabled ?? 1), orders: false };
     };
     if (method === "GET") return json({ success: true, data: await read() });
     const b = await body(request); if (!b) return fail("Valid JSON body required");
