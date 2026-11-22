@@ -21,4 +21,6 @@ export interface Env {
   UPSTASH_REDIS_REST_TOKEN?: string;
   D1_INTERNAL_CALL_SECRET?: string;
   D1_TO_SUPABASE_HMAC_SECRET?: string;
+  MEDIA_BUCKET?: R2Bucket;
+  MEDIA_URL_SIGNING_SECRET?: string;
 }
