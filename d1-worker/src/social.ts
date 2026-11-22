@@ -285,7 +285,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const row = await env.DB.prepare("SELECT profile_visibility,allow_tagging,tagging_visibility,default_post_visibility FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ profile_visibility: string; allow_tagging: number; tagging_visibility: string; default_post_visibility: string }>();
       const userRow = await env.DB.prepare("SELECT profile_visibility FROM users WHERE id=?").bind(user.id).first<{ profile_visibility: string }>();
       return json({ success: true, data: {
-        profile_visibility: row?.profile_visibility || userRow?.profile_visibility || "public",
+        profile_visibility: (row?.profile_visibility || userRow?.profile_visibility || "public") === "private" ? "nobody" : (row?.profile_visibility || userRow?.profile_visibility || "public"),
         allow_tagging: row?.tagging_visibility || (row?.allow_tagging === 0 ? "nobody" : "everyone"),
         default_post_visibility: row?.default_post_visibility || "public"
       } });
