@@ -32,7 +32,7 @@ const PROFILE_SELECT = "u.id,u.username,u.display_name,u.avatar_url,u.bio,u.loca
 export async function handleSocialRoutes(request: Request, env: Env, context: RouteContext): Promise<Response | null> {
   const { url, path, method, user } = context;
 
-  const followRoute = path.match(/^\/api\/profiles\/([^/]+)\/follow(?:\/(follow-status|followers|following|count))?$/);
+  const followRoute = path.match(/^\/api\/profiles\/([^/]+)\/(follow|follow-status|followers|following)$/);
   if (followRoute) {
     const targetId = decodeURIComponent(followRoute[1]);
     const suffix = followRoute[2];
