@@ -47,6 +47,23 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
     await env.DB.prepare("UPDATE users SET "+sets.join(",")+onboardingSet+phoneVerificationReset+",updated_at="+NOW+" WHERE id=?").bind(...values).run();
     const updated=await readUser(env.DB,user.id);return json({success:true,user:updated?safeUser(updated):null});
   }
+  if(path==="/api/app-settings/video_posts_enabled"&&method==="GET"){
+    const setting=await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='video_posts_enabled'").first<{value_json:string}>();
+    let value="false";
+    if(setting){
+      try{value=String(JSON.parse(setting.value_json));}
+      catch{value=String(setting.value_json);}
+    }
+    return json({value});
+  }
+  if(path==="/api/profiles/search"&&method==="GET"){
+    const q=str(url.searchParams.get("q"),60).replace(/[%_]/g,"").trim();
+    if(q.length<2)return json({success:true,data:[]});
+    const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||20),1),30);
+    const rows=await env.DB.prepare("SELECT id,username,display_name,avatar_url FROM public_profiles WHERE lower(username) LIKE lower(?) OR lower(display_name) LIKE lower(?) ORDER BY followers_count DESC,created_at DESC LIMIT ?")
+      .bind("%"+q+"%","%"+q+"%",limit).all();
+    return json({success:true,data:rows.results});
+  }
   const publicProfile=path.match(/^\/api\/profiles\/([^/]+)$/);
   if(publicProfile&&publicProfile[1]!=="suggestions"&&method==="GET"){
     const key=decodeURIComponent(publicProfile[1]);
