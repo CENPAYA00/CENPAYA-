@@ -63,10 +63,11 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
 
   const profilePosts = path.match(/^\/api\/profiles\/([^/]+)\/posts$/);
   if (profilePosts && method === "GET") {
-    const targetId = decodeURIComponent(profilePosts[1]);
-    if (!UUID.test(targetId)) return fail("Invalid user id");
-    const profile = await env.DB.prepare("SELECT profile_visibility FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first<{ profile_visibility: string }>();
-    if (!profile || !(await canViewProfile(env.DB, user?.id || null, targetId, profile.profile_visibility))) return fail("Profile not found", 404);
+    const targetKey = decodeURIComponent(profilePosts[1]);
+    const profile = await env.DB.prepare("SELECT id,profile_visibility FROM users WHERE (id=? OR lower(username)=lower(?)) AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetKey,targetKey).first<{ id: string; profile_visibility: string }>();
+    if (!profile) return fail("Profile not found", 404);
+    const targetId = profile.id;
+    if (!(await canViewProfile(env.DB, user?.id || null, targetId, profile.profile_visibility))) return fail("Profile not found", 404);
     const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_premium,
       (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id) AS likes_count,
       (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count
