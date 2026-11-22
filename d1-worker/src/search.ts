@@ -41,9 +41,10 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,
       WHERE l.status='active' AND l.deleted_at IS NULL AND l.moderation_status='approved'
       AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL AND l.listing_type=?
       AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))
+      AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=l.seller_id) OR (b.blocker_id=l.seller_id AND b.blocked_id=?)))
       AND (l.title LIKE ? OR l.description LIKE ? OR u.username LIKE ?)
       ORDER BY (l.boosted_until IS NOT NULL AND l.boosted_until > strftime('%Y-%m-%dT%H:%M:%fZ','now')) DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
-      .bind(listingType,viewerId,viewerId,viewerId,term,term,term,limit).all<Record<string,unknown>>();
+      .bind(listingType,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,term,term,term,limit).all<Record<string,unknown>>();
     for(const row of rows.results){
       let keys:string[]=[];
       if(typeof row.images_json==="string"){try{const parsed:unknown=JSON.parse(row.images_json);if(Array.isArray(parsed))keys=parsed.filter((value):value is string=>typeof value==="string");}catch{}}
@@ -117,7 +118,7 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
         is_demo:hit?.is_demo??false,score:hit?.score??null,snippet:hit?.snippet??""};
     });
   }else{
-    const rows=await env.DB.prepare(`SELECT s.* FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id WHERE s.listing_id IN (${placeholders}) AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))`).bind(...ids,viewerId,viewerId,viewerId).all();
+    const rows=await env.DB.prepare(`SELECT s.* FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id WHERE s.listing_id IN (${placeholders}) AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?))) AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=l.seller_id) OR (b.blocker_id=l.seller_id AND b.blocked_id=?)))`).bind(...ids,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId).all();
     verified=(rows.results as Array<Record<string,unknown>>).map(row=>{
       const hit=hitMap.get(String(row.listing_id)),listingType=firstString(row.listing_type,hit?.kind,"listing").toLowerCase();
       const entityKind=listingType.includes("service")?"service":"listing";
