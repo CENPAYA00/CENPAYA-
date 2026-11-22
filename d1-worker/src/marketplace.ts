@@ -93,9 +93,10 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
         (p.visibility='followers' AND ? IS NOT NULL AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id)) OR
         (p.visibility='friends' AND ? IS NOT NULL AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?))))
       AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_feed_post_preferences fp WHERE fp.user_id=? AND fp.post_id=p.id AND fp.preference='not_interested'))
+      AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=?)))
       ${before?"AND p.created_at < ?":""}
       ORDER BY COALESCE(p.published_at,p.created_at) DESC LIMIT ? OFFSET ?`)
-      .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,...(before?[before]:[]),limit,offset).all();
+      .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,...(before?[before]:[]),limit,offset).all();
     return json({success:true,data:await hydratePosts(env,url.origin,rows.results as Array<Record<string,unknown>>)});
   }
   if(path==="/api/posts"&&method==="POST"){
