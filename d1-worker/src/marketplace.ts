@@ -6,6 +6,7 @@ const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
 const fail=(message:string,status=400)=>json({success:false,error:message},status);
 const str=(v:unknown,max=500)=>typeof v==="string"?v.trim().slice(0,max):"";
+const jsonArray=(value:unknown):unknown[]=>{if(Array.isArray(value))return value;if(typeof value!=="string"||!value)return[];try{const parsed=JSON.parse(value);return Array.isArray(parsed)?parsed:[];}catch{return[];}};
 async function body(request:Request):Promise<Record<string,unknown>|null>{
   const type=request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
   if(type!=="application/json")return null;
@@ -29,10 +30,42 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
   }
   const publicListing=path.match(/^\/api\/market\/listings\/([^/]+)$/);
   if(publicListing&&method==="GET"){
-    const row=await env.DB.prepare("SELECT * FROM public_marketplace_search WHERE listing_id=?").bind(publicListing[1]).first<Record<string,unknown>>();
+    const row=await env.DB.prepare(`SELECT l.*,u.username AS merchant_name,u.display_name AS merchant_display_name,u.avatar_url AS merchant_avatar_url,u.is_premium AS merchant_is_premium,c.name AS category,
+      (SELECT AVG(r.rating) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS rating,
+      (SELECT COUNT(*) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS reviews_count,
+      (SELECT COUNT(*) FROM marketplace_order_projections o WHERE o.listing_id=l.id) AS orders_count
+      FROM marketplace_listings l JOIN users u ON u.id=l.seller_id JOIN marketplace_categories c ON c.id=l.category_id
+      WHERE l.id=? AND l.deleted_at IS NULL AND ((l.status='active' AND l.moderation_status='approved' AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL) OR l.seller_id=?)`)
+      .bind(decodeURIComponent(publicListing[1]),user?.id||"").first<Record<string,unknown>>();
     if(!row)return fail("Listing not found",404);
-    const data={...row,listing_id:row.listing_id||row.id,id:row.listing_id||row.id,title:row.product_title||row.title,price:row.product_price??row.price_amount??row.price,seller_id:row.seller_id||row.merchant_id,images:row.images||(row.image_url?[row.image_url]:[])};
+    const images=jsonArray(row.images_json),documents=jsonArray(row.documents_json);
+    const data={...row,id:row.id,listing_id:row.id,title:row.title,price:row.price_amount,starting_price:row.price_amount,images,documents,thumbnail_url:images[0]||null,seller_id:row.seller_id,delivery_days:row.estimated_delivery_days};
     return json({success:true,data});
+  }
+  if(publicListing&&method==="DELETE"){
+    if(!user)return fail("Unauthorized",401);
+    const result=await env.DB.prepare("UPDATE marketplace_listings SET status='removed',deleted_at="+NOW+" WHERE id=? AND seller_id=? AND deleted_at IS NULL").bind(decodeURIComponent(publicListing[1]),user.id).run();
+    return result.meta.changes?json({success:true}):fail("Listing not found",404);
+  }
+  const listingPackages=path.match(/^\/api\/market\/listings\/([^/]+)\/packages$/);
+  if(listingPackages&&method==="GET"){
+    const row=await env.DB.prepare("SELECT id FROM marketplace_listings WHERE id=? AND deleted_at IS NULL AND (status='active' OR seller_id=?)").bind(decodeURIComponent(listingPackages[1]),user?.id||"").first();
+    if(!row)return fail("Listing not found",404);
+    // The exported D1 schema has no service-package table. Never fabricate package rows.
+    return json({success:true,data:[]});
+  }
+  if((path==="/api/market/my-listings"||path==="/api/market/my-services")&&method==="GET"){
+    if(!user)return fail("Unauthorized",401);
+    const type=path.endsWith("my-services")?"service":"product";
+    const rows=await env.DB.prepare(`SELECT l.id,l.seller_id,l.category_id,l.title,l.description,l.listing_type,l.condition,l.price_type,l.price_amount,l.currency_code,l.country_code,l.region,l.city,l.status,l.published_at,l.created_at,l.updated_at,l.price_is_range,l.price_min,l.price_max,l.estimated_delivery_days,l.images_json,l.documents_json,c.name AS category
+      FROM marketplace_listings l JOIN marketplace_categories c ON c.id=l.category_id
+      WHERE l.seller_id=? AND l.listing_type=? AND l.deleted_at IS NULL ORDER BY l.created_at DESC LIMIT 100`).bind(user.id,type).all();
+    return json({success:true,data:rows.results.map((row:any)=>({...row,price:row.price_amount,starting_price:row.price_amount,images:jsonArray(row.images_json),documents:jsonArray(row.documents_json)}))});
+  }
+  if(path==="/api/market/config"&&method==="GET"){
+    const country=str(url.searchParams.get("country"),2).toUpperCase();
+    const row=country?await env.DB.prepare("SELECT country_code,currency_code,phone_prefix FROM supported_countries WHERE country_code=? AND status='active'").bind(country).first():null;
+    return json({success:true,data:row||null});
   }
   if(path==="/api/feed"&&method==="GET"){
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||20),1),50);
