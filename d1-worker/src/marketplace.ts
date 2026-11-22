@@ -1,7 +1,6 @@
 import type { Env, User } from "./types.js";
 import { uuid, constantTimeEqual } from "./security.js";
 import { extractMediaKey, hydratePosts, resolveMediaUrl } from "./media.js";
-import { handleSearchRoute } from "./search.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
@@ -17,8 +16,6 @@ async function body(request:Request):Promise<Record<string,unknown>|null>{
 
 export async function handleMarketplaceRoutes(request:Request,env:Env,context:RouteContext):Promise<Response|null>{
   const {url,path,method,user}=context;
-  const searchResponse=await handleSearchRoute(request,env);
-  if(searchResponse)return searchResponse;
   const internalListingQuote=path.match(/^\/internal\/v1\/market\/listings\/([^/]+)\/quote$/);
   if(internalListingQuote&&method==="GET"){
     const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
