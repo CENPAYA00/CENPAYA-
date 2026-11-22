@@ -107,12 +107,12 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
   if(path==="/api/market/search"&&method==="GET"){
     const q=str(url.searchParams.get("q"),100).replace(/[%_]/g,""),category=str(url.searchParams.get("category_id"),64),country=str(url.searchParams.get("country"),2).toUpperCase();
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||24),1),50),offset=Math.max(Number(url.searchParams.get("offset")||0),0);
-    const where:string[]=[];const values:unknown[]=[];
-    if(q){where.push("product_title LIKE ?");values.push("%"+q+"%");}
-    if(category){where.push("category_id=?");values.push(category);}
-    if(country){where.push("country_code=?");values.push(country);}
-    const rows=await env.DB.prepare("SELECT * FROM public_marketplace_search "+(where.length?"WHERE "+where.join(" AND "):"")+" ORDER BY is_boosted DESC,published_date DESC LIMIT ? OFFSET ?").bind(...values,limit,offset).all();
-    return json({success:true,data:rows.results});
+    const where:string[]=["l.status='active'","l.deleted_at IS NULL","l.moderation_status='approved'","u.account_status='active'","u.banned=0","u.deleted_at IS NULL"];const values:unknown[]=[];
+    if(q){where.push("s.product_title LIKE ?");values.push("%"+q+"%");}
+    if(category){where.push("s.category_id=?");values.push(category);}
+    if(country){where.push("s.country_code=?");values.push(country);}
+    const rows=await env.DB.prepare("SELECT s.*,l.seller_id,l.description,l.price_type,l.price_is_range,l.price_min,l.price_max,l.images_json,l.documents_json,l.estimated_delivery_days,u.avatar_url AS seller_avatar_url,u.is_premium AS seller_is_premium FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_id WHERE "+where.join(" AND ")+" ORDER BY s.is_boosted DESC,s.published_date DESC LIMIT ? OFFSET ?").bind(...values,limit,offset).all();
+    return json({success:true,data:rows.results.map((row:any)=>({...row,images:jsonArray(row.images_json),documents:jsonArray(row.documents_json)}))});
   }
   if(path==="/api/market/listings"&&method==="POST"){
     if(!user)return fail("Unauthorized",401);
@@ -122,12 +122,19 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     if(!title||!description||!category||! /^[A-Z]{2}$/.test(country)||!["product","service"].includes(type))return fail("Title, description, category, country and valid listing type required");
     if(!["fixed","negotiable","contact"].includes(priceType))return fail("Invalid price type");
     if(priceType!=="contact"&&(!Number.isSafeInteger(priceAmount)||Number(priceAmount)<0||! /^[A-Z]{3}$/.test(currency)))return fail("Fixed or negotiable listings require a non-negative integer price and three-letter currency");
-    const cat=await env.DB.prepare("SELECT id,category_type FROM marketplace_categories WHERE id=? AND status='active'").bind(category).first<{id:string;category_type:string}>();
+    const cat=await env.DB.prepare("SELECT id,category_type FROM marketplace_categories WHERE (id=? OR lower(name)=lower(?) OR lower(slug)=lower(?)) AND status='active' LIMIT 1").bind(category,category,category).first<{id:string;category_type:string}>();
     if(!cat)return fail("Category not found",404);
     if(cat.category_type!=="both"&&cat.category_type!==type)return fail("Listing type does not match category",400);
     const id=uuid();
-    await env.DB.prepare("INSERT INTO marketplace_listings(id,seller_id,category_id,title,description,listing_type,price_type,price_amount,currency_code,country_code,status) VALUES(?,?,?,?,?,?,?,?,?,?,'draft')")
-      .bind(id,user.id,category,title,description,type,priceType,priceType==="contact"?null:Number(priceAmount),priceType==="contact"?null:currency,country).run();
+    const priceIsRange=b.price_is_range===true;
+    const priceMin=priceIsRange?Number(b.price_min??priceAmount):Number(priceAmount);
+    const priceMax=priceIsRange?Number(b.price_max??priceMin):Number(priceAmount);
+    if(priceIsRange&&(!Number.isSafeInteger(priceMin)||!Number.isSafeInteger(priceMax)||priceMin<0||priceMax<priceMin))return fail("Invalid price range");
+    const deliveryDays=Math.min(Math.max(Number(b.delivery_days||3),1),365);
+    const images=jsonArray(b.images_json).filter((x):x is string=>typeof x==="string"&&x.length<=2048).slice(0,10);
+    const documents=jsonArray(b.documents_json).filter((x):x is string=>typeof x==="string"&&x.length<=2048).slice(0,5);
+    await env.DB.prepare("INSERT INTO marketplace_listings(id,seller_id,category_id,title,description,listing_type,price_type,price_amount,currency_code,country_code,status,price_is_range,price_min,price_max,images_json,documents_json,estimated_delivery_days) VALUES(?,?,?,?,?,?,?,?,?,?,'draft',?,?,?,?,?,?)")
+      .bind(id,user.id,cat.id,title,description,type,priceType,priceType==="contact"?null:priceIsRange?priceMin:Number(priceAmount),priceType==="contact"?null:currency,country,priceIsRange?1:0,priceIsRange?priceMin:null,priceIsRange?priceMax:null,JSON.stringify(images),JSON.stringify(documents),deliveryDays).run();
     return json({success:true,id,status:"draft"},201);
   }
 
