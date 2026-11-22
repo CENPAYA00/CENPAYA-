@@ -14,7 +14,7 @@ creates a D1 user, records the provider identity, and issues a D1 session.
 The session token is returned to the frontend in the URL fragment, not a query
 parameter, then stored by the frontend D1 API client.
 
-Apply canonical D1 migrations 52 and 53, in order, before enabling D1 password auth, Google OAuth, D1 email-registration routes, and persisted social preferences. Configure these Worker
+Apply canonical D1 migrations 52, 53, and 54, in order, before enabling D1 password auth, Google OAuth, D1 email-registration routes, persisted social preferences, and chat/support preferences. Configure these Worker
 variables/secrets:
 
 - `GOOGLE_CLIENT_ID` — Google OAuth client ID.
@@ -94,7 +94,7 @@ claiming its provider adapter has been changed.
 ## Deployment order
 
 1. Confirm the exact Google callback URI and Cloudflare binding names.
-2. Confirm the target D1 database is at migration 51, then apply canonical migrations 52 and 53 after review.
+2. Confirm the target D1 database is at migration 51, then apply canonical migrations 52, 53, and 54 after review.
 3. Configure Google OAuth variables/secrets and the existing AI/KV/service
    bindings on the D1 Worker.
 4. Confirm the CenPaya API Worker is bound as `OTP_DELIVERY` and its existing
