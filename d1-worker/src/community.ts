@@ -1,4 +1,5 @@
 import type { Env, User } from "./types.js";
+import { extractMediaKey, signMediaUrl } from "./media.js";
 import { uuid } from "./security.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
@@ -22,7 +23,11 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id=t.id AND m.sender_id<>? AND m.created_at>COALESCE(tm.last_read_at,'1970-01-01T00:00:00.000Z')) AS unread_count
       FROM chat_thread_members tm JOIN chat_threads t ON t.id=tm.thread_id
       WHERE tm.user_id=? AND tm.left_at IS NULL AND t.thread_type='direct' ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 100`).bind(user.id,user.id).all();
-    return json({success:true,data:rows.results});
+    const data = await Promise.all(rows.results.map(async (row: any) => {
+      const { media_key, ...message } = row;
+      return { ...message, media_url: media_key ? await signMediaUrl(env, url.origin, media_key) : message.media_url };
+    }));
+    return json({success:true,data});
   }
   if(path==="/api/chat/direct"&&method==="POST"){
     if(!user)return fail("Unauthorized",401);
@@ -55,7 +60,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members m JOIN chat_threads t ON t.id=m.thread_id WHERE m.thread_id=? AND m.user_id=? AND m.left_at IS NULL AND t.thread_type='direct'").bind(threadId,user.id).first();
     if(!member)return fail("Conversation not found",404);
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||50),1),100),before=url.searchParams.get("before");
-    const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,CASE WHEN m.status='deleted' THEN 'Message deleted' ELSE m.message_text END AS message_text,CASE WHEN m.status='deleted' THEN 'text' ELSE m.message_type END AS message_type,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_url END AS media_url,m.media_duration_seconds,m.shared_post_id,m.delivered_at,m.read_at,m.status,m.created_at,
+    const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,CASE WHEN m.status='deleted' THEN 'Message deleted' ELSE m.message_text END AS message_text,CASE WHEN m.status='deleted' THEN 'text' ELSE m.message_type END AS message_type,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_url END AS media_url,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_key END AS media_key,m.media_duration_seconds,m.shared_post_id,m.delivered_at,m.read_at,m.status,m.created_at,
       u.username,u.display_name,u.avatar_url FROM chat_messages m JOIN users u ON u.id=m.sender_id
       WHERE m.thread_id=? ${before?"AND m.created_at < ?":""}
       ORDER BY m.created_at DESC LIMIT ?`).bind(threadId,...(before?[before]:[]),limit).all();
@@ -71,7 +76,11 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const duration=b.media_duration_seconds;
     if(!["text","image","voice_note","shared_post"].includes(messageType))return fail("Invalid message type");
     if(messageType==="text"&&!message)return fail("Message text is required");
-    if((messageType==="image"||messageType==="voice_note")&&(!mediaUrl||!/^https:\/\//i.test(mediaUrl)))return fail("A secure media URL is required");
+    let mediaKey: string | null = null;
+    if(messageType==="image"||messageType==="voice_note"){
+      mediaKey = await extractMediaKey(mediaUrl,env,url);
+      if(!mediaKey||!mediaKey.startsWith(["chat",threadId,user.id].join("/")+"/"))return fail("A valid, unexpired chat media URL is required");
+    }
     if(messageType==="voice_note"&&(typeof duration!=="number"||!Number.isFinite(duration)||duration<=0||duration>3600))return fail("Invalid voice message duration");
     if(messageType==="shared_post"&&!UUID.test(sharedPostId))return fail("A valid shared post is required");
     const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id).first();
@@ -81,8 +90,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       if(!post)return fail("Shared post not found",404);
     }
     const id=uuid();
-    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,message_type,media_url,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(id,threadId,user.id,message || (messageType==="image" ? "Photo" : messageType==="voice_note" ? "Voice message" : "Shared a post"),messageType,mediaUrl||null,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null).run();
+    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,media_key,message_type,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?)")
+      .bind(id,threadId,user.id,message || (messageType==="image" ? "Photo" : messageType==="voice_note" ? "Voice message" : "Shared a post"),mediaKey,messageType,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null).run();
     await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=?").bind(threadId,user.id).run();
     return json({success:true,id},201);
   }
@@ -172,7 +181,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const b = await body(request); if (!b) return fail("Valid JSON body required");
     const targetThread = str(b.thread_id, 64);
     const [source, target] = await Promise.all([
-      env.DB.prepare("SELECT m.thread_id,m.message_text,m.message_type,m.media_url,m.media_duration_seconds,m.shared_post_id,m.status FROM chat_messages m JOIN chat_thread_members tm ON tm.thread_id=m.thread_id WHERE m.id=? AND tm.user_id=? AND tm.left_at IS NULL").bind(forwardMessage[1], user.id).first<Record<string, unknown>>(),
+      env.DB.prepare("SELECT m.thread_id,m.message_text,m.message_type,m.media_key,m.media_url,m.media_duration_seconds,m.shared_post_id,m.status FROM chat_messages m JOIN chat_thread_members tm ON tm.thread_id=m.thread_id WHERE m.id=? AND tm.user_id=? AND tm.left_at IS NULL").bind(forwardMessage[1], user.id).first<Record<string, unknown>>(),
       env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(targetThread, user.id).first()
     ]);
     if (!source || source.status === "deleted" || !target) return fail("Message or destination not found", 404);
@@ -181,8 +190,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       if (!post) return fail("Only public shared posts can be forwarded", 403);
     }
     const id = uuid();
-    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,message_type,media_url,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(id,targetThread,user.id,source.message_text,source.message_type,source.media_url,source.media_duration_seconds,source.shared_post_id).run();
+    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,media_key,media_url,message_type,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?,?)")
+      .bind(id,targetThread,user.id,source.message_text,source.media_key,source.media_url,source.message_type,source.media_duration_seconds,source.shared_post_id).run();
     return json({ success: true, id }, 201);
   }
 
