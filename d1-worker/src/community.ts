@@ -97,7 +97,10 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const subject=str(b.subject,160),description=str(b.description,5000),category=str(b.category,40)||"general";
     if(!subject||!description||!["general","account","technical","marketplace","payments","security","privacy","other"].includes(category))return fail("Valid subject, description and category required");
     const id=uuid(),number="CP-"+Date.now().toString(36).toUpperCase()+"-"+uuid().slice(0,8).toUpperCase();
-    await env.DB.prepare("INSERT INTO support_tickets(id,user_id,ticket_number,subject,description,category) VALUES(?,?,?,?,?,?)").bind(id,user.id,number,subject,description,category).run();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO support_tickets(id,user_id,ticket_number,subject,description,category) VALUES(?,?,?,?,?,?)").bind(id,user.id,number,subject,description,category),
+      env.DB.prepare("INSERT INTO support_ticket_messages(id,ticket_id,sender_type,sender_user_id,message_text) VALUES(?,?,'user',?,?)").bind(uuid(),id,user.id,description)
+    ]);
     return json({success:true,id,ticket_number:number},201);
   }
   if(path==="/api/support/tickets"&&method==="GET"){
