@@ -338,7 +338,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
   if (path === "/api/me/personal-details" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
     const row = await env.DB.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,bio,date_of_birth,country_code,location_region,location_city,occupation,is_premium,profile_visibility FROM users WHERE id=? AND deleted_at IS NULL").bind(user.id).first<Record<string, unknown>>();
-    return json({ success: true, data: row ? { ...row, is_email_verified: !!row.email_verified, is_phone_verified: !!row.phone_verified } : null });
+    return json({ success: true, data: row ? { ...row, country_iso: row.country_code, region: row.location_region, city: row.location_city, is_email_verified: !!row.email_verified, is_phone_verified: !!row.phone_verified } : null });
   }
   if (path === "/api/me/personal-details" && method === "PATCH") {
     if (!user) return fail("Unauthorized", 401);
@@ -368,6 +368,38 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     }
     values.push(user.id);
     await env.DB.prepare("UPDATE users SET " + assignments.join(",") + (fields.includes("phone") ? ",phone_verified=0,phone_verified_at=NULL" : "") + ",updated_at=" + NOW + " WHERE id=?").bind(...values).run();
+    return json({ success: true });
+  }
+
+  if (path === "/api/legal" && method === "GET") {
+    const rows = await env.DB.prepare(`SELECT d.id,d.slug,d.title,d.created_at,
+      (SELECT v.version FROM legal_document_versions v WHERE v.document_id=d.id ORDER BY COALESCE(v.published_at,v.created_at) DESC LIMIT 1) AS latest_version
+      FROM legal_documents d WHERE EXISTS(SELECT 1 FROM legal_document_versions v WHERE v.document_id=d.id)
+      ORDER BY d.title`).all();
+    return json({ success: true, data: rows.results.map((row: any) => ({ ...row, required: true })) });
+  }
+  const legalDocument = path.match(/^\/api\/legal\/([^/]+)$/);
+  if (legalDocument && method === "GET") {
+    const slug = decodeURIComponent(legalDocument[1]).toLowerCase();
+    const document = await env.DB.prepare("SELECT id,slug,title,created_at FROM legal_documents WHERE slug=?").bind(slug).first<Record<string, unknown>>();
+    if (!document) return fail("Legal document not found", 404);
+    const requestedLanguage = str(url.searchParams.get("lang"), 5).toLowerCase();
+    const language = ["en", "fr"].includes(requestedLanguage) ? requestedLanguage : "en";
+    let version = await env.DB.prepare("SELECT id,version,language,content,published_at,created_at FROM legal_document_versions WHERE document_id=? AND language=? ORDER BY COALESCE(published_at,created_at) DESC LIMIT 1").bind(document.id, language).first<Record<string, unknown>>();
+    if (!version && language !== "en") version = await env.DB.prepare("SELECT id,version,language,content,published_at,created_at FROM legal_document_versions WHERE document_id=? AND language='en' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 1").bind(document.id).first<Record<string, unknown>>();
+    if (!version) return fail("Legal document version not found", 404);
+    return json({ success: true, data: { document: { ...document, description: null }, version: { ...version, version_label: version.version, effective_from: version.published_at || version.created_at, body_markdown: version.content } } });
+  }
+  const legalAcceptance = path.match(/^\/api\/legal\/([^/]+)\/accept$/);
+  if (legalAcceptance && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const document = await env.DB.prepare("SELECT id FROM legal_documents WHERE slug=?").bind(decodeURIComponent(legalAcceptance[1]).toLowerCase()).first<{ id: string }>();
+    const versionId = str(b.version_id, 64);
+    if (!document || !UUID.test(versionId)) return fail("Legal document or version not found", 404);
+    const version = await env.DB.prepare("SELECT id FROM legal_document_versions WHERE id=? AND document_id=?").bind(versionId, document.id).first();
+    if (!version) return fail("Legal document version not found", 404);
+    await env.DB.prepare("INSERT OR IGNORE INTO user_legal_acceptances(user_id,version_id) VALUES(?,?)").bind(user.id, versionId).run();
     return json({ success: true });
   }
 
