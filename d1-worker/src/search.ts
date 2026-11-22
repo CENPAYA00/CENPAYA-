@@ -41,7 +41,7 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number)
       WHERE l.status='active' AND l.deleted_at IS NULL AND l.moderation_status='approved'
       AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL AND l.listing_type=?
       AND (l.title LIKE ? OR l.description LIKE ? OR u.username LIKE ?)
-      ORDER BY l.boosted_until IS NOT NULL DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
+      ORDER BY (l.boosted_until IS NOT NULL AND l.boosted_until > strftime('%Y-%m-%dT%H:%M:%fZ','now')) DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
       .bind(listingType,term,term,term,limit).all<Record<string,unknown>>();
     for(const row of rows.results){
       let keys:string[]=[];
@@ -99,7 +99,7 @@ export async function handleSearchRoute(request:Request,env:Env):Promise<Respons
     (kind==="market"&&item.kind==="listing")||(kind==="services"&&item.kind==="service")||
     (kind==="home"&&item.kind==="post")));
   const ids=[...new Set(normalized.map(item=>item.id))].slice(0,limit);
-  if(!ids.length)return json({success:true,data:[],source:"ai-search"});
+  if(!ids.length){const fallback=await fallbackSearch(env,url,q,kind,limit);await cachePut(env,cacheKey,fallback,60);return json({success:true,data:fallback,source:"d1-fallback"});}
   const placeholders=ids.map(()=>"?").join(",");
   let verified:SearchHit[]=[];
   const hitMap=new Map(normalized.map(item=>[item.id,item]));
@@ -137,6 +137,7 @@ export async function handleSearchRoute(request:Request,env:Env):Promise<Respons
     }).filter(item=>kind==="all"||kind==="market"||(kind==="services"&&item.kind==="service")||
       (kind==="listing"&&item.kind==="listing")||(kind==="service"&&item.kind==="service"));
   }
+  if(!verified.length){const fallback=await fallbackSearch(env,url,q,kind,limit);await cachePut(env,cacheKey,fallback,60);return json({success:true,data:fallback,source:"d1-fallback"});}
   await cachePut(env,cacheKey,verified,60);
   return json({success:true,data:verified,source:"ai-search"});
 }
