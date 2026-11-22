@@ -64,16 +64,17 @@ export async function handleSearchRoute(request:Request,env:Env):Promise<Respons
   const q=str(url.searchParams.get("q"),200),kind=str(url.searchParams.get("type"),20)||"all";
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||30),1),50);
   if(!q)return json({success:true,data:[]});
-  if(!env.AI||!env.AI_SEARCH_NAME){
+  const cacheKey="search:"+await digest(kind+":"+q.toLowerCase()+":"+limit);
+  const cached=await cacheGet(env,cacheKey);
+  if(cached)return json({success:true,data:cached,source:"cache"});
+  const ai=env.AI,aiSearchName=env.AI_SEARCH_NAME;
+  if(!ai||!aiSearchName){
     const fallback=await fallbackSearch(env,url,q,kind,limit);
     await cachePut(env,cacheKey,fallback,60);
     return json({success:true,data:fallback,source:"d1-fallback"});
   }
-  const cacheKey="search:"+await digest(kind+":"+q.toLowerCase()+":"+limit);
-  const cached=await cacheGet(env,cacheKey);
-  if(cached)return json({success:true,data:cached,source:"cache"});
   let raw:unknown;
-  try{raw=await env.AI.autorag(env.AI_SEARCH_NAME).search({query:q,rewrite_query:true,max_num_results:limit});}
+  try{raw=await ai.autorag(aiSearchName).search({query:q,rewrite_query:true,max_num_results:limit});}
   catch{
     const fallback=await fallbackSearch(env,url,q,kind,limit);
     await cachePut(env,cacheKey,fallback,60);
