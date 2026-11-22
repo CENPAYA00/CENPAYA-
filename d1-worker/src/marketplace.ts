@@ -35,13 +35,26 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     return json({success:true,data});
   }
   if(path==="/api/feed"&&method==="GET"){
-    const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||20),1),50),before=url.searchParams.get("before");
+    const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||20),1),50);
+    const offset=Math.min(Math.max(Number(url.searchParams.get("offset")||0),0),5000);
+    const before=url.searchParams.get("before");
+    const viewerId=user?.id||null;
     const rows=await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.published_at,p.created_at,
-      u.username,u.display_name,u.avatar_url FROM posts p JOIN users u ON u.id=p.author_id
-      WHERE p.status='published' AND p.deleted_at IS NULL AND p.visibility='public'
+      u.username,u.display_name,u.avatar_url,
+      (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id) AS likes_count,
+      (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count,
+      CASE WHEN ? IS NOT NULL AND EXISTS(SELECT 1 FROM post_reactions r WHERE r.post_id=p.id AND r.user_id=?) THEN 1 ELSE 0 END AS is_liked,
+      CASE WHEN ? IS NOT NULL AND EXISTS(SELECT 1 FROM post_bookmarks b WHERE b.post_id=p.id AND b.user_id=?) THEN 1 ELSE 0 END AS is_saved,
+      CASE WHEN ? IS NOT NULL AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 1 ELSE 0 END AS is_following_author
+      FROM posts p JOIN users u ON u.id=p.author_id
+      WHERE p.status='published' AND p.deleted_at IS NULL
       AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
-      ${before?"AND p.created_at < ?":""} ORDER BY COALESCE(p.published_at,p.created_at) DESC LIMIT ?`)
-      .bind(...(before?[before]:[]),limit).all();
+      AND (p.visibility='public' OR p.author_id=? OR
+        (p.visibility='followers' AND ? IS NOT NULL AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id)) OR
+        (p.visibility='friends' AND ? IS NOT NULL AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?))))
+      ${before?"AND p.created_at < ?":""}
+      ORDER BY COALESCE(p.published_at,p.created_at) DESC LIMIT ? OFFSET ?`)
+      .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,...(before?[before]:[]),limit,offset).all();
     return json({success:true,data:rows.results});
   }
   if(path==="/api/posts"&&method==="POST"){
