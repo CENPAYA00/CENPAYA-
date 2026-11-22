@@ -36,7 +36,7 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,
   }else{
     const listingType=kind==="services"?"service":"product";
     const rows=await env.DB.prepare(`SELECT l.id AS listing_id,l.title AS product_title,l.description,l.price_amount,l.currency_code,l.listing_type,l.images_json,l.city,l.country_code,
-      COALESCE(l.published_at,l.created_at) AS published_date,u.username AS merchant_name,u.is_demo
+      COALESCE(l.published_at,l.created_at) AS published_date,u.username AS merchant_name,l.is_demo AS is_demo
       FROM marketplace_listings l JOIN users u ON u.id=l.seller_id
       WHERE l.status='active' AND l.deleted_at IS NULL AND l.moderation_status='approved'
       AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL AND l.listing_type=?
