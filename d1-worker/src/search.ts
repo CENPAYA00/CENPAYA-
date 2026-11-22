@@ -1,5 +1,6 @@
 import type { Env } from "./types.js";
 import { digest, cacheGet, cachePut } from "./security.js";
+import { hydratePosts, resolveMediaUrl } from "./media.js";
 
 type SearchHit = {
   id: string; kind: string; title: string; subtitle: string; cover: string | null;
@@ -17,17 +18,67 @@ const firstString=(...values:unknown[]):string=>{
 };
 const str=(value:unknown,max=200)=>typeof value==="string"?value.trim().slice(0,max):"";
 
+async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number):Promise<SearchHit[]>{
+  const term="%"+q.replace(/[%_]/g,"")+"%",results:SearchHit[]=[];
+  if(kind==="home"){
+    const rows=await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_demo
+      FROM posts p JOIN users u ON u.id=p.author_id
+      WHERE p.status='published' AND p.deleted_at IS NULL AND p.visibility='public'
+      AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
+      AND (p.content LIKE ? OR u.username LIKE ? OR u.display_name LIKE ?)
+      ORDER BY COALESCE(p.published_at,p.created_at) DESC LIMIT ?`).bind(term,term,term,limit).all<Record<string,unknown>>();
+    const posts=await hydratePosts(env,url.origin,rows.results);
+    for(const post of posts){
+      const content=firstString(post.content,"Post");
+      const image=firstString(typeof post.image_url==="string"?post.image_url.split(",")[0]:"");
+      results.push({id:String(post.id),kind:"post",title:content.slice(0,100),subtitle:firstString(post.username?"@"+String(post.username):"",post.display_name),cover:image||null,meta:post.created_at?new Date(String(post.created_at)).toLocaleDateString():"",is_demo:post.is_demo===true||post.is_demo===1,score:null,snippet:content.slice(0,320)});
+    }
+  }else{
+    const listingType=kind==="services"?"service":"product";
+    const rows=await env.DB.prepare(`SELECT l.id AS listing_id,l.title AS product_title,l.description,l.price_amount,l.currency_code,l.listing_type,l.images_json,l.city,l.country_code,
+      COALESCE(l.published_at,l.created_at) AS published_date,u.username AS merchant_name,u.is_demo
+      FROM marketplace_listings l JOIN users u ON u.id=l.seller_id
+      WHERE l.status='active' AND l.deleted_at IS NULL AND l.moderation_status='approved'
+      AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL AND l.listing_type=?
+      AND (l.title LIKE ? OR l.description LIKE ? OR u.username LIKE ?)
+      ORDER BY l.boosted_until IS NOT NULL DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
+      .bind(listingType,term,term,term,limit).all<Record<string,unknown>>();
+    for(const row of rows.results){
+      let keys:string[]=[];
+      if(typeof row.images_json==="string"){try{const parsed:unknown=JSON.parse(row.images_json);if(Array.isArray(parsed))keys=parsed.filter((value):value is string=>typeof value==="string");}catch{}}
+      const images=await Promise.all(keys.map(value=>resolveMediaUrl(value,env,url.origin)));
+      const cover=images.find((value):value is string=>!!value)||null;
+      const price=row.price_amount??null,currency=firstString(row.currency_code,"XAF");
+      results.push({id:String(row.listing_id),kind:listingType==="service"?"service":"listing",
+        title:firstString(row.product_title,"Marketplace item"),subtitle:firstString(row.merchant_name?"@"+String(row.merchant_name):"",row.city,row.country_code),
+        cover,meta:price===null?"":Number(price).toLocaleString()+" "+currency,is_demo:row.is_demo===true||row.is_demo===1,
+        score:null,snippet:firstString(row.description).slice(0,320)});
+    }
+  }
+  return results;
+}
+
 export async function handleSearchRoute(request:Request,env:Env):Promise<Response|null>{
   const url=new URL(request.url);
   if(url.pathname.replace(/\/$/,"")!=="/api/search"||request.method.toUpperCase()!=="GET")return null;
   const q=str(url.searchParams.get("q"),200),kind=str(url.searchParams.get("type"),20)||"all";
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||30),1),50);
   if(!q)return json({success:true,data:[]});
-  if(!env.AI||!env.AI_SEARCH_NAME)return fail("Cloudflare AI Search is not configured on this Worker",503);
+  if(!env.AI||!env.AI_SEARCH_NAME){
+    const fallback=await fallbackSearch(env,url,q,kind,limit);
+    await cachePut(env,cacheKey,fallback,60);
+    return json({success:true,data:fallback,source:"d1-fallback"});
+  }
   const cacheKey="search:"+await digest(kind+":"+q.toLowerCase()+":"+limit);
   const cached=await cacheGet(env,cacheKey);
   if(cached)return json({success:true,data:cached,source:"cache"});
-  const raw=await env.AI.autorag(env.AI_SEARCH_NAME).search({query:q,rewrite_query:true,max_num_results:limit});
+  let raw:unknown;
+  try{raw=await env.AI.autorag(env.AI_SEARCH_NAME).search({query:q,rewrite_query:true,max_num_results:limit});}
+  catch{
+    const fallback=await fallbackSearch(env,url,q,kind,limit);
+    await cachePut(env,cacheKey,fallback,60);
+    return json({success:true,data:fallback,source:"d1-fallback"});
+  }
   const root=asRecord(raw),hits=asRecord(root.hits);
   const rawResults=Array.isArray(root.data)?root.data:Array.isArray(root.results)?root.results:Array.isArray(hits.hits)?hits.hits:[];
   const normalized:SearchHit[]=rawResults.map((rawItem:unknown)=>{
