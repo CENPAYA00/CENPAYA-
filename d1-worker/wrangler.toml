@@ -30,6 +30,9 @@ database_id = "68b307af-935e-45ca-933f-2e4cf6db8ee2"
 # GOOGLE_CLIENT_ID
 # GOOGLE_CLIENT_SECRET
 # UPSTASH_REDIS_REST_TOKEN (optional)
+# MEDIA_URL_SIGNING_SECRET
 # UPSTASH_REDIS_REST_URL may be a variable; Redis is optional.
+# MEDIA_BUCKET: bind the verified existing private R2 bucket before enabling uploads.
+# MEDIA_URL_SIGNING_SECRET: 32+ random bytes, stored as a Worker secret.
 #
 # Never place provider credentials or secret values in this file.
