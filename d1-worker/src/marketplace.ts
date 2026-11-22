@@ -104,7 +104,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const content=str(b.content,10000),visibility=str(b.visibility,20)||"public";
     const mediaInput=Array.isArray(b.media_urls)?b.media_urls:(typeof b.image_url==="string"?b.image_url.split(","):[]);
-    const mediaUrls=mediaInput.filter((value):value is string=>typeof value==="string"&&value.length<=2048).slice(0,10);
+    const mediaUrls=[...new Set(mediaInput.filter((value):value is string=>typeof value==="string"&&value.length<=2048))].slice(0,10);
     if(!content&&!mediaUrls.length)return fail("Write something or add a photo");
     if(!["public","followers","friends","private"].includes(visibility))return fail("Invalid post visibility");
     if(mediaInput.length>10)return fail("A post can contain up to 10 images");
@@ -209,8 +209,8 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const availability=str(b.availability,40)||null;
     const deliveryRequired=b.delivery_required===true||Number(b.delivery_required)===1?1:0;
     const hideFromFriends=b.hide_from_friends===true||Number(b.hide_from_friends)===1?1:0;
-    const imageUrls=jsonArray(b.images_json).filter((x):x is string=>typeof x==="string"&&x.length<=2048).slice(0,10);
-    const documentUrls=jsonArray(b.documents_json).filter((x):x is string=>typeof x==="string"&&x.length<=2048).slice(0,5);
+    const imageUrls=[...new Set(jsonArray(b.images_json).filter((x):x is string=>typeof x==="string"&&x.length<=2048))].slice(0,10);
+    const documentUrls=[...new Set(jsonArray(b.documents_json).filter((x):x is string=>typeof x==="string"&&x.length<=2048))].slice(0,5);
     if((imageUrls.length||documentUrls.length)&&(!env.MEDIA_BUCKET||(env.MEDIA_URL_SIGNING_SECRET||"").length<32))return fail("R2 media storage is not configured",503);
     const imageKeys:string[]=[],documentKeys:string[]=[];
     for(const value of imageUrls){
