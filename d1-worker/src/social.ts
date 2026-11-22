@@ -246,15 +246,22 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     if (method === "GET") {
       const row = await env.DB.prepare("SELECT profile_visibility,allow_tagging,tagging_visibility,default_post_visibility FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ profile_visibility: string; allow_tagging: number; tagging_visibility: string; default_post_visibility: string }>();
       const userRow = await env.DB.prepare("SELECT profile_visibility FROM users WHERE id=?").bind(user.id).first<{ profile_visibility: string }>();
-      return json({ success: true, data: { profile_visibility: row?.profile_visibility || userRow?.profile_visibility || "public", allow_tagging: row?.tagging_visibility || (row?.allow_tagging ? "everyone" : "everyone"), default_post_visibility: row?.default_post_visibility || "public" } });
+      return json({ success: true, data: {
+        profile_visibility: row?.profile_visibility || userRow?.profile_visibility || "public",
+        allow_tagging: row?.tagging_visibility || (row?.allow_tagging === 0 ? "nobody" : "everyone"),
+        default_post_visibility: row?.default_post_visibility || "public"
+      } });
     }
     const b = await body(request); if (!b) return fail("Valid JSON body required");
     const requestedVisibility = str(b.profile_visibility, 20) || "public";
     const visibility = requestedVisibility === "nobody" ? "private" : requestedVisibility;
     if (!["public", "followers", "private"].includes(visibility)) return fail("Invalid profile visibility");
     const tagging = str(b.allow_tagging, 20) || "everyone";
+    const postVisibility = str(b.default_post_visibility, 20) || "public";
     if (!["everyone", "friends", "nobody"].includes(tagging)) return fail("Invalid tagging preference");
-    await env.DB.prepare("INSERT INTO user_privacy_settings(user_id,profile_visibility,allow_tagging) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile_visibility=excluded.profile_visibility,allow_tagging=excluded.allow_tagging,updated_at=" + NOW).bind(user.id, visibility, tagging === "everyone" ? 1 : 0).run();
+    if (!["public", "followers", "friends", "private"].includes(postVisibility)) return fail("Invalid default post visibility");
+    await env.DB.prepare("INSERT INTO user_privacy_settings(user_id,profile_visibility,allow_tagging,tagging_visibility,default_post_visibility) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile_visibility=excluded.profile_visibility,allow_tagging=excluded.allow_tagging,tagging_visibility=excluded.tagging_visibility,default_post_visibility=excluded.default_post_visibility,updated_at=" + NOW)
+      .bind(user.id, visibility, tagging === "nobody" ? 0 : 1, tagging, postVisibility).run();
     return json({ success: true });
   }
 
