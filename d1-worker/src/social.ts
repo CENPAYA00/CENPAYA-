@@ -29,6 +29,13 @@ async function notify(env: Env, recipientId: string, actorId: string, type: stri
 
 const PROFILE_SELECT = "u.id,u.username,u.display_name,u.avatar_url,u.bio,u.location_city,u.occupation,u.created_at";
 
+async function canViewProfile(db: D1Database, viewerId: string | null, profileId: string, visibility: string): Promise<boolean> {
+  if (visibility === "public" || viewerId === profileId) return true;
+  if (!viewerId) return false;
+  if (visibility === "followers") return !!(await db.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId, profileId).first());
+  return false;
+}
+
 async function canViewPost(db: D1Database, viewerId: string | null, authorId: string, visibility: string): Promise<boolean> {
   if (visibility === "public" || viewerId === authorId) return true;
   if (!viewerId) return false;
@@ -59,12 +66,12 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM user_follows WHERE following_id=?").bind(targetId).first<{ count: number }>();
       return json({ success: true, count: Number(row?.count || 0) });
     }
-    if (suffix === "followers" && method === "GET") {
-      const rows = await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at FROM user_follows f JOIN users u ON u.id=f.follower_id WHERE f.following_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(targetId).all();
-      return json({ success: true, data: rows.results });
-    }
-    if (suffix === "following" && method === "GET") {
-      const rows = await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at FROM user_follows f JOIN users u ON u.id=f.following_id WHERE f.follower_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(targetId).all();
+    if ((suffix === "followers" || suffix === "following") && method === "GET") {
+      const profile = await env.DB.prepare("SELECT profile_visibility FROM users WHERE id=? AND deleted_at IS NULL").bind(targetId).first<{ profile_visibility: string }>();
+      if (!profile || !(await canViewProfile(env.DB, user?.id || null, targetId, profile.profile_visibility))) return fail("Profile not found", 404);
+      const rows = suffix === "followers"
+        ? await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at FROM user_follows f JOIN users u ON u.id=f.follower_id WHERE f.following_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(targetId).all()
+        : await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at FROM user_follows f JOIN users u ON u.id=f.following_id WHERE f.follower_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(targetId).all();
       return json({ success: true, data: rows.results });
     }
     if (suffix === "follow" && (method === "POST" || method === "DELETE")) {
@@ -237,7 +244,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
 
   if (path === "/api/posts/saved" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
-    const rows = await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.published_at,p.created_at,u.username,u.display_name,u.avatar_url FROM post_bookmarks b JOIN posts p ON p.id=b.post_id JOIN users u ON u.id=p.author_id WHERE b.user_id=? AND p.status='published' AND p.deleted_at IS NULL ORDER BY b.created_at DESC LIMIT 100`).bind(user.id).all();
+    const rows = await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.published_at,p.created_at,u.username,u.display_name,u.avatar_url FROM post_bookmarks b JOIN posts p ON p.id=b.post_id JOIN users u ON u.id=p.author_id WHERE b.user_id=? AND p.status='published' AND p.deleted_at IS NULL AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id)) OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)))) ORDER BY b.created_at DESC LIMIT 100`).bind(user.id,user.id,user.id,user.id,user.id).all();
     return json({ success: true, data: rows.results });
   }
   if (path === "/api/posts/mine" && method === "GET") {
