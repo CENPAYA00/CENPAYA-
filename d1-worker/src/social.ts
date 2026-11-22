@@ -314,7 +314,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       if (taken) return fail("Username is already taken", 409);
     }
     values.push(user.id);
-    await env.DB.prepare("UPDATE users SET " + assignments.join(",") + ",updated_at=" + NOW + " WHERE id=?").bind(...values).run();
+    await env.DB.prepare("UPDATE users SET " + assignments.join(",") + (fields.includes("phone") ? ",phone_verified=0,phone_verified_at=NULL" : "") + ",updated_at=" + NOW + " WHERE id=?").bind(...values).run();
     return json({ success: true });
   }
 
