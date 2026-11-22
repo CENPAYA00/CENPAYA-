@@ -30,7 +30,7 @@ async function sign(secret: string, key: string, expires: number): Promise<strin
 }
 
 function validKey(key: string): boolean {
-  return key.startsWith("chat/") || key.startsWith("marketplace/");
+  return key.startsWith("chat/") || key.startsWith("marketplace/") || key.startsWith("posts/");
 }
 
 export async function signMediaUrl(env: Env, origin: string, key: string, ttlSeconds = 24 * 60 * 60): Promise<string | null> {
@@ -88,7 +88,7 @@ function extensionFor(mime: string): string | null {
   return extensions[mime.toLowerCase()] || null;
 }
 
-async function upload(request: Request, env: Env, user: User, url: URL, kind: "chat" | "market"): Promise<Response> {
+async function upload(request: Request, env: Env, user: User, url: URL, kind: "chat" | "market" | "post"): Promise<Response> {
   const bucket = env.MEDIA_BUCKET;
   const signingSecret = env.MEDIA_URL_SIGNING_SECRET || "";
   if (!bucket || signingSecret.length < 32) {
@@ -125,6 +125,18 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
     return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
   }
 
+  if (kind === "post") {
+    if (folder !== "posts" || !mime.startsWith("image/")) return fail("Only post images are supported by this upload route");
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) return fail("Post image is too large");
+    const key = ["posts", user.id, uuid() + "." + extension].join("/");
+    await bucket.put(key, file.stream(), {
+      httpMetadata: { contentType: mime },
+      customMetadata: { ownerId: user.id, purpose: "post_image" }
+    });
+    const signedUrl = await signMediaUrl(env, url.origin, key);
+    return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
+  }
+
   const allowedFolders = new Set(["listings/images", "listings/documents", "services/images", "services/documents"]);
   if (!allowedFolders.has(folder)) return fail("Invalid marketplace media folder");
   const isImage = folder.endsWith("/images");
@@ -150,6 +162,10 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
 
 export async function handleMediaRoutes(request: Request, env: Env, context: RouteContext): Promise<Response | null> {
   const { url, path, method, user } = context;
+  if (path === "/api/posts/media" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    return upload(request, env, user, url, "post");
+  }
   if (path === "/api/chat/media" && method === "POST") {
     if (!user) return fail("Unauthorized", 401);
     return upload(request, env, user, url, "chat");
