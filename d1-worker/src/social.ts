@@ -403,5 +403,31 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     return json({ success: true });
   }
 
+  if (path === "/api/me/deactivate" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE users SET account_status='deactivated',signed_out_at=" + NOW + ",updated_at=" + NOW + " WHERE id=?").bind(user.id),
+      env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at=" + NOW + " WHERE user_id=? AND status='active'").bind(user.id),
+      env.DB.prepare("UPDATE notification_devices SET is_active=0,revoked_at=" + NOW + ",updated_at=" + NOW + " WHERE user_id=? AND is_active=1").bind(user.id)
+    ]);
+    return json({ success: true });
+  }
+  if (path === "/api/me" && method === "DELETE") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b || b.confirmation !== "DELETE") return fail("Explicit DELETE confirmation is required");
+    await env.DB.batch([
+      env.DB.prepare("UPDATE posts SET status='removed',deleted_at=" + NOW + " WHERE author_id=? AND deleted_at IS NULL").bind(user.id),
+      env.DB.prepare("UPDATE marketplace_listings SET status='removed',deleted_at=" + NOW + " WHERE seller_id=? AND deleted_at IS NULL").bind(user.id),
+      env.DB.prepare("UPDATE chat_thread_members SET left_at=" + NOW + " WHERE user_id=? AND left_at IS NULL").bind(user.id),
+      env.DB.prepare("UPDATE user_sessions SET status='revoked',revoked_at=" + NOW + " WHERE user_id=? AND status='active'").bind(user.id),
+      env.DB.prepare("UPDATE notification_devices SET is_active=0,revoked_at=" + NOW + ",updated_at=" + NOW + " WHERE user_id=? AND is_active=1").bind(user.id),
+      env.DB.prepare("DELETE FROM user_follows WHERE follower_id=? OR following_id=?").bind(user.id, user.id),
+      env.DB.prepare("DELETE FROM friendships WHERE user_a_id=? OR user_b_id=?").bind(user.id, user.id),
+      env.DB.prepare("UPDATE friend_requests SET status='cancelled',responded_at=" + NOW + ",updated_at=" + NOW + " WHERE (requester_id=? OR recipient_id=?) AND status='pending'").bind(user.id, user.id),
+      env.DB.prepare("UPDATE users SET account_status='deactivated',deleted_at=" + NOW + ",username=NULL,email=NULL,phone=NULL,email_verified=0,email_verified_at=NULL,phone_verified=0,phone_verified_at=NULL,display_name='Deleted account',avatar_url=NULL,cover_url=NULL,bio=NULL,location_city=NULL,location_region=NULL,occupation=NULL,date_of_birth=NULL,profile_visibility='private',password_hash=NULL,auth_subject=NULL,signed_out_at=" + NOW + ",updated_at=" + NOW + " WHERE id=?").bind(user.id)
+    ]);
+    return json({ success: true });
+  }
+
   return null;
 }
