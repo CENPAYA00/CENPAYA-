@@ -41,7 +41,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     if(!row)return fail("Listing not found",404);
     const images=(await Promise.all(jsonArray(row.images_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
     const documents=(await Promise.all(jsonArray(row.documents_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
-    const data={...row,id:row.id,listing_id:row.id,title:row.title,price:row.price_amount,starting_price:row.price_amount,images,documents,thumbnail_url:images[0]||null,seller_id:row.seller_id,delivery_days:row.estimated_delivery_days};
+    const data={...row,id:row.id,listing_id:row.id,title:row.title,price:row.price_amount,starting_price:row.price_amount,images,documents,thumbnail_url:images[0]||null,seller_id:row.seller_id,delivery_days:row.estimated_delivery_days,location_city:row.city||null,location:row.city||null};
     return json({success:true,data});
   }
   if(publicListing&&method==="DELETE"){
@@ -172,11 +172,15 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const viewerId=user?.id||null;
     where.push("(l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))");values.push(viewerId,viewerId,viewerId);
     where.push("(? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=l.seller_id) OR (b.blocker_id=l.seller_id AND b.blocked_id=?)))");values.push(viewerId,viewerId,viewerId);
-    const rows=await env.DB.prepare("SELECT s.*,l.seller_id,l.description,l.price_type,l.price_is_range,l.price_min,l.price_max,l.images_json,l.documents_json,l.estimated_delivery_days,u.avatar_url AS seller_avatar_url,u.is_premium AS seller_is_premium FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_id WHERE "+where.join(" AND ")+" ORDER BY s.is_boosted DESC,s.published_date DESC LIMIT ? OFFSET ?").bind(...values,limit,offset).all();
+    const rows=await env.DB.prepare("SELECT s.*,l.seller_id,l.description,l.price_type,l.price_is_range,l.price_min,l.price_max,l.images_json,l.documents_json,l.estimated_delivery_days,u.avatar_url AS seller_avatar_url,u.is_premium AS seller_is_premium,u.is_demo AS is_demo FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_id WHERE "+where.join(" AND ")+" ORDER BY s.is_boosted DESC,s.published_date DESC LIMIT ? OFFSET ?").bind(...values,limit,offset).all();
     const data=await Promise.all(rows.results.map(async(row:any)=>{
       const images=(await Promise.all(jsonArray(row.images_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
       const documents=(await Promise.all(jsonArray(row.documents_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
-      return {...row,images,documents};
+      const price=row.price_amount??row.product_price??null;
+      return {...row,id:row.listing_id||row.id,listing_id:row.listing_id||row.id,title:row.product_title||row.title,
+        price,starting_price:price,images,documents,thumbnail_url:images[0]||null,
+        location_city:row.city||row.location_city||null,location:row.city||row.location_city||null,
+        seller_id:row.seller_id,delivery_days:row.estimated_delivery_days};
     }));
     return json({success:true,data});
   }
