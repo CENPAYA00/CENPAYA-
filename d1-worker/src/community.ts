@@ -399,33 +399,33 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     };
     if (!allowed[targetType]?.includes(reason)) return fail("Invalid report reason");
     const id = uuid();
-    let result: D1Result;
+    let changes = 0;
     if (targetType === "post") {
       const target = await env.DB.prepare("SELECT id FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(targetId).first();
       if (!target) return fail("Post not found", 404);
-      result = await env.DB.prepare("INSERT OR IGNORE INTO post_reports(id,post_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+      changes = (await env.DB.prepare("INSERT OR IGNORE INTO post_reports(id,post_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run()).meta.changes;
     } else if (targetType === "comment") {
       const target = await env.DB.prepare("SELECT id FROM post_comments WHERE id=? AND status='published' AND deleted_at IS NULL").bind(targetId).first();
       if (!target) return fail("Comment not found", 404);
-      result = await env.DB.prepare("INSERT OR IGNORE INTO comment_reports(id,comment_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+      changes = (await env.DB.prepare("INSERT OR IGNORE INTO comment_reports(id,comment_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run()).meta.changes;
     } else if (targetType === "listing") {
       const target = await env.DB.prepare("SELECT id FROM marketplace_listings WHERE id=? AND status='active' AND deleted_at IS NULL").bind(targetId).first();
       if (!target) return fail("Listing not found", 404);
-      result = await env.DB.prepare("INSERT OR IGNORE INTO marketplace_listing_reports(id,listing_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+      changes = (await env.DB.prepare("INSERT OR IGNORE INTO marketplace_listing_reports(id,listing_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run()).meta.changes;
     } else if (targetType === "user") {
       const target = await env.DB.prepare("SELECT id FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first();
       if (!target || targetId === user.id) return fail("User not found", 404);
-      result = await env.DB.prepare("INSERT OR IGNORE INTO user_reports(id,reported_user_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+      changes = (await env.DB.prepare("INSERT OR IGNORE INTO user_reports(id,reported_user_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run()).meta.changes;
     } else if (targetType === "message") {
       const target = await env.DB.prepare("SELECT m.id FROM chat_messages m JOIN chat_thread_members tm ON tm.thread_id=m.thread_id WHERE m.id=? AND tm.user_id=? AND tm.left_at IS NULL AND m.sender_id<>? AND m.status<>'deleted'").bind(targetId,user.id,user.id).first();
       if (!target) return fail("Message not found", 404);
-      result = await env.DB.prepare("INSERT OR IGNORE INTO chat_message_reports(id,message_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+      changes = (await env.DB.prepare("INSERT OR IGNORE INTO chat_message_reports(id,message_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run()).meta.changes;
     } else {
       const target = await env.DB.prepare("SELECT id FROM communities WHERE id=? AND status='active'").bind(targetId).first();
       if (!target) return fail("Group not found", 404);
-      result = await env.DB.prepare("INSERT OR IGNORE INTO community_reports(id,community_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run();
+      changes = (await env.DB.prepare("INSERT OR IGNORE INTO community_reports(id,community_id,reporter_id,reason,details) VALUES(?,?,?,?,?)").bind(id,targetId,user.id,reason,details).run()).meta.changes;
     }
-    if (!result.meta.changes) return fail("You have already reported this item", 409);
+    if (!changes) return fail("You have already reported this item", 409);
     return json({ success: true, id }, 201);
   }
 
