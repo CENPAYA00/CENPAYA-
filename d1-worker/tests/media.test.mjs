@@ -20,8 +20,9 @@ test("signed media URLs reject another origin and tampered signatures", async ()
   const url = await signMediaUrl(env, origin, key);
   assert.ok(url);
   assert.equal(await extractMediaKey(url, env, new URL("https://attacker.example")), null);
-  const tampered = url.replace(/sig=[a-f0-9]/, "sig=0");
-  assert.equal(await extractMediaKey(tampered, env, new URL(origin)), null);
+  const tampered = new URL(url);
+  tampered.searchParams.set("sig", "0".repeat(64));
+  assert.equal(await extractMediaKey(tampered.toString(), env, new URL(origin)), null);
 });
 
 test("signed media URLs reject expired links and unsupported object namespaces", async () => {
