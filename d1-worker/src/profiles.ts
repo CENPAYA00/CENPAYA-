@@ -50,14 +50,37 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
   const publicProfile=path.match(/^\/api\/profiles\/([^/]+)$/);
   if(publicProfile&&publicProfile[1]!=="suggestions"&&method==="GET"){
     const key=decodeURIComponent(publicProfile[1]);
-    const cached=await cacheGet(env,"public-profile:"+key.toLowerCase());
-    if(cached)return json({success:true,data:cached,source:"cache"});
-    const profile=await env.DB.prepare("SELECT id,username,display_name,avatar_url,cover_url,bio,country_code,location_city,is_premium,followers_count,sales_count,reputation_score,created_at FROM public_profiles WHERE id=? OR lower(username)=lower(?)").bind(key,key).first();
-    if(profile)await cachePut(env,"public-profile:"+key.toLowerCase(),profile,300);
-    return profile?json({success:true,data:profile}):fail("Profile not found",404);
+    const profile=await env.DB.prepare("SELECT id,username,display_name,avatar_url,cover_url,bio,phone,email,country_code,location_city,location_region,occupation,is_premium,followers_count,sales_count,reputation_score,created_at,profile_visibility FROM users WHERE (id=? OR lower(username)=lower(?)) AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(key,key).first<Record<string,unknown>>();
+    if(!profile)return fail("Profile not found",404);
+    const ownerId=String(profile.id),viewerId=user?.id||null;
+    if(viewerId!==ownerId){
+      const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(ownerId,viewerId||"",viewerId||"",ownerId).first();
+      if(blocked)return fail("Profile not found",404);
+      if(profile.profile_visibility==="private")return fail("Profile not found",404);
+      if(profile.profile_visibility==="followers"){
+        const follows=viewerId?await env.DB.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId,ownerId).first():null;
+        if(!follows)return fail("Profile not found",404);
+      }
+    }
+    const visibility=await env.DB.prepare("SELECT bio,phone,email,joined,occupation,location FROM user_profile_details_visibility WHERE user_id=?").bind(ownerId).first<Record<string,string>>();
+    const defaults={bio:"public",phone:"followers",email:"private",joined:"public",occupation:"public",location:"followers"};
+    const rules={...defaults,...(visibility||{})};
+    const canSee=(rule:string)=>viewerId===ownerId||rule==="public"||(rule==="followers"&&!!viewerId&&viewerId!==ownerId);
+    const data={...profile,
+      bio:canSee(rules.bio)?profile.bio:null,
+      phone:canSee(rules.phone)?profile.phone:null,
+      email:canSee(rules.email)?profile.email:null,
+      occupation:canSee(rules.occupation)?profile.occupation:null,
+      country_code:canSee(rules.location)?profile.country_code:null,
+      location_city:canSee(rules.location)?profile.location_city:null,
+      location_region:canSee(rules.location)?profile.location_region:null,
+      created_at:canSee(rules.joined)?profile.created_at:null
+    };
+    delete (data as Record<string,unknown>).profile_visibility;
+    return json({success:true,data});
   }
   if(path==="/api/profiles/suggestions"&&method==="GET"){
-    const rows=await env.DB.prepare("SELECT id,username,avatar_url,occupation,location_city AS city FROM public_profiles ORDER BY created_at DESC LIMIT 12").all();
+    const rows=await env.DB.prepare("SELECT id,username,avatar_url FROM public_profiles ORDER BY created_at DESC LIMIT 12").all();
     return json({success:true,data:rows.results});
   }
   if(path==="/api/countries"&&method==="GET"){
