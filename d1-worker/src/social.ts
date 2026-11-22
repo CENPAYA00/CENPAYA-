@@ -77,8 +77,9 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     if (suffix === "follow" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Unauthorized", 401);
       if (targetId === user.id) return fail("You cannot follow yourself", 400);
-      const target = await env.DB.prepare("SELECT id FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first();
+      const target = await env.DB.prepare("SELECT id,profile_visibility FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first<{ id: string; profile_visibility: string }>();
       if (!target) return fail("Profile not found", 404);
+      if (target.profile_visibility === "private") return fail("This profile is private", 403);
       const blocked = await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id, targetId, targetId, user.id).first();
       if (blocked) return fail("This follow is unavailable", 403);
       if (method === "POST") {
