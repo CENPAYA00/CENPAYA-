@@ -82,7 +82,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     }
     const id=uuid();
     await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,message_type,media_url,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(id,threadId,user.id,message|| (messageType==="shared_post"?"Shared a post":""),messageType,mediaUrl||null,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null).run();
+      .bind(id,threadId,user.id,message || (messageType==="image" ? "Photo" : messageType==="voice_note" ? "Voice message" : "Shared a post"),messageType,mediaUrl||null,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null).run();
     await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=?").bind(threadId,user.id).run();
     return json({success:true,id},201);
   }
