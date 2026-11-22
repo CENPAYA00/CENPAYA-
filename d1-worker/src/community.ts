@@ -122,6 +122,53 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     return json({success:true,data:rows.results});
   }
 
+  const chatLeave = path.match(/^\/api\/chat\/threads\/([^/]+)\/leave$/);
+  if (chatLeave && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const result = await env.DB.prepare("UPDATE chat_thread_members SET left_at=" + NOW + " WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatLeave[1], user.id).run();
+    return result.meta.changes ? json({ success: true }) : fail("Conversation not found", 404);
+  }
+  const chatDeleteMessage = path.match(/^\/api\/chat\/threads\/([^/]+)\/messages\/([^/]+)$/);
+  if (chatDeleteMessage && method === "DELETE") {
+    if (!user) return fail("Unauthorized", 401);
+    const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatDeleteMessage[1], user.id).first();
+    if (!member) return fail("Conversation not found", 404);
+    const result = await env.DB.prepare("UPDATE chat_messages SET status='deleted' WHERE id=? AND thread_id=? AND sender_id=? AND status<>'deleted'").bind(chatDeleteMessage[2], chatDeleteMessage[1], user.id).run();
+    return result.meta.changes ? json({ success: true }) : fail("Message not found", 404);
+  }
+  const forwardTargets = path.match(/^\/api\/chat\/threads\/([^/]+)\/forward-targets$/);
+  if (forwardTargets && method === "GET") {
+    if (!user) return fail("Unauthorized", 401);
+    const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(forwardTargets[1], user.id).first();
+    if (!member) return fail("Conversation not found", 404);
+    const rows = await env.DB.prepare(`SELECT t.id,u.id AS user_id,u.username,u.avatar_url,t.last_message_at
+      FROM chat_thread_members mine JOIN chat_threads t ON t.id=mine.thread_id
+      JOIN chat_thread_members other ON other.thread_id=t.id AND other.user_id<>mine.user_id AND other.left_at IS NULL
+      JOIN users u ON u.id=other.user_id
+      WHERE mine.user_id=? AND mine.left_at IS NULL AND t.thread_type='direct' AND t.id<>?
+      ORDER BY COALESCE(t.last_message_at,t.created_at) DESC LIMIT 50`).bind(user.id, forwardTargets[1]).all();
+    return json({ success: true, data: rows.results });
+  }
+  const forwardMessage = path.match(/^\/api\/chat\/messages\/([^/]+)\/forward$/);
+  if (forwardMessage && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const targetThread = str(b.thread_id, 64);
+    const [source, target] = await Promise.all([
+      env.DB.prepare("SELECT m.thread_id,m.message_text,m.message_type,m.media_url,m.media_duration_seconds,m.shared_post_id,m.status FROM chat_messages m JOIN chat_thread_members tm ON tm.thread_id=m.thread_id WHERE m.id=? AND tm.user_id=? AND tm.left_at IS NULL").bind(forwardMessage[1], user.id).first<Record<string, unknown>>(),
+      env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(targetThread, user.id).first()
+    ]);
+    if (!source || source.status === "deleted" || !target) return fail("Message or destination not found", 404);
+    if (source.shared_post_id) {
+      const post = await env.DB.prepare("SELECT id FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL AND visibility='public'").bind(source.shared_post_id).first();
+      if (!post) return fail("Only public shared posts can be forwarded", 403);
+    }
+    const id = uuid();
+    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,message_type,media_url,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?)")
+      .bind(id,targetThread,user.id,source.message_text,source.message_type,source.media_url,source.media_duration_seconds,source.shared_post_id).run();
+    return json({ success: true, id }, 201);
+  }
+
   const chatPeer = path.match(/^\/api\/chat\/threads\/([^/]+)\/peer$/);
   if (chatPeer && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
