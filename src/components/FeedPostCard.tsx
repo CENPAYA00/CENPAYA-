@@ -81,7 +81,7 @@ export default function FeedPostCard({
     setIsInterested(true);
     showToast('Marked as interested');
     try {
-      await d1Request(`/api/posts/${encodeURIComponent(post.id)}/not-interested`, { method: 'POST' });
+      await d1Request(`/api/posts/${encodeURIComponent(post.id)}/not-interested`, { method: 'POST', body: JSON.stringify({ preference: 'interested' }) });
     } catch {}
   };
 
@@ -91,7 +91,7 @@ export default function FeedPostCard({
     showToast("You won't see this again");
     onHide?.(post.id);
     try {
-      await d1Request(`/api/posts/${encodeURIComponent(post.id)}/not-interested`, { method: 'POST' });
+      await d1Request(`/api/posts/${encodeURIComponent(post.id)}/not-interested`, { method: 'POST', body: JSON.stringify({ preference: 'not_interested' }) });
     } catch {}
   };
 
