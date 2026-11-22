@@ -135,7 +135,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     return json({ success: true });
   }
 
-  const postRoute = path.match(/^\/api\/posts\/([^/]+)(?:\/(like|my-state|save|comments|share|archive|restore))?$/);
+  const postRoute = path.match(/^\/api\/posts\/([^/]+)(?:\/(like|my-state|save|comments|share|archive|restore|not-interested))?$/);
   if (postRoute) {
     const postId = decodeURIComponent(postRoute[1]);
     const action = postRoute[2] || "";
@@ -166,6 +166,17 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       await env.DB.prepare("INSERT INTO post_comments(id,post_id,author_id,content) VALUES(?,?,?,?)").bind(id, postId, user.id, content).run();
       if (post.author_id !== user.id) await notify(env, post.author_id, user.id, "post_comment", "post", postId, "New comment", user.display_name + " commented on your post.");
       return json({ success: true, id }, 201);
+    }
+    if (action === "not-interested" && method === "POST") {
+      if (!user) return fail("Unauthorized", 401);
+      const b = await body(request);
+      const preference = str(b?.preference, 30) || "not_interested";
+      if (!["interested", "not_interested"].includes(preference)) return fail("Invalid feed preference");
+      const post = await env.DB.prepare("SELECT author_id,visibility FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string }>();
+      if (!post || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
+      await env.DB.prepare("INSERT INTO user_feed_post_preferences(user_id,post_id,preference) VALUES(?,?,?) ON CONFLICT(user_id,post_id) DO UPDATE SET preference=excluded.preference,updated_at=" + NOW)
+        .bind(user.id, postId, preference).run();
+      return json({ success: true, preference });
     }
     if (action === "my-state" && method === "GET") {
       if (!user) return fail("Unauthorized", 401);
