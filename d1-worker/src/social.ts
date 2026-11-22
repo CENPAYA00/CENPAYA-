@@ -244,9 +244,9 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
   if (path === "/api/me/privacy" && (method === "GET" || method === "PATCH")) {
     if (!user) return fail("Unauthorized", 401);
     if (method === "GET") {
-      const row = await env.DB.prepare("SELECT profile_visibility,allow_tagging FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ profile_visibility: string; allow_tagging: number }>();
+      const row = await env.DB.prepare("SELECT profile_visibility,allow_tagging,tagging_visibility,default_post_visibility FROM user_privacy_settings WHERE user_id=?").bind(user.id).first<{ profile_visibility: string; allow_tagging: number; tagging_visibility: string; default_post_visibility: string }>();
       const userRow = await env.DB.prepare("SELECT profile_visibility FROM users WHERE id=?").bind(user.id).first<{ profile_visibility: string }>();
-      return json({ success: true, data: { profile_visibility: row?.profile_visibility || userRow?.profile_visibility || "public", allow_tagging: row ? (row.allow_tagging ? "everyone" : "nobody") : "everyone" } });
+      return json({ success: true, data: { profile_visibility: row?.profile_visibility || userRow?.profile_visibility || "public", allow_tagging: row?.tagging_visibility || (row?.allow_tagging ? "everyone" : "everyone"), default_post_visibility: row?.default_post_visibility || "public" } });
     }
     const b = await body(request); if (!b) return fail("Valid JSON body required");
     const requestedVisibility = str(b.profile_visibility, 20) || "public";
@@ -261,15 +261,15 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
   if (path === "/api/me/notification-preferences" && (method === "GET" || method === "PATCH")) {
     if (!user) return fail("Unauthorized", 401);
     const read = async () => {
-      const row = await env.DB.prepare("SELECT push_enabled,email_enabled,social_notifications_enabled,comment_notifications_enabled,follower_notifications_enabled FROM notification_preferences WHERE user_id=?").bind(user.id).first<Record<string, number>>();
-      return { push: !!(row?.push_enabled ?? 1), email: !!(row?.email_enabled ?? 1), sms: false, follows: !!(row?.follower_notifications_enabled ?? 1), comments: !!(row?.comment_notifications_enabled ?? 1), orders: false };
+      const row = await env.DB.prepare("SELECT push_enabled,email_enabled,social_notifications_enabled,comment_notifications_enabled,follower_notifications_enabled,sms_enabled,order_notifications_enabled FROM notification_preferences WHERE user_id=?").bind(user.id).first<Record<string, number>>();
+      return { push: !!(row?.push_enabled ?? 1), email: !!(row?.email_enabled ?? 1), sms: !!(row?.sms_enabled ?? 1), follows: !!(row?.follower_notifications_enabled ?? 1), comments: !!(row?.comment_notifications_enabled ?? 1), orders: !!(row?.order_notifications_enabled ?? 1) };
     };
     if (method === "GET") return json({ success: true, data: await read() });
     const b = await body(request); if (!b) return fail("Valid JSON body required");
     const current = await read();
     const val = (key: string) => typeof b[key] === "boolean" ? (b[key] ? 1 : 0) : (current as Record<string, boolean>)[key] ? 1 : 0;
-    await env.DB.prepare("INSERT INTO notification_preferences(user_id,push_enabled,email_enabled,social_notifications_enabled,comment_notifications_enabled,follower_notifications_enabled) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET push_enabled=excluded.push_enabled,email_enabled=excluded.email_enabled,social_notifications_enabled=excluded.social_notifications_enabled,comment_notifications_enabled=excluded.comment_notifications_enabled,follower_notifications_enabled=excluded.follower_notifications_enabled,updated_at=" + NOW)
-      .bind(user.id, val("push"), val("email"), val("orders"), val("comments"), val("follows")).run();
+    await env.DB.prepare("INSERT INTO notification_preferences(user_id,push_enabled,email_enabled,comment_notifications_enabled,follower_notifications_enabled,sms_enabled,order_notifications_enabled) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET push_enabled=excluded.push_enabled,email_enabled=excluded.email_enabled,comment_notifications_enabled=excluded.comment_notifications_enabled,follower_notifications_enabled=excluded.follower_notifications_enabled,sms_enabled=excluded.sms_enabled,order_notifications_enabled=excluded.order_notifications_enabled,updated_at=" + NOW)
+      .bind(user.id, val("push"), val("email"), val("comments"), val("follows"), val("sms"), val("orders")).run();
     return json({ success: true });
   }
 
