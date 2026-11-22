@@ -6,6 +6,7 @@ import { handleInternalRoutes } from "./internal.js";
 import { handleProfileRoutes } from "./profiles.js";
 import { handleMarketplaceRoutes } from "./marketplace.js";
 import { handleCommunityRoutes } from "./community.js";
+import { handleSocialRoutes } from "./social.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -48,6 +49,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   const user=await auth(request,env);
   const profileResponse=await handleProfileRoutes(request,env,{url,path,method,user});
   if(profileResponse)return profileResponse;
+  const socialResponse=await handleSocialRoutes(request,env,{url,path,method,user});
+  if(socialResponse)return socialResponse;
   const communityResponse=await handleCommunityRoutes(request,env,{url,path,method,user});
   if(communityResponse)return communityResponse;
   const marketplaceResponse=await handleMarketplaceRoutes(request,env,{url,path,method,user});
