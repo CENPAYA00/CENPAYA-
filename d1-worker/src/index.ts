@@ -44,13 +44,13 @@ async function handle(request:Request,env:Env):Promise<Response>{
     try{await env.DB.prepare("SELECT 1").first();return json({success:true,service:"cenpaya-d1-worker",database:"connected"});}
     catch{return fail("D1 unavailable",503);}
   }
-  const searchResponse=await handleSearchRoute(request,env);
-  if(searchResponse)return searchResponse;
   const internalResponse=await handleInternalRoutes(request,env,url,path,method);
   if(internalResponse)return internalResponse;
   const authResponse=await handleAuthRoutes(request,env,url,path,method);
   if(authResponse)return authResponse;
   const user=await auth(request,env);
+  const searchResponse=await handleSearchRoute(request,env,user?.id||null);
+  if(searchResponse)return searchResponse;
   const mediaResponse=await handleMediaRoutes(request,env,{url,path,method,user});
   if(mediaResponse)return mediaResponse;
   const profileResponse=await handleProfileRoutes(request,env,{url,path,method,user});
