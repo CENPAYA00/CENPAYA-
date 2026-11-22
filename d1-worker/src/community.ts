@@ -90,8 +90,9 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   if(chatRead&&method==="POST"){
     if(!user)return fail("Unauthorized",401);
     const r=await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatRead[1],user.id).run();
+    if(!r.meta.changes)return fail("Conversation not found",404);
     await env.DB.prepare("UPDATE chat_messages SET read_at="+NOW+" WHERE thread_id=? AND sender_id<>? AND read_at IS NULL").bind(chatRead[1],user.id).run();
-    return r.meta.changes?json({success:true}):fail("Conversation not found",404);
+    return json({success:true});
   }
   if (path === "/api/push/subscriptions" && method === "POST") {
     if (!user) return fail("Unauthorized", 401);
