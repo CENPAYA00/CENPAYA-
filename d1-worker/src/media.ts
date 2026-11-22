@@ -94,6 +94,8 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
   if (!bucket || signingSecret.length < 32) {
     return fail("R2 media storage is not configured for this Worker", 503);
   }
+  const contentLength = Number(request.headers.get("Content-Length") || 0);
+  if (Number.isFinite(contentLength) && contentLength > 22 * 1024 * 1024) return fail("Upload exceeds the maximum request size", 413);
   let form: FormData;
   try { form = await request.formData(); } catch { return fail("Valid multipart form data is required"); }
   const file = form.get("file");
