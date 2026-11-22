@@ -390,7 +390,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     }
     const b = await body(request); if (!b) return fail("Valid JSON body required");
     const allowed = ["bio", "phone", "email", "joined", "occupation", "city", "country"] as const;
-    const current = await env.DB.prepare("SELECT bio,phone,email,joined,occupation,location FROM user_profile_details_visibility WHERE user_id=?").bind(user.id).first<Record<string, string>>();
+    const current = await env.DB.prepare("SELECT bio,phone,email,joined,occupation,city,country FROM user_profile_details_visibility WHERE user_id=?").bind(user.id).first<Record<string, string>>();
     const next: Record<string, string> = { ...defaults, ...(current || {}) };
     for (const key of allowed) {
       if (b[key] === undefined) continue;
