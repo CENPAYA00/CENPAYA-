@@ -104,7 +104,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     let endpointUrl: URL;
     try { endpointUrl = new URL(endpoint); } catch { return fail("Invalid push endpoint"); }
     if (endpointUrl.protocol !== "https:" || !p256dh || !authKey || !/^[A-Za-z0-9_-]+$/.test(p256dh) || !/^[A-Za-z0-9_-]+$/.test(authKey)) return fail("Invalid web-push subscription");
-    await env.DB.prepare("INSERT INTO notification_devices(id,user_id,platform,provider,push_endpoint,p256dh_key,auth_key) VALUES(?,?,'web','web_push',?,?,?) ON CONFLICT(push_endpoint) DO UPDATE SET user_id=excluded.user_id,p256dh_key=excluded.p256dh_key,auth_key=excluded.auth_key,is_active=1,revoked_at=NULL,updated_at=" + NOW)
+    await env.DB.prepare("INSERT INTO notification_devices(id,user_id,platform,provider,push_endpoint,p256dh_key,auth_key) VALUES(?,?,'web','web_push',?,?,?) ON CONFLICT(push_endpoint) WHERE push_endpoint IS NOT NULL DO UPDATE SET user_id=excluded.user_id,p256dh_key=excluded.p256dh_key,auth_key=excluded.auth_key,is_active=1,revoked_at=NULL,updated_at=" + NOW)
       .bind(uuid(), user.id, endpoint, p256dh, authKey).run();
     return json({ success: true });
   }
