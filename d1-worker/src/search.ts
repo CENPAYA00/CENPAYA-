@@ -77,7 +77,7 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
   let raw:unknown;
   try{raw=await ai.autorag(aiSearchName).search({query:q,rewrite_query:true,max_num_results:limit});}
   catch{
-    const fallback=await fallbackSearch(env,url,q,kind,limit);
+    const fallback=await fallbackSearch(env,url,q,kind,limit,viewerId);
     await cachePut(env,cacheKey,fallback,60);
     return json({success:true,data:fallback,source:"d1-fallback"});
   }
@@ -100,7 +100,7 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
     (kind==="market"&&item.kind==="listing")||(kind==="services"&&item.kind==="service")||
     (kind==="home"&&item.kind==="post")));
   const ids=[...new Set(normalized.map(item=>item.id))].slice(0,limit);
-  if(!ids.length){const fallback=await fallbackSearch(env,url,q,kind,limit);await cachePut(env,cacheKey,fallback,60);return json({success:true,data:fallback,source:"d1-fallback"});}
+  if(!ids.length){const fallback=await fallbackSearch(env,url,q,kind,limit,viewerId);await cachePut(env,cacheKey,fallback,60);return json({success:true,data:fallback,source:"d1-fallback"});}
   const placeholders=ids.map(()=>"?").join(",");
   let verified:SearchHit[]=[];
   const hitMap=new Map(normalized.map(item=>[item.id,item]));
@@ -138,7 +138,7 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
     }).filter(item=>kind==="all"||kind==="market"||(kind==="services"&&item.kind==="service")||
       (kind==="listing"&&item.kind==="listing")||(kind==="service"&&item.kind==="service"));
   }
-  if(!verified.length){const fallback=await fallbackSearch(env,url,q,kind,limit);await cachePut(env,cacheKey,fallback,60);return json({success:true,data:fallback,source:"d1-fallback"});}
+  if(!verified.length){const fallback=await fallbackSearch(env,url,q,kind,limit,viewerId);await cachePut(env,cacheKey,fallback,60);return json({success:true,data:fallback,source:"d1-fallback"});}
   await cachePut(env,cacheKey,verified,60);
   return json({success:true,data:verified,source:"ai-search"});
 }
