@@ -30,7 +30,7 @@ async function sign(secret: string, key: string, expires: number): Promise<strin
 }
 
 function validKey(key: string): boolean {
-  return key.startsWith("chat/") || key.startsWith("marketplace/") || key.startsWith("posts/");
+  return key.startsWith("chat/") || key.startsWith("marketplace/") || key.startsWith("posts/") || key.startsWith("profiles/");
 }
 
 export async function signMediaUrl(env: Env, origin: string, key: string, ttlSeconds = 24 * 60 * 60): Promise<string | null> {
@@ -42,7 +42,7 @@ export async function signMediaUrl(env: Env, origin: string, key: string, ttlSec
   return origin.replace(/\/$/, "") + "/api/media/" + encodedKey + "?exp=" + expires + "&sig=" + signature;
 }
 
-export async function extractMediaKey(value: string, env: Env, requestUrl: URL): Promise<string | null> {
+export async function extractMediaKey(value: string, env: Env, requestUrl: URL, allowExpired = false): Promise<string | null> {
   const secret = env.MEDIA_URL_SIGNING_SECRET || "";
   if (!env.MEDIA_BUCKET || secret.length < 32 || !value) return null;
   let parsed: URL;
@@ -56,7 +56,7 @@ export async function extractMediaKey(value: string, env: Env, requestUrl: URL):
   const expires = Number(parsed.searchParams.get("exp"));
   const signature = parsed.searchParams.get("sig") || "";
   const now = Math.floor(Date.now() / 1000);
-  if (!Number.isSafeInteger(expires) || expires <= now || expires > now + MAX_URL_TTL || !/^[a-f0-9]{64}$/i.test(signature)) return null;
+  if (!Number.isSafeInteger(expires) || (!allowExpired && expires <= now) || expires > now + MAX_URL_TTL || !/^[a-f0-9]{64}$/i.test(signature)) return null;
   const expected = await sign(secret, key, expires);
   return equalConstantTime(expected, signature) ? key : null;
 }
@@ -66,7 +66,7 @@ export async function resolveMediaUrl(value: unknown, env: Env, origin: string):
   const source = value.trim();
   if (/^https?:\/\//i.test(source)) {
     try {
-      const key = await extractMediaKey(source, env, new URL(origin));
+      const key = await extractMediaKey(source, env, new URL(origin), true);
       return key ? await signMediaUrl(env, origin, key) : source;
     } catch { return source; }
   }
@@ -88,7 +88,7 @@ function extensionFor(mime: string): string | null {
   return extensions[mime.toLowerCase()] || null;
 }
 
-async function upload(request: Request, env: Env, user: User, url: URL, kind: "chat" | "market" | "post"): Promise<Response> {
+async function upload(request: Request, env: Env, user: User, url: URL, kind: "chat" | "market" | "post" | "profile"): Promise<Response> {
   const bucket = env.MEDIA_BUCKET;
   const signingSecret = env.MEDIA_URL_SIGNING_SECRET || "";
   if (!bucket || signingSecret.length < 32) {
@@ -99,12 +99,29 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
   let form: FormData;
   try { form = await request.formData(); } catch { return fail("Valid multipart form data is required"); }
   const file = form.get("file");
-  const folderValue = form.get("folder");
-  if (!(file instanceof File) || typeof folderValue !== "string") return fail("A file and upload folder are required");
-  const folder = folderValue.trim();
+  if (!(file instanceof File)) return fail("A file is required");
   const mime = file.type.split(";")[0].trim().toLowerCase();
   const extension = extensionFor(mime);
   if (!extension) return fail("Unsupported media file type");
+  if (kind === "profile") {
+    const profileKind = form.get("kind");
+    if (profileKind !== "avatar" && profileKind !== "cover") return fail("Profile media kind must be avatar or cover");
+    if (!mime.startsWith("image/")) return fail("Profile photos must be images");
+    const maximum = profileKind === "avatar" ? 5 * 1024 * 1024 : 8 * 1024 * 1024;
+    if (file.size < 1 || file.size > maximum) return fail("Profile image is too large");
+    const key = ["profiles", user.id, profileKind, uuid() + "." + extension].join("/");
+    await bucket.put(key, file.stream(), {
+      httpMetadata: { contentType: mime },
+      customMetadata: { ownerId: user.id, purpose: profileKind === "avatar" ? "profile_avatar" : "profile_cover" }
+    });
+    const column = profileKind === "avatar" ? "avatar_url" : "cover_url";
+    await env.DB.prepare("UPDATE users SET " + column + "=?,updated_at=" + "strftime('%Y-%m-%dT%H:%M:%fZ','now')" + " WHERE id=?").bind(key,user.id).run();
+    const signedUrl = await signMediaUrl(env, url.origin, key);
+    return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
+  }
+  const folderValue = form.get("folder");
+  if (typeof folderValue !== "string") return fail("An upload folder is required");
+  const folder = folderValue.trim();
   if (kind === "chat") {
     const match = folder.match(/^chat\/([0-9a-f-]{36})\/(images?|voice)$/i);
     if (!match) return fail("Invalid chat media folder");
@@ -162,6 +179,14 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
   return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
 }
 
+export async function hydrateUserMedia(env: Env, origin: string, rows: Array<Record<string, unknown>>): Promise<Array<Record<string, unknown>>> {
+  return Promise.all(rows.map(async row => ({
+    ...row,
+    avatar_url: await resolveMediaUrl(row.avatar_url, env, origin),
+    cover_url: await resolveMediaUrl(row.cover_url, env, origin)
+  })));
+}
+
 export async function hydratePosts(env: Env, origin: string, rows: Array<Record<string, unknown>>): Promise<Array<Record<string, unknown>>> {
   if (!rows.length) return rows;
   const ids = rows.map(row => String(row.id || "")).filter(Boolean);
@@ -188,12 +213,13 @@ export async function hydratePosts(env: Env, origin: string, rows: Array<Record<
     values.push(taggedUser);
     tagsByPost.set(postId, values);
   }
-  return rows.map(row => {
+  return Promise.all(rows.map(async row => {
     const media = mediaByPost.get(String(row.id)) || [];
     const urls = media.map(item => item.url).filter((value): value is string => typeof value === "string" && value.length > 0);
     const backgroundId = typeof row.background_id === "string" ? row.background_id : null;
     return {
       ...row,
+      avatar_url: await resolveMediaUrl(row.avatar_url, env, origin),
       post_type: backgroundId && row.post_type === "text" ? "colored" : row.post_type,
       bg_color: backgroundId,
       media,
@@ -201,11 +227,15 @@ export async function hydratePosts(env: Env, origin: string, rows: Array<Record<
       image_url: urls.length ? urls.join(",") : (typeof row.image_url === "string" ? row.image_url : ""),
       tagged_users: tagsByPost.get(String(row.id)) || []
     };
-  });
+  }));
 }
 
 export async function handleMediaRoutes(request: Request, env: Env, context: RouteContext): Promise<Response | null> {
   const { url, path, method, user } = context;
+  if (path === "/api/me/media" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    return upload(request, env, user, url, "profile");
+  }
   if (path === "/api/posts/media" && method === "POST") {
     if (!user) return fail("Unauthorized", 401);
     return upload(request, env, user, url, "post");
