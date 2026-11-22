@@ -79,8 +79,8 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
       isFollower=!!follows;
       if(profile.profile_visibility==="private"||(profile.profile_visibility==="followers"&&!isFollower))return fail("Profile not found",404);
     }
-    const visibility=await env.DB.prepare("SELECT bio,phone,email,joined,occupation,location FROM user_profile_details_visibility WHERE user_id=?").bind(ownerId).first<Record<string,string>>();
-    const defaults={bio:"public",phone:"followers",email:"private",joined:"public",occupation:"public",location:"followers"};
+    const visibility=await env.DB.prepare("SELECT bio,phone,email,joined,occupation,city,country FROM user_profile_details_visibility WHERE user_id=?").bind(ownerId).first<Record<string,string>>();
+    const defaults={bio:"public",phone:"followers",email:"private",joined:"public",occupation:"public",city:"public",country:"public"};
     const rules={...defaults,...(visibility||{})};
     const canSee=(rule:string)=>viewerId===ownerId||rule==="public"||(rule==="followers"&&isFollower);
     const data={...profile,
@@ -88,9 +88,9 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
       phone:canSee(rules.phone)?profile.phone:null,
       email:canSee(rules.email)?profile.email:null,
       occupation:canSee(rules.occupation)?profile.occupation:null,
-      country_code:canSee(rules.location)?profile.country_code:null,
-      location_city:canSee(rules.location)?profile.location_city:null,
-      location_region:canSee(rules.location)?profile.location_region:null,
+      country_code:canSee(rules.country)?profile.country_code:null,
+      location_city:canSee(rules.city)?profile.location_city:null,
+      location_region:canSee(rules.city)?profile.location_region:null,
       created_at:canSee(rules.joined)?profile.created_at:null
     };
     delete (data as Record<string,unknown>).profile_visibility;
