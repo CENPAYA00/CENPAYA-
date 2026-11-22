@@ -89,7 +89,9 @@ function extensionFor(mime: string): string | null {
 }
 
 async function upload(request: Request, env: Env, user: User, url: URL, kind: "chat" | "market"): Promise<Response> {
-  if (!env.MEDIA_BUCKET || (env.MEDIA_URL_SIGNING_SECRET || "").length < 32) {
+  const bucket = env.MEDIA_BUCKET;
+  const signingSecret = env.MEDIA_URL_SIGNING_SECRET || "";
+  if (!bucket || signingSecret.length < 32) {
     return fail("R2 media storage is not configured for this Worker", 503);
   }
   let form: FormData;
@@ -115,7 +117,7 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
     const maximum = purpose === "image" ? 10 * 1024 * 1024 : 15 * 1024 * 1024;
     if (file.size < 1 || file.size > maximum) return fail("Chat media file is too large");
     const key = ["chat", threadId, user.id, uuid() + "." + extension].join("/");
-    await env.MEDIA_BUCKET.put(key, file.stream(), {
+    await bucket.put(key, file.stream(), {
       httpMetadata: { contentType: mime },
       customMetadata: { ownerId: user.id, threadId, purpose }
     });
@@ -157,7 +159,9 @@ export async function handleMediaRoutes(request: Request, env: Env, context: Rou
     return upload(request, env, user, url, "market");
   }
   if (path.startsWith("/api/media/") && method === "GET") {
-    if (!env.MEDIA_BUCKET || (env.MEDIA_URL_SIGNING_SECRET || "").length < 32) return fail("R2 media storage is not configured for this Worker", 503);
+    const bucket = env.MEDIA_BUCKET;
+    const signingSecret = env.MEDIA_URL_SIGNING_SECRET || "";
+    if (!bucket || signingSecret.length < 32) return fail("R2 media storage is not configured for this Worker", 503);
     let key: string;
     try { key = path.slice("/api/media/".length).split("/").map(decodeURIComponent).join("/"); }
     catch { return fail("Invalid media key"); }
@@ -166,9 +170,9 @@ export async function handleMediaRoutes(request: Request, env: Env, context: Rou
     const signature = url.searchParams.get("sig") || "";
     const now = Math.floor(Date.now() / 1000);
     if (!Number.isSafeInteger(expires) || expires <= now || expires > now + MAX_URL_TTL || !/^[a-f0-9]{64}$/i.test(signature)) return fail("Media URL expired or invalid", 403);
-    const expected = await sign(env.MEDIA_URL_SIGNING_SECRET, key, expires);
+    const expected = await sign(signingSecret, key, expires);
     if (!equalConstantTime(expected, signature)) return fail("Media URL expired or invalid", 403);
-    const object = await env.MEDIA_BUCKET.get(key);
+    const object = await bucket.get(key);
     if (!object) return fail("Media not found", 404);
     const headers = new Headers();
     object.writeHttpMetadata(headers);
