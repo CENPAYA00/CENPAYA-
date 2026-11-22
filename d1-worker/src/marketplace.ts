@@ -31,13 +31,15 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
   }
   const publicListing=path.match(/^\/api\/market\/listings\/([^/]+)$/);
   if(publicListing&&method==="GET"){
+    const viewerId=user?.id||null;
     const row=await env.DB.prepare(`SELECT l.*,u.username AS merchant_name,u.display_name AS merchant_display_name,u.avatar_url AS merchant_avatar_url,u.is_premium AS merchant_is_premium,c.name AS category,
       (SELECT AVG(r.rating) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS rating,
       (SELECT COUNT(*) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS reviews_count,
       (SELECT COUNT(*) FROM marketplace_order_projections o WHERE o.listing_id=l.id) AS orders_count
       FROM marketplace_listings l JOIN users u ON u.id=l.seller_id JOIN marketplace_categories c ON c.id=l.category_id
-      WHERE l.id=? AND l.deleted_at IS NULL AND ((l.status='active' AND l.moderation_status='approved' AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL) OR l.seller_id=?)`)
-      .bind(decodeURIComponent(publicListing[1]),user?.id||"").first<Record<string,unknown>>();
+      WHERE l.id=? AND l.deleted_at IS NULL AND ((l.status='active' AND l.moderation_status='approved' AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
+        AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))) OR l.seller_id=?)`)
+      .bind(decodeURIComponent(publicListing[1]),viewerId,viewerId,viewerId,user?.id||"").first<Record<string,unknown>>();
     if(!row)return fail("Listing not found",404);
     const images=(await Promise.all(jsonArray(row.images_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
     const documents=(await Promise.all(jsonArray(row.documents_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
@@ -169,6 +171,8 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     if(category){where.push("s.category_id=?");values.push(category);}
     if(country){where.push("s.country_code=?");values.push(country);}
     if(listingType==="product"||listingType==="service"){where.push("s.listing_type=?");values.push(listingType);}
+    const viewerId=user?.id||null;
+    where.push("(l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))");values.push(viewerId,viewerId,viewerId);
     const rows=await env.DB.prepare("SELECT s.*,l.seller_id,l.description,l.price_type,l.price_is_range,l.price_min,l.price_max,l.images_json,l.documents_json,l.estimated_delivery_days,u.avatar_url AS seller_avatar_url,u.is_premium AS seller_is_premium FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_id WHERE "+where.join(" AND ")+" ORDER BY s.is_boosted DESC,s.published_date DESC LIMIT ? OFFSET ?").bind(...values,limit,offset).all();
     const data=await Promise.all(rows.results.map(async(row:any)=>{
       const images=(await Promise.all(jsonArray(row.images_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
