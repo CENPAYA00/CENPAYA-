@@ -89,7 +89,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   const chatRead=path.match(/^\/api\/chat\/threads\/([^/]+)\/read$/);
   if(chatRead&&method==="POST"){
     if(!user)return fail("Unauthorized",401);
-    const r=await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatRead[1],user.id).run();\n    await env.DB.prepare("UPDATE chat_messages SET read_at="+NOW+" WHERE thread_id=? AND sender_id<>? AND read_at IS NULL").bind(chatRead[1],user.id).run();
+    const r=await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatRead[1],user.id).run();
+    await env.DB.prepare("UPDATE chat_messages SET read_at="+NOW+" WHERE thread_id=? AND sender_id<>? AND read_at IS NULL").bind(chatRead[1],user.id).run();
     return r.meta.changes?json({success:true}):fail("Conversation not found",404);
   }
   if(path==="/api/notifications"&&method==="GET"){
