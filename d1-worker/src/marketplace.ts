@@ -193,7 +193,12 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const priceMin=priceIsRange?Number(b.price_min??priceAmount):Number(priceAmount);
     const priceMax=priceIsRange?Number(b.price_max??priceMin):Number(priceAmount);
     if(priceIsRange&&(!Number.isSafeInteger(priceMin)||!Number.isSafeInteger(priceMax)||priceMin<0||priceMax<priceMin))return fail("Invalid price range");
-    const deliveryDays=Math.min(Math.max(Number(b.delivery_days||3),1),365);
+    const deliveryDays=Math.min(Math.max(Math.floor(Number(b.delivery_days||3)),1),365);
+    if(priceIsRange&&priceType!=="negotiable")return fail("Price ranges require negotiable pricing");
+    const region=str(b.region,100)||null,city=str(b.city,100)||null;
+    const availability=str(b.availability,40)||null;
+    const deliveryRequired=b.delivery_required===true||Number(b.delivery_required)===1?1:0;
+    const hideFromFriends=b.hide_from_friends===true||Number(b.hide_from_friends)===1?1:0;
     const imageUrls=jsonArray(b.images_json).filter((x):x is string=>typeof x==="string"&&x.length<=2048).slice(0,10);
     const documentUrls=jsonArray(b.documents_json).filter((x):x is string=>typeof x==="string"&&x.length<=2048).slice(0,5);
     if((imageUrls.length||documentUrls.length)&&(!env.MEDIA_BUCKET||(env.MEDIA_URL_SIGNING_SECRET||"").length<32))return fail("R2 media storage is not configured",503);
@@ -222,10 +227,10 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
       const object=await env.MEDIA_BUCKET!.head(key);
       if(!object||object.customMetadata?.ownerId!==user.id)return fail("Uploaded document not found or not owned by this account",404);
     }
-    const listingStatement=env.DB.prepare("INSERT INTO marketplace_listings(id,seller_id,category_id,title,description,listing_type,price_type,price_amount,currency_code,country_code,status,price_is_range,price_min,price_max,images_json,documents_json,estimated_delivery_days) VALUES(?,?,?,?,?,?,?,?,?,?,'draft',?,?,?,?,?,?)")
-      .bind(id,user.id,cat.id,title,description,type,priceType,priceType==="contact"?null:priceIsRange?priceMin:Number(priceAmount),priceType==="contact"?null:currency,country,priceIsRange?1:0,priceIsRange?priceMin:null,priceIsRange?priceMax:null,JSON.stringify(imageKeys),JSON.stringify(documentKeys),deliveryDays);
+    const listingStatement=env.DB.prepare("INSERT INTO marketplace_listings(id,seller_id,category_id,title,description,listing_type,price_type,price_amount,currency_code,country_code,region,city,status,published_at,delivery_required,availability,hide_from_friends,price_is_range,price_min,price_max,images_json,documents_json,estimated_delivery_days) VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 'active',"+NOW+",?,?,?,?,?,?,?,?,?)")
+      .bind(id,user.id,cat.id,title,description,type,priceType,priceType==="contact"?null:priceIsRange?priceMin:Number(priceAmount),priceType==="contact"?null:currency,country,region,city,deliveryRequired,availability,hideFromFriends,priceIsRange?1:0,priceIsRange?priceMin:null,priceIsRange?priceMax:null,JSON.stringify(imageKeys),JSON.stringify(documentKeys),deliveryDays);
     await env.DB.batch([listingStatement,...mediaStatements]);
-    return json({success:true,id,status:"draft"},201);
+    return json({success:true,id,status:"active"},201);
   }
 
   return null;
