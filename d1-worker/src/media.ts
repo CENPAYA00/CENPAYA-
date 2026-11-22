@@ -1,0 +1,181 @@
+import type { Env, User } from "./types.js";
+import { uuid } from "./security.js";
+
+type RouteContext = { url: URL; path: string; method: string; user: User | null };
+const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+const fail = (message: string, status = 400) => json({ success: false, error: message }, status);
+const MAX_URL_TTL = 7 * 24 * 60 * 60;
+
+function equalConstantTime(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(value => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function sign(secret: string, key: string, expires: number): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(key + ":" + expires));
+  return toHex(new Uint8Array(signature));
+}
+
+function validKey(key: string): boolean {
+  return key.startsWith("chat/") || key.startsWith("marketplace/");
+}
+
+export async function signMediaUrl(env: Env, origin: string, key: string, ttlSeconds = 24 * 60 * 60): Promise<string | null> {
+  const secret = env.MEDIA_URL_SIGNING_SECRET || "";
+  if (!env.MEDIA_BUCKET || secret.length < 32 || !validKey(key)) return null;
+  const expires = Math.floor(Date.now() / 1000) + Math.min(Math.max(ttlSeconds, 60), MAX_URL_TTL);
+  const signature = await sign(secret, key, expires);
+  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  return origin.replace(/\/$/, "") + "/api/media/" + encodedKey + "?exp=" + expires + "&sig=" + signature;
+}
+
+export async function extractMediaKey(value: string, env: Env, requestUrl: URL): Promise<string | null> {
+  const secret = env.MEDIA_URL_SIGNING_SECRET || "";
+  if (!env.MEDIA_BUCKET || secret.length < 32 || !value) return null;
+  let parsed: URL;
+  try { parsed = new URL(value, requestUrl.origin); } catch { return null; }
+  if (parsed.origin !== requestUrl.origin || !parsed.pathname.startsWith("/api/media/")) return null;
+  let key: string;
+  try {
+    key = parsed.pathname.slice("/api/media/".length).split("/").map(decodeURIComponent).join("/");
+  } catch { return null; }
+  if (!validKey(key)) return null;
+  const expires = Number(parsed.searchParams.get("exp"));
+  const signature = parsed.searchParams.get("sig") || "";
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(expires) || expires <= now || expires > now + MAX_URL_TTL || !/^[a-f0-9]{64}$/i.test(signature)) return null;
+  const expected = await sign(secret, key, expires);
+  return equalConstantTime(expected, signature) ? key : null;
+}
+
+export async function resolveMediaUrl(value: unknown, env: Env, origin: string): Promise<string | null> {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const source = value.trim();
+  if (/^https?:\/\//i.test(source)) {
+    try {
+      const key = await extractMediaKey(source, env, new URL(origin));
+      return key ? await signMediaUrl(env, origin, key) : source;
+    } catch { return source; }
+  }
+  return await signMediaUrl(env, origin, source);
+}
+
+function extensionFor(mime: string): string | null {
+  const extensions: Record<string, string> = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+    "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/aac": "aac",
+    "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
+    "application/pdf": "pdf", "text/plain": "txt", "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.ms-powerpoint": "ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx"
+  };
+  return extensions[mime.toLowerCase()] || null;
+}
+
+async function upload(request: Request, env: Env, user: User, url: URL, kind: "chat" | "market"): Promise<Response> {
+  if (!env.MEDIA_BUCKET || (env.MEDIA_URL_SIGNING_SECRET || "").length < 32) {
+    return fail("R2 media storage is not configured for this Worker", 503);
+  }
+  let form: FormData;
+  try { form = await request.formData(); } catch { return fail("Valid multipart form data is required"); }
+  const file = form.get("file");
+  const folderValue = form.get("folder");
+  if (!(file instanceof File) || typeof folderValue !== "string") return fail("A file and upload folder are required");
+  const folder = folderValue.trim();
+  const mime = file.type.toLowerCase();
+  const extension = extensionFor(mime);
+  if (!extension) return fail("Unsupported media file type");
+  if (kind === "chat") {
+    const match = folder.match(/^chat\/([0-9a-f-]{36})\/(images?|voice)$/i);
+    if (!match) return fail("Invalid chat media folder");
+    const threadId = match[1];
+    const purpose = match[2].toLowerCase() === "voice" ? "voice_note" : "image";
+    const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId, user.id).first();
+    if (!member) return fail("Conversation not found", 404);
+    const allowed = purpose === "image"
+      ? mime.startsWith("image/")
+      : mime.startsWith("audio/");
+    if (!allowed) return fail("The file type does not match the chat media folder");
+    const maximum = purpose === "image" ? 10 * 1024 * 1024 : 15 * 1024 * 1024;
+    if (file.size < 1 || file.size > maximum) return fail("Chat media file is too large");
+    const key = ["chat", threadId, user.id, uuid() + "." + extension].join("/");
+    await env.MEDIA_BUCKET.put(key, file.stream(), {
+      httpMetadata: { contentType: mime },
+      customMetadata: { ownerId: user.id, threadId, purpose }
+    });
+    const signedUrl = await signMediaUrl(env, url.origin, key);
+    return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
+  }
+
+  const allowedFolders = new Set(["listings/images", "listings/documents", "services/images", "services/documents"]);
+  if (!allowedFolders.has(folder)) return fail("Invalid marketplace media folder");
+  const isImage = folder.endsWith("/images");
+  const isAllowed = isImage
+    ? mime.startsWith("image/")
+    : ["application/pdf", "text/plain", "application/msword",
+       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+       "application/vnd.ms-excel",
+       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+       "application/vnd.ms-powerpoint",
+       "application/vnd.openxmlformats-officedocument.presentationml.presentation"].includes(mime);
+  if (!isAllowed) return fail("The file type does not match the marketplace media folder");
+  const maximum = isImage ? 10 * 1024 * 1024 : 20 * 1024 * 1024;
+  if (file.size < 1 || file.size > maximum) return fail("Marketplace media file is too large");
+  const key = ["marketplace", user.id, folder.replace("/", "-"), uuid() + "." + extension].join("/");
+  await env.MEDIA_BUCKET.put(key, file.stream(), {
+    httpMetadata: { contentType: mime },
+    customMetadata: { ownerId: user.id, folder, purpose: isImage ? "listing_image" : "listing_document" }
+  });
+  const signedUrl = await signMediaUrl(env, url.origin, key);
+  return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
+}
+
+export async function handleMediaRoutes(request: Request, env: Env, context: RouteContext): Promise<Response | null> {
+  const { url, path, method, user } = context;
+  if (path === "/api/chat/media" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    return upload(request, env, user, url, "chat");
+  }
+  if (path === "/api/market/media" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    return upload(request, env, user, url, "market");
+  }
+  if (path.startsWith("/api/media/") && method === "GET") {
+    if (!env.MEDIA_BUCKET || (env.MEDIA_URL_SIGNING_SECRET || "").length < 32) return fail("R2 media storage is not configured for this Worker", 503);
+    let key: string;
+    try { key = path.slice("/api/media/".length).split("/").map(decodeURIComponent).join("/"); }
+    catch { return fail("Invalid media key"); }
+    if (!validKey(key)) return fail("Invalid media key");
+    const expires = Number(url.searchParams.get("exp"));
+    const signature = url.searchParams.get("sig") || "";
+    const now = Math.floor(Date.now() / 1000);
+    if (!Number.isSafeInteger(expires) || expires <= now || expires > now + MAX_URL_TTL || !/^[a-f0-9]{64}$/i.test(signature)) return fail("Media URL expired or invalid", 403);
+    const expected = await sign(env.MEDIA_URL_SIGNING_SECRET, key, expires);
+    if (!equalConstantTime(expected, signature)) return fail("Media URL expired or invalid", 403);
+    const object = await env.MEDIA_BUCKET.get(key);
+    if (!object) return fail("Media not found", 404);
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("Cache-Control", "private, max-age=3600");
+    headers.set("X-Content-Type-Options", "nosniff");
+    if (key.includes("-documents/")) headers.set("Content-Disposition", "attachment");
+    return new Response(object.body, { status: 200, headers });
+  }
+  return null;
+}
