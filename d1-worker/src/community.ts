@@ -65,18 +65,31 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if(!user)return fail("Unauthorized",401);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const message=str(b.message_text,4000),threadId=chatMessages[1];
-    if(!message)return fail("Message text is required");
+    const messageType=str(b.message_type,20)||"text";
+    const mediaUrl=str(b.media_url,2048);
+    const sharedPostId=str(b.shared_post_id,64);
+    const duration=b.media_duration_seconds;
+    if(!["text","image","voice_note","shared_post"].includes(messageType))return fail("Invalid message type");
+    if(messageType==="text"&&!message)return fail("Message text is required");
+    if((messageType==="image"||messageType==="voice_note")&&(!mediaUrl||!/^https:\/\//i.test(mediaUrl)))return fail("A secure media URL is required");
+    if(messageType==="voice_note"&&(typeof duration!=="number"||!Number.isFinite(duration)||duration<=0||duration>3600))return fail("Invalid voice message duration");
+    if(messageType==="shared_post"&&!UUID.test(sharedPostId))return fail("A valid shared post is required");
     const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id).first();
     if(!member)return fail("Conversation not found",404);
+    if(messageType==="shared_post"){
+      const post=await env.DB.prepare("SELECT id FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL AND (visibility='public' OR author_id=?)").bind(sharedPostId,user.id).first();
+      if(!post)return fail("Shared post not found",404);
+    }
     const id=uuid();
-    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text) VALUES(?,?,?,?)").bind(id,threadId,user.id,message).run();
+    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,message_type,media_url,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?)")
+      .bind(id,threadId,user.id,message|| (messageType==="shared_post"?"Shared a post":""),messageType,mediaUrl||null,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null).run();
     await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=?").bind(threadId,user.id).run();
     return json({success:true,id},201);
   }
   const chatRead=path.match(/^\/api\/chat\/threads\/([^/]+)\/read$/);
   if(chatRead&&method==="POST"){
     if(!user)return fail("Unauthorized",401);
-    const r=await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatRead[1],user.id).run();
+    const r=await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatRead[1],user.id).run();\n    await env.DB.prepare("UPDATE chat_messages SET read_at="+NOW+" WHERE thread_id=? AND sender_id<>? AND read_at IS NULL").bind(chatRead[1],user.id).run();
     return r.meta.changes?json({success:true}):fail("Conversation not found",404);
   }
   if(path==="/api/notifications"&&method==="GET"){
