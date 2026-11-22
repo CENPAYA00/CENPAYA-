@@ -93,6 +93,21 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     await env.DB.prepare("UPDATE chat_messages SET read_at="+NOW+" WHERE thread_id=? AND sender_id<>? AND read_at IS NULL").bind(chatRead[1],user.id).run();
     return r.meta.changes?json({success:true}):fail("Conversation not found",404);
   }
+  if (path === "/api/push/subscriptions" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const requestedUser = str(b.user_id, 64);
+    const endpoint = str(b.endpoint, 2048);
+    const p256dh = str(b.p256dh, 256);
+    const authKey = str(b.auth, 256);
+    if (requestedUser !== user.id) return fail("Subscription user does not match the authenticated account", 403);
+    let endpointUrl: URL;
+    try { endpointUrl = new URL(endpoint); } catch { return fail("Invalid push endpoint"); }
+    if (endpointUrl.protocol !== "https:" || !p256dh || !authKey || !/^[A-Za-z0-9_-]+$/.test(p256dh) || !/^[A-Za-z0-9_-]+$/.test(authKey)) return fail("Invalid web-push subscription");
+    await env.DB.prepare("INSERT INTO notification_devices(id,user_id,platform,provider,push_endpoint,p256dh_key,auth_key) VALUES(?,?,'web','web_push',?,?,?) ON CONFLICT(push_endpoint) DO UPDATE SET user_id=excluded.user_id,p256dh_key=excluded.p256dh_key,auth_key=excluded.auth_key,is_active=1,revoked_at=NULL,updated_at=" + NOW)
+      .bind(uuid(), user.id, endpoint, p256dh, authKey).run();
+    return json({ success: true });
+  }
   if(path==="/api/notifications"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||30),1),100);
