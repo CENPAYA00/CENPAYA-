@@ -12,10 +12,12 @@ ALTER TABLE chat_thread_members
 ALTER TABLE support_tickets ADD COLUMN user_last_read_at TEXT;
 ALTER TABLE support_tickets ADD COLUMN support_last_read_at TEXT;
 
-CREATE TABLE IF NOT EXISTS user_hidden_posts (
+CREATE TABLE IF NOT EXISTS user_feed_post_preferences (
   user_id TEXT NOT NULL,
   post_id TEXT NOT NULL,
+  preference TEXT NOT NULL CHECK (preference IN ('interested','not_interested')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   PRIMARY KEY (user_id, post_id),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
