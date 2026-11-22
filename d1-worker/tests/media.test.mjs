@@ -33,6 +33,10 @@ test("signed media URLs reject expired links and unsupported object namespaces",
   expired.searchParams.set("exp", String(Math.floor(Date.now() / 1000) - 1));
   assert.equal(await extractMediaKey(expired.toString(), env, new URL(origin)), null);
   assert.equal(await signMediaUrl(env, origin, "users/private/file.jpg"), null);
+  const postKey = "posts/00000000-0000-4000-8000-000000000001/post-image.jpg";
+  const postUrl = await signMediaUrl(env, origin, postKey);
+  assert.ok(postUrl);
+  assert.equal(await extractMediaKey(postUrl, env, new URL(origin)), postKey);
 });
 
 test("media signing fails closed without the bucket binding or a strong secret", async () => {
