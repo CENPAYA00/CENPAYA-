@@ -175,7 +175,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
         env.DB.prepare("SELECT 1 FROM post_reactions WHERE post_id=? AND user_id=?").bind(postId, user.id).first(),
         env.DB.prepare("SELECT 1 FROM post_bookmarks WHERE post_id=? AND user_id=?").bind(postId, user.id).first(),
       ]);
-      return json({ success: true, liked: !!liked, saved: !!saved });
+      return json({ success: true, liked: !!liked, saved: !!saved, data: { liked: !!liked, saved: !!saved } });
     }
     if (action === "like" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Unauthorized", 401);
