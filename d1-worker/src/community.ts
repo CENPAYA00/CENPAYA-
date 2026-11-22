@@ -349,16 +349,12 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const title = str(b.title, 160);
     const message = str(b.body, 1000);
     if (kind !== "system" || !title) return fail("Invalid notification");
-    let entityType: string | null = null, entityId: string | null = null;
-    const link = str(b.link_url, 300);
-    const linkMatch = link.match(/^\/(post|listing|seller|chat)\/([0-9a-f-]{36})$/i);
-    if (linkMatch && UUID.test(linkMatch[2])) {
-      entityType = linkMatch[1] === "seller" ? "profile" : linkMatch[1] === "chat" ? "thread" : linkMatch[1];
-      entityId = linkMatch[2];
-    }
+    const requestedLink = str(b.link_url, 300);
+    const linkMatch = requestedLink.match(/^\/(post|listing|seller|chat)\/([0-9a-f-]{36})$/i);
+    const linkUrl = linkMatch && UUID.test(linkMatch[2]) ? requestedLink : null;
     const id = uuid();
-    await env.DB.prepare("INSERT INTO notifications(id,recipient_id,actor_id,notification_type,entity_type,entity_id,title,body) VALUES(?,?,?,'system',?,?,?,?)")
-      .bind(id,user.id,user.id,entityType,entityId,title,message || null).run();
+    await env.DB.prepare("INSERT INTO notifications(id,recipient_id,actor_id,notification_type,entity_type,entity_id,title,body,link_url) VALUES(?,?,?,'system','system',NULL,?,?,?)")
+      .bind(id,user.id,user.id,title,message || null,linkUrl).run();
     return json({ success: true, id }, 201);
   }
 
