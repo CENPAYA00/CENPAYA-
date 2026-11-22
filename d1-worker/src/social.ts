@@ -251,6 +251,21 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     return json({ success: true, data: rows.results });
   }
 
+  if (path === "/api/me/blocked-users" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const blockedId = str(b.user_id, 64);
+    if (!UUID.test(blockedId) || blockedId === user.id) return fail("Invalid user id");
+    const target = await env.DB.prepare("SELECT id FROM users WHERE id=? AND deleted_at IS NULL").bind(blockedId).first();
+    if (!target) return fail("User not found", 404);
+    await env.DB.batch([
+      env.DB.prepare("INSERT OR IGNORE INTO user_blocks(blocker_id,blocked_id,reason) VALUES(?,?,?)").bind(user.id, blockedId, str(b.reason, 500) || null),
+      env.DB.prepare("DELETE FROM user_follows WHERE (follower_id=? AND following_id=?) OR (follower_id=? AND following_id=?)").bind(user.id, blockedId, blockedId, user.id),
+      env.DB.prepare("DELETE FROM friendships WHERE (user_a_id=? AND user_b_id=?) OR (user_a_id=? AND user_b_id=?)").bind(...[user.id, blockedId].sort(), ...[user.id, blockedId].sort()),
+      env.DB.prepare("UPDATE friend_requests SET status='cancelled',responded_at=" + NOW + ",updated_at=" + NOW + " WHERE status='pending' AND ((requester_id=? AND recipient_id=?) OR (requester_id=? AND recipient_id=?))").bind(user.id, blockedId, blockedId, user.id)
+    ]);
+    return json({ success: true });
+  }
   if (path === "/api/me/blocked-users" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
     const rows = await env.DB.prepare(`SELECT u.id,u.username,u.display_name,u.avatar_url,b.created_at FROM user_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=? ORDER BY b.created_at DESC LIMIT 100`).bind(user.id).all();
