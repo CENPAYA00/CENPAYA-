@@ -29,6 +29,19 @@ async function notify(env: Env, recipientId: string, actorId: string, type: stri
 
 const PROFILE_SELECT = "u.id,u.username,u.display_name,u.avatar_url,u.bio,u.location_city,u.occupation,u.created_at";
 
+async function canViewPost(db: D1Database, viewerId: string | null, authorId: string, visibility: string): Promise<boolean> {
+  if (visibility === "public" || viewerId === authorId) return true;
+  if (!viewerId) return false;
+  if (visibility === "followers") {
+    return !!(await db.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId, authorId).first());
+  }
+  if (visibility === "friends") {
+    const [a, b] = [viewerId, authorId].sort();
+    return !!(await db.prepare("SELECT 1 FROM friendships WHERE user_a_id=? AND user_b_id=?").bind(a, b).first());
+  }
+  return false;
+}
+
 export async function handleSocialRoutes(request: Request, env: Env, context: RouteContext): Promise<Response | null> {
   const { url, path, method, user } = context;
 
@@ -127,7 +140,9 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     const postId = decodeURIComponent(postRoute[1]);
     const action = postRoute[2] || "";
     if (action === "comments" && method === "GET") {
-      const rows = await env.DB.prepare(`SELECT c.id,c.post_id,c.content AS body,c.author_id AS user_id,c.created_at,c.status AS moderation_status,u.username,u.avatar_url FROM post_comments c JOIN users u ON u.id=c.author_id JOIN posts p ON p.id=c.post_id WHERE c.post_id=? AND c.status='published' AND c.deleted_at IS NULL AND p.status='published' AND p.deleted_at IS NULL ORDER BY c.created_at ASC LIMIT 200`).bind(postId).all();
+      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null }>();
+      if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB, user?.id || null, post.author_id, post.visibility))) return fail("Post not found", 404);
+      const rows = await env.DB.prepare(`SELECT c.id,c.post_id,c.content AS body,c.author_id AS user_id,c.created_at,c.status AS moderation_status,u.username,u.avatar_url FROM post_comments c JOIN users u ON u.id=c.author_id WHERE c.post_id=? AND c.status='published' AND c.deleted_at IS NULL ORDER BY c.created_at ASC LIMIT 200`).bind(postId).all();
       return json({ success: true, data: rows.results });
     }
     if (action === "comments" && method === "POST") {
@@ -135,8 +150,8 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const b = await body(request); if (!b) return fail("Valid JSON body required");
       const content = str(b.body, 2000);
       if (!content) return fail("Comment cannot be empty");
-      const post = await env.DB.prepare("SELECT author_id,comments_enabled,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; comments_enabled: number; status: string; deleted_at: string | null }>();
-      if (!post || post.status !== "published" || post.deleted_at || !post.comments_enabled) return fail("Comments are unavailable", 404);
+      const post = await env.DB.prepare("SELECT author_id,visibility,comments_enabled,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; comments_enabled: number; status: string; deleted_at: string | null }>();
+      if (!post || post.status !== "published" || post.deleted_at || !post.comments_enabled || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Comments are unavailable", 404);
       const id = uuid();
       await env.DB.prepare("INSERT INTO post_comments(id,post_id,author_id,content) VALUES(?,?,?,?)").bind(id, postId, user.id, content).run();
       if (post.author_id !== user.id) await notify(env, post.author_id, user.id, "post_comment", "post", postId, "New comment", user.display_name + " commented on your post.");
@@ -152,8 +167,8 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     }
     if (action === "like" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Unauthorized", 401);
-      const post = await env.DB.prepare("SELECT author_id,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; status: string; deleted_at: string | null }>();
-      if (!post || post.status !== "published" || post.deleted_at) return fail("Post not found", 404);
+      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null }>();
+      if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
       if (method === "POST") {
         const result = await env.DB.prepare("INSERT OR IGNORE INTO post_reactions(post_id,user_id,reaction_type) VALUES(?,?,'like')").bind(postId, user.id).run();
         if (result.meta.changes && post.author_id !== user.id) await notify(env, post.author_id, user.id, "post_reaction", "post", postId, "New like", user.display_name + " liked your post.");
@@ -164,8 +179,8 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     }
     if (action === "save" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Unauthorized", 401);
-      const post = await env.DB.prepare("SELECT id FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first();
-      if (!post) return fail("Post not found", 404);
+      const post = await env.DB.prepare("SELECT author_id,visibility FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string }>();
+      if (!post || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
       if (method === "POST") await env.DB.prepare("INSERT OR IGNORE INTO post_bookmarks(user_id,post_id) VALUES(?,?)").bind(user.id, postId).run();
       else await env.DB.prepare("DELETE FROM post_bookmarks WHERE user_id=? AND post_id=?").bind(user.id, postId).run();
       return json({ success: true, saved: method === "POST" });
