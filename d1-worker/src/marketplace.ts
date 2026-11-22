@@ -1,6 +1,6 @@
 import type { Env, User } from "./types.js";
 import { uuid, constantTimeEqual } from "./security.js";
-import { extractMediaKey, resolveMediaUrl } from "./media.js";
+import { extractMediaKey, hydratePosts, resolveMediaUrl } from "./media.js";
 import { handleSearchRoute } from "./search.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
@@ -79,7 +79,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const offset=Math.min(Math.max(Number(url.searchParams.get("offset")||0),0),5000);
     const before=url.searchParams.get("before");
     const viewerId=user?.id||null;
-    const rows=await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.published_at,p.created_at,
+    const rows=await env.DB.prepare(`SELECT p.*,
       u.username,u.display_name,u.avatar_url,
       (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id) AS likes_count,
       (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count,
@@ -96,15 +96,64 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
       ${before?"AND p.created_at < ?":""}
       ORDER BY COALESCE(p.published_at,p.created_at) DESC LIMIT ? OFFSET ?`)
       .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,...(before?[before]:[]),limit,offset).all();
-    return json({success:true,data:rows.results});
+    return json({success:true,data:await hydratePosts(env,url.origin,rows.results as Array<Record<string,unknown>>)});
   }
   if(path==="/api/posts"&&method==="POST"){
     if(!user)return fail("Unauthorized",401);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
-    const content=str(b.content,10000),visibility=str(b.visibility,20)||"public",postType=str(b.post_type,30)||"text";
-    if(!content||!["public","followers","friends","private"].includes(visibility)||!["text","image","video","mixed"].includes(postType))return fail("Invalid post content or type");
+    const content=str(b.content,10000),visibility=str(b.visibility,20)||"public";
+    const mediaInput=Array.isArray(b.media_urls)?b.media_urls:(typeof b.image_url==="string"?b.image_url.split(","):[]);
+    const mediaUrls=mediaInput.filter((value):value is string=>typeof value==="string"&&value.length<=2048).slice(0,10);
+    if(!content&&!mediaUrls.length)return fail("Write something or add a photo");
+    if(!["public","followers","friends","private"].includes(visibility))return fail("Invalid post visibility");
+    if(mediaInput.length>10)return fail("A post can contain up to 10 images");
+    if(mediaUrls.length&&(!env.MEDIA_BUCKET||(env.MEDIA_URL_SIGNING_SECRET||"").length<32))return fail("R2 media storage is not configured",503);
     const id=uuid();
-    await env.DB.prepare("INSERT INTO posts(id,author_id,content,post_type,visibility,status,published_at) VALUES(?,?,?,?,?,'published',"+NOW+")").bind(id,user.id,content,postType,visibility).run();
+    const backgroundId=str(b.background_id,40)||null;
+    if(backgroundId&&!/^[a-z0-9_-]{1,40}$/i.test(backgroundId))return fail("Invalid post background");
+    const feeling=str(b.feeling,100)||null,feelingEmoji=str(b.feeling_emoji,24)||null;
+    const feelingKind=str(b.feeling_kind,20)||null;
+    if(feelingKind&&!["feeling","activity"].includes(feelingKind))return fail("Invalid feeling type");
+    const mediaStatements=[];
+    for(let index=0;index<mediaUrls.length;index++){
+      const key=await extractMediaKey(mediaUrls[index],env,url);
+      if(!key||!key.startsWith(["posts",user.id,""].join("/")))return fail("A post image upload is invalid or expired");
+      const object=await env.MEDIA_BUCKET!.head(key);
+      const mime=object?.httpMetadata?.contentType||"";
+      if(!object||object.customMetadata?.ownerId!==user.id||!mime.startsWith("image/"))return fail("Uploaded post image not found or not owned by this account",404);
+      mediaStatements.push(env.DB.prepare("INSERT INTO post_media(id,post_id,media_type,r2_object_key,mime_type,file_size_bytes,position) VALUES(?,?,'image',?,?,?,?)")
+        .bind(uuid(),id,key,mime,object.size,index));
+    }
+    const rawTagged=Array.isArray(b.tagged_user_ids)?b.tagged_user_ids:[];
+    if(rawTagged.length>20)return fail("You can tag up to 20 people in one post");
+    const taggedIds=[...new Set(rawTagged.filter((value):value is string=>typeof value==="string").map(value=>value.trim()))].filter(value=>value&&value!==user.id);
+    const tagStatements=[];
+    for(const targetId of taggedIds){
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetId))return fail("Invalid tagged user");
+      const target=await env.DB.prepare("SELECT id FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first();
+      if(!target)return fail("A tagged user was not found",404);
+      const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id,targetId,targetId,user.id).first();
+      if(blocked)return fail("You cannot tag a user who has blocked you or whom you blocked",403);
+      const settings=await env.DB.prepare("SELECT tagging_audience,tagging_visibility FROM user_privacy_settings WHERE user_id=?").bind(targetId).first<{tagging_audience:string;tagging_visibility:string}>();
+      const audience=settings?.tagging_audience||"everyone",legacy=settings?.tagging_visibility||"everyone";
+      if(audience==="nobody"||legacy==="nobody")return fail("A tagged user does not allow tagging",403);
+      if(audience==="following"){
+        const follows=await env.DB.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(user.id,targetId).first();
+        if(!follows)return fail("You must follow a tagged user before tagging them",403);
+      }
+      if(legacy==="friends"){
+        const [a,bUser]=[user.id,targetId].sort();
+        const friends=await env.DB.prepare("SELECT 1 FROM friendships WHERE user_a_id=? AND user_b_id=?").bind(a,bUser).first();
+        if(!friends)return fail("Only friends can tag this user",403);
+      }
+      tagStatements.push(env.DB.prepare("INSERT INTO post_tagged_users(id,post_id,tagged_user_id,tagged_by_user_id) VALUES(?,?,?,?)").bind(uuid(),id,targetId,user.id));
+      tagStatements.push(env.DB.prepare("INSERT INTO notifications(id,recipient_id,actor_id,notification_type,entity_type,entity_id,title,body,link_url) VALUES(?,?,?,'system','post',?,'You were tagged in a post',?,?)")
+        .bind(uuid(),targetId,user.id,id,user.display_name+" tagged you in a post.","/post/"+id));
+    }
+    const postType=mediaUrls.length?"image":"text";
+    const postStatement=env.DB.prepare("INSERT INTO posts(id,author_id,content,post_type,visibility,status,published_at,background_id,feeling,feeling_emoji,feeling_kind) VALUES(?,?,?,?,?,'published',"+NOW+",?,?,?,?)")
+      .bind(id,user.id,content||null,postType,visibility,backgroundId,feeling,feelingEmoji,feelingKind);
+    await env.DB.batch([postStatement,...mediaStatements,...tagStatements]);
     return json({success:true,id},201);
   }
   if(path==="/api/market/categories"&&method==="GET"){
