@@ -158,7 +158,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     return json({success:true,id},201);
   }
   if(path==="/api/market/categories"&&method==="GET"){
-    const rows=await env.DB.prepare("SELECT id,parent_id,name,slug,description,category_type,position,icon,section FROM marketplace_categories WHERE status='active' ORDER BY position,name").all();
+    const rows=await env.DB.prepare("SELECT id,parent_id,name,slug,description,category_type,category_type AS listing_type,position,icon,section FROM marketplace_categories WHERE status='active' ORDER BY position,name").all();
     return json({success:true,data:rows.results});
   }
   if(path==="/api/market/search"&&method==="GET"){
