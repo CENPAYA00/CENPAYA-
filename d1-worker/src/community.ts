@@ -121,7 +121,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   if(path==="/api/notifications"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||30),1),100);
-    const rows=await env.DB.prepare("SELECT id,actor_id,notification_type,entity_type,entity_id,title,body,is_read,read_at,created_at FROM notifications WHERE recipient_id=? ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all();
+    const rows=await env.DB.prepare("SELECT id,actor_id,notification_type,entity_type,entity_id,title,body,link_url,is_read,read_at,created_at FROM notifications WHERE recipient_id=? ORDER BY created_at DESC LIMIT ?").bind(user.id,limit).all();
     return json({success:true,data:rows.results});
   }
   const mark=path.match(/^\/api\/notifications\/([^/]+)\/read$/);
