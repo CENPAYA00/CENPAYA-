@@ -122,6 +122,8 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
       const object=await env.MEDIA_BUCKET!.head(key);
       const mime=object?.httpMetadata?.contentType||"";
       if(!object||object.customMetadata?.ownerId!==user.id||!mime.startsWith("image/"))return fail("Uploaded post image not found or not owned by this account",404);
+      const alreadyUsed=await env.DB.prepare("SELECT 1 FROM post_media WHERE r2_object_key=?").bind(key).first();
+      if(alreadyUsed)return fail("This post image upload has already been used; upload it again",409);
       mediaStatements.push(env.DB.prepare("INSERT INTO post_media(id,post_id,media_type,r2_object_key,mime_type,file_size_bytes,position) VALUES(?,?,'image',?,?,?,?)")
         .bind(uuid(),id,key,mime,object.size,index));
     }
@@ -228,6 +230,8 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
       const key=imageKeys[index];
       const object=await env.MEDIA_BUCKET!.head(key);
       if(!object||object.customMetadata?.ownerId!==user.id)return fail("Uploaded image not found or not owned by this account",404);
+      const alreadyUsed=await env.DB.prepare("SELECT 1 FROM marketplace_listing_media WHERE r2_object_key=?").bind(key).first();
+      if(alreadyUsed)return fail("This image upload is already attached to a listing; upload it again",409);
       mediaStatements.push(env.DB.prepare("INSERT INTO marketplace_listing_media(id,listing_id,r2_object_key,mime_type,file_size_bytes,position) VALUES(?,?,?,?,?,?)")
         .bind(uuid(),id,key,object.httpMetadata?.contentType||"application/octet-stream",object.size,index));
     }
