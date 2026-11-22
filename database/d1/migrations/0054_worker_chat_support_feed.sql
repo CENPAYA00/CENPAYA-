@@ -9,6 +9,16 @@ ALTER TABLE chat_thread_members
   ADD COLUMN disappearing_seconds INTEGER
   CHECK (disappearing_seconds IS NULL OR disappearing_seconds BETWEEN 60 AND 2592000);
 
+ALTER TABLE chat_messages
+  ADD COLUMN message_type TEXT NOT NULL DEFAULT 'text'
+  CHECK (message_type IN ('text','image','voice_note','shared_post'));
+
+ALTER TABLE chat_messages ADD COLUMN media_url TEXT;
+ALTER TABLE chat_messages ADD COLUMN media_duration_seconds REAL;
+ALTER TABLE chat_messages ADD COLUMN shared_post_id TEXT REFERENCES posts(id) ON DELETE SET NULL;
+ALTER TABLE chat_messages ADD COLUMN delivered_at TEXT;
+ALTER TABLE chat_messages ADD COLUMN read_at TEXT;
+
 ALTER TABLE support_tickets ADD COLUMN user_last_read_at TEXT;
 ALTER TABLE support_tickets ADD COLUMN support_last_read_at TEXT;
 
