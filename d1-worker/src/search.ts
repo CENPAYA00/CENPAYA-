@@ -18,7 +18,7 @@ const firstString=(...values:unknown[]):string=>{
 };
 const str=(value:unknown,max=200)=>typeof value==="string"?value.trim().slice(0,max):"";
 
-async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number):Promise<SearchHit[]>{
+async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,viewerId:string|null):Promise<SearchHit[]>{
   const term="%"+q.replace(/[%_]/g,"")+"%",results:SearchHit[]=[];
   if(kind==="home"){
     const rows=await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_demo
@@ -40,9 +40,10 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number)
       FROM marketplace_listings l JOIN users u ON u.id=l.seller_id
       WHERE l.status='active' AND l.deleted_at IS NULL AND l.moderation_status='approved'
       AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL AND l.listing_type=?
+      AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))
       AND (l.title LIKE ? OR l.description LIKE ? OR u.username LIKE ?)
       ORDER BY (l.boosted_until IS NOT NULL AND l.boosted_until > strftime('%Y-%m-%dT%H:%M:%fZ','now')) DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
-      .bind(listingType,term,term,term,limit).all<Record<string,unknown>>();
+      .bind(listingType,viewerId,viewerId,viewerId,term,term,term,limit).all<Record<string,unknown>>();
     for(const row of rows.results){
       let keys:string[]=[];
       if(typeof row.images_json==="string"){try{const parsed:unknown=JSON.parse(row.images_json);if(Array.isArray(parsed))keys=parsed.filter((value):value is string=>typeof value==="string");}catch{}}
@@ -58,18 +59,18 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number)
   return results;
 }
 
-export async function handleSearchRoute(request:Request,env:Env):Promise<Response|null>{
+export async function handleSearchRoute(request:Request,env:Env,viewerId:string|null=null):Promise<Response|null>{
   const url=new URL(request.url);
   if(url.pathname.replace(/\/$/,"")!=="/api/search"||request.method.toUpperCase()!=="GET")return null;
   const q=str(url.searchParams.get("q"),200),kind=str(url.searchParams.get("type"),20)||"all";
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||30),1),50);
   if(!q)return json({success:true,data:[]});
-  const cacheKey="search:"+await digest(kind+":"+q.toLowerCase()+":"+limit);
+  const cacheKey="search:"+await digest(kind+":"+q.toLowerCase()+":"+limit+":"+(viewerId||"anonymous"));
   const cached=await cacheGet(env,cacheKey);
   if(cached)return json({success:true,data:cached,source:"cache"});
   const ai=env.AI,aiSearchName=env.AI_SEARCH_NAME;
   if(!ai||!aiSearchName){
-    const fallback=await fallbackSearch(env,url,q,kind,limit);
+    const fallback=await fallbackSearch(env,url,q,kind,limit,viewerId);
     await cachePut(env,cacheKey,fallback,60);
     return json({success:true,data:fallback,source:"d1-fallback"});
   }
@@ -116,7 +117,7 @@ export async function handleSearchRoute(request:Request,env:Env):Promise<Respons
         is_demo:hit?.is_demo??false,score:hit?.score??null,snippet:hit?.snippet??""};
     });
   }else{
-    const rows=await env.DB.prepare(`SELECT * FROM public_marketplace_search WHERE listing_id IN (${placeholders})`).bind(...ids).all();
+    const rows=await env.DB.prepare(`SELECT s.* FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id WHERE s.listing_id IN (${placeholders}) AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))`).bind(...ids,viewerId,viewerId,viewerId).all();
     verified=(rows.results as Array<Record<string,unknown>>).map(row=>{
       const hit=hitMap.get(String(row.listing_id)),listingType=firstString(row.listing_type,hit?.kind,"listing").toLowerCase();
       const entityKind=listingType.includes("service")?"service":"listing";
