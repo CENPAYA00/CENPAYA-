@@ -8,6 +8,7 @@ import { handleMarketplaceRoutes } from "./marketplace.js";
 import { handleCommunityRoutes } from "./community.js";
 import { handleSocialRoutes } from "./social.js";
 import { handleMediaRoutes } from "./media.js";
+import { handleSearchRoute } from "./search.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -43,6 +44,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
     try{await env.DB.prepare("SELECT 1").first();return json({success:true,service:"cenpaya-d1-worker",database:"connected"});}
     catch{return fail("D1 unavailable",503);}
   }
+  const searchResponse=await handleSearchRoute(request,env);
+  if(searchResponse)return searchResponse;
   const internalResponse=await handleInternalRoutes(request,env,url,path,method);
   if(internalResponse)return internalResponse;
   const authResponse=await handleAuthRoutes(request,env,url,path,method);
