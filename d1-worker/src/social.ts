@@ -348,6 +348,37 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     return json({ success: true });
   }
 
+  if (path === "/api/me/profile-details-visibility" && (method === "GET" || method === "PATCH")) {
+    if (!user) return fail("Unauthorized", 401);
+    const defaults = { bio: "public", phone: "followers", email: "private", joined: "public", occupation: "public", location: "followers" };
+    if (method === "GET") {
+      const row = await env.DB.prepare("SELECT bio,phone,email,joined,occupation,location FROM user_profile_details_visibility WHERE user_id=?").bind(user.id).first<Record<string, string>>();
+      return json({ success: true, data: { ...defaults, ...(row || {}) } });
+    }
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const allowed = ["bio", "phone", "email", "joined", "occupation", "location"] as const;
+    const current = await env.DB.prepare("SELECT bio,phone,email,joined,occupation,location FROM user_profile_details_visibility WHERE user_id=?").bind(user.id).first<Record<string, string>>();
+    const next: Record<string, string> = { ...defaults, ...(current || {}) };
+    for (const key of allowed) {
+      if (b[key] === undefined) continue;
+      if (!["public", "followers", "private"].includes(String(b[key]))) return fail("Invalid profile detail visibility");
+      next[key] = String(b[key]);
+    }
+    await env.DB.prepare("INSERT INTO user_profile_details_visibility(user_id,bio,phone,email,joined,occupation,location) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET bio=excluded.bio,phone=excluded.phone,email=excluded.email,joined=excluded.joined,occupation=excluded.occupation,location=excluded.location,updated_at=" + NOW)
+      .bind(user.id, next.bio, next.phone, next.email, next.joined, next.occupation, next.location).run();
+    return json({ success: true });
+  }
+
+  if (path === "/api/me/following" && method === "GET") {
+    if (!user) return fail("Unauthorized", 401);
+    const rows = await env.DB.prepare(`SELECT u.id,u.username,u.display_name,u.avatar_url,u.is_premium,f.created_at AS followed_at
+      FROM user_follows f JOIN users u ON u.id=f.following_id
+      WHERE f.follower_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
+      AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=u.id) OR (b.blocker_id=u.id AND b.blocked_id=?))
+      ORDER BY f.created_at DESC LIMIT 200`).bind(user.id, user.id, user.id).all();
+    return json({ success: true, data: rows.results });
+  }
+
   if (path === "/api/me/personal-details" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
     const row = await env.DB.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,bio,date_of_birth,country_code,location_region,location_city,occupation,is_premium,profile_visibility FROM users WHERE id=? AND deleted_at IS NULL").bind(user.id).first<Record<string, unknown>>();
