@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS user_profile_details_visibility (
   email TEXT NOT NULL DEFAULT 'private' CHECK (email IN ('public','followers','private')),
   joined TEXT NOT NULL DEFAULT 'public' CHECK (joined IN ('public','followers','private')),
   occupation TEXT NOT NULL DEFAULT 'public' CHECK (occupation IN ('public','followers','private')),
-  location TEXT NOT NULL DEFAULT 'followers' CHECK (location IN ('public','followers','private')),
+  city TEXT NOT NULL DEFAULT 'public' CHECK (city IN ('public','followers','private')),
+  country TEXT NOT NULL DEFAULT 'public' CHECK (country IN ('public','followers','private')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
