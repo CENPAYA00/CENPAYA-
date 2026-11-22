@@ -1,5 +1,6 @@
 import type { Env, User } from "./types.js";
 import { uuid } from "./security.js";
+import { hydratePosts } from "./media.js";
 
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
@@ -51,6 +52,29 @@ async function canViewPost(db: D1Database, viewerId: string | null, authorId: st
 
 export async function handleSocialRoutes(request: Request, env: Env, context: RouteContext): Promise<Response | null> {
   const { url, path, method, user } = context;
+
+  const profilePosts = path.match(/^\/api\/profiles\/([^/]+)\/posts$/);
+  if (profilePosts && method === "GET") {
+    const targetId = decodeURIComponent(profilePosts[1]);
+    if (!UUID.test(targetId)) return fail("Invalid user id");
+    const profile = await env.DB.prepare("SELECT profile_visibility FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first<{ profile_visibility: string }>();
+    if (!profile || !(await canViewProfile(env.DB, user?.id || null, targetId, profile.profile_visibility))) return fail("Profile not found", 404);
+    const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_premium,
+      (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id) AS likes_count,
+      (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count
+      FROM posts p JOIN users u ON u.id=p.author_id
+      WHERE p.author_id=? AND p.status='published' AND p.deleted_at IS NULL
+      ORDER BY COALESCE(p.published_at,p.created_at) DESC LIMIT 50`).bind(targetId).all<Record<string, unknown>>();
+    const viewerId = user?.id || null;
+    let isFollower = false, isFriend = false;
+    if (viewerId && viewerId !== targetId) {
+      isFollower = !!(await env.DB.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId,targetId).first());
+      const [a,b] = [viewerId,targetId].sort();
+      isFriend = !!(await env.DB.prepare("SELECT 1 FROM friendships WHERE user_a_id=? AND user_b_id=?").bind(a,b).first());
+    }
+    const visible = rows.results.filter(post => post.visibility === "public" || post.author_id === viewerId || (post.visibility === "followers" && isFollower) || (post.visibility === "friends" && isFriend));
+    return json({ success: true, data: await hydratePosts(env,url.origin,visible) });
+  }
 
   const followRoute = path.match(/^\/api\/profiles\/([^/]+)\/(follow|follow-status|followers|following)$/);
   if (followRoute) {
@@ -148,14 +172,14 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     const postId = decodeURIComponent(postRoute[1]);
     const action = postRoute[2] || "";
     if (action === "" && method === "GET") {
-      const post = await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.status,p.comments_enabled,p.published_at,p.created_at,
-        u.username,u.display_name,u.avatar_url,u.is_premium,
+      const post = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_premium,
         (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id) AS likes_count,
         (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count
         FROM posts p JOIN users u ON u.id=p.author_id WHERE p.id=? AND p.status='published' AND p.deleted_at IS NULL
-        AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(postId).first<{ author_id: string; visibility: string }>();
+        AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(postId).first<Record<string, unknown> & { author_id: string; visibility: string }>();
       if (!post || !(await canViewPost(env.DB, user?.id || null, post.author_id, post.visibility))) return fail("Post not found", 404);
-      return json({ success: true, data: post });
+      const [hydrated] = await hydratePosts(env,url.origin,[post]);
+      return json({ success: true, data: hydrated });
     }
     if (action === "comments" && method === "GET") {
       const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null }>();
@@ -245,18 +269,18 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
 
   if (path === "/api/posts/saved" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
-    const rows = await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.published_at,p.created_at,u.username,u.display_name,u.avatar_url FROM post_bookmarks b JOIN posts p ON p.id=b.post_id JOIN users u ON u.id=p.author_id WHERE b.user_id=? AND p.status='published' AND p.deleted_at IS NULL AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id)) OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)))) ORDER BY b.created_at DESC LIMIT 100`).bind(user.id,user.id,user.id,user.id,user.id).all();
-    return json({ success: true, data: rows.results });
+    const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url FROM post_bookmarks b JOIN posts p ON p.id=b.post_id JOIN users u ON u.id=p.author_id WHERE b.user_id=? AND p.status='published' AND p.deleted_at IS NULL AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id)) OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)))) ORDER BY b.created_at DESC LIMIT 100`).bind(user.id,user.id,user.id,user.id,user.id).all();
+    return json({ success: true, data: await hydratePosts(env,url.origin,rows.results as Array<Record<string,unknown>>) });
   }
   if (path === "/api/posts/mine" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
-    const rows = await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.status,p.created_at,(SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id) AS likes_count,(SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count FROM posts p WHERE p.author_id=? AND p.deleted_at IS NULL AND p.status IN ('published','draft') ORDER BY p.created_at DESC LIMIT 100`).bind(user.id).all();
-    return json({ success: true, data: rows.results });
+    const rows = await env.DB.prepare(`SELECT p.*,(SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id) AS likes_count,(SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count FROM posts p WHERE p.author_id=? AND p.deleted_at IS NULL AND p.status IN ('published','draft') ORDER BY p.created_at DESC LIMIT 100`).bind(user.id).all();
+    return json({ success: true, data: await hydratePosts(env,url.origin,rows.results as Array<Record<string,unknown>>) });
   }
   if (path === "/api/posts/archived" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
-    const rows = await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.status,p.created_at FROM posts p WHERE p.author_id=? AND p.status='archived' AND p.deleted_at IS NULL ORDER BY p.updated_at DESC LIMIT 100`).bind(user.id).all();
-    return json({ success: true, data: rows.results });
+    const rows = await env.DB.prepare(`SELECT p.* FROM posts p WHERE p.author_id=? AND p.status='archived' AND p.deleted_at IS NULL ORDER BY p.updated_at DESC LIMIT 100`).bind(user.id).all();
+    return json({ success: true, data: await hydratePosts(env,url.origin,rows.results as Array<Record<string,unknown>>) });
   }
 
   if (path === "/api/me/blocked-users" && method === "POST") {
