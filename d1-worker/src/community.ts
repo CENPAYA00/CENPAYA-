@@ -60,6 +60,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const threadId=chatMessages[1];
     const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members m JOIN chat_threads t ON t.id=m.thread_id WHERE m.thread_id=? AND m.user_id=? AND m.left_at IS NULL AND t.thread_type='direct'").bind(threadId,user.id).first();
     if(!member)return fail("Conversation not found",404);
+    const blocked=await env.DB.prepare("SELECT 1 FROM chat_thread_members other JOIN user_blocks b ON (b.blocker_id=? AND b.blocked_id=other.user_id) OR (b.blocker_id=other.user_id AND b.blocked_id=?) WHERE other.thread_id=? AND other.user_id<>?").bind(user.id,user.id,threadId,user.id).first();
+    if(blocked)return fail("Messaging is unavailable for this user",403);
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||50),1),100),before=url.searchParams.get("before");
     const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,CASE WHEN m.status='deleted' THEN 'Message deleted' ELSE m.message_text END AS message_text,CASE WHEN m.status='deleted' THEN 'text' ELSE m.message_type END AS message_type,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_url END AS media_url,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_key END AS media_key,m.media_duration_seconds,m.shared_post_id,m.delivered_at,m.read_at,m.status,m.created_at,
       u.username,u.display_name,u.avatar_url FROM chat_messages m JOIN users u ON u.id=m.sender_id
@@ -91,6 +93,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if(messageType==="shared_post"&&!UUID.test(sharedPostId))return fail("A valid shared post is required");
     const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id).first();
     if(!member)return fail("Conversation not found",404);
+    const blocked=await env.DB.prepare("SELECT 1 FROM chat_thread_members other JOIN user_blocks b ON (b.blocker_id=? AND b.blocked_id=other.user_id) OR (b.blocker_id=other.user_id AND b.blocked_id=?) WHERE other.thread_id=? AND other.user_id<>?").bind(user.id,user.id,threadId,user.id).first();
+    if(blocked)return fail("Messaging is unavailable for this user",403);
     if(messageType==="shared_post"){
       const post=await env.DB.prepare("SELECT id FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL AND (visibility='public' OR author_id=?)").bind(sharedPostId,user.id).first();
       if(!post)return fail("Shared post not found",404);
@@ -206,6 +210,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if (!user) return fail("Unauthorized", 401);
     const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatPeer[1], user.id).first();
     if (!member) return fail("Conversation not found", 404);
+    const blocked = await env.DB.prepare("SELECT 1 FROM chat_thread_members other JOIN user_blocks b ON (b.blocker_id=? AND b.blocked_id=other.user_id) OR (b.blocker_id=other.user_id AND b.blocked_id=?) WHERE other.thread_id=? AND other.user_id<>?").bind(user.id,user.id,chatPeer[1],user.id).first();
+    if (blocked) return fail("Conversation not found", 404);
     const peer = await env.DB.prepare(`SELECT u.id,u.username,u.display_name,u.avatar_url,u.bio,u.last_active_at FROM chat_thread_members m JOIN users u ON u.id=m.user_id WHERE m.thread_id=? AND m.user_id<>? AND m.left_at IS NULL AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL LIMIT 1`).bind(chatPeer[1], user.id).first();
     return peer ? json({ success: true, data: peer }) : fail("Conversation partner not found", 404);
   }
