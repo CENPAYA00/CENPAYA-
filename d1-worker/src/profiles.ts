@@ -53,19 +53,18 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
     const profile=await env.DB.prepare("SELECT id,username,display_name,avatar_url,cover_url,bio,phone,email,country_code,location_city,location_region,occupation,is_premium,followers_count,sales_count,reputation_score,created_at,profile_visibility FROM users WHERE (id=? OR lower(username)=lower(?)) AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(key,key).first<Record<string,unknown>>();
     if(!profile)return fail("Profile not found",404);
     const ownerId=String(profile.id),viewerId=user?.id||null;
+    let isFollower=false;
     if(viewerId!==ownerId){
       const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(ownerId,viewerId||"",viewerId||"",ownerId).first();
       if(blocked)return fail("Profile not found",404);
-      if(profile.profile_visibility==="private")return fail("Profile not found",404);
-      if(profile.profile_visibility==="followers"){
-        const follows=viewerId?await env.DB.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId,ownerId).first():null;
-        if(!follows)return fail("Profile not found",404);
-      }
+      const follows=viewerId?await env.DB.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId,ownerId).first():null;
+      isFollower=!!follows;
+      if(profile.profile_visibility==="private"||(profile.profile_visibility==="followers"&&!isFollower))return fail("Profile not found",404);
     }
     const visibility=await env.DB.prepare("SELECT bio,phone,email,joined,occupation,location FROM user_profile_details_visibility WHERE user_id=?").bind(ownerId).first<Record<string,string>>();
     const defaults={bio:"public",phone:"followers",email:"private",joined:"public",occupation:"public",location:"followers"};
     const rules={...defaults,...(visibility||{})};
-    const canSee=(rule:string)=>viewerId===ownerId||rule==="public"||(rule==="followers"&&!!viewerId&&viewerId!==ownerId);
+    const canSee=(rule:string)=>viewerId===ownerId||rule==="public"||(rule==="followers"&&isFollower);
     const data={...profile,
       bio:canSee(rules.bio)?profile.bio:null,
       phone:canSee(rules.phone)?profile.phone:null,
