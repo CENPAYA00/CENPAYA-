@@ -139,6 +139,16 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
   if (postRoute) {
     const postId = decodeURIComponent(postRoute[1]);
     const action = postRoute[2] || "";
+    if (action === "" && method === "GET") {
+      const post = await env.DB.prepare(`SELECT p.id,p.author_id,p.content,p.post_type,p.visibility,p.status,p.comments_enabled,p.published_at,p.created_at,
+        u.username,u.display_name,u.avatar_url,u.is_premium,
+        (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id) AS likes_count,
+        (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count
+        FROM posts p JOIN users u ON u.id=p.author_id WHERE p.id=? AND p.status='published' AND p.deleted_at IS NULL
+        AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(postId).first<{ author_id: string; visibility: string }>();
+      if (!post || !(await canViewPost(env.DB, user?.id || null, post.author_id, post.visibility))) return fail("Post not found", 404);
+      return json({ success: true, data: post });
+    }
     if (action === "comments" && method === "GET") {
       const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null }>();
       if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB, user?.id || null, post.author_id, post.visibility))) return fail("Post not found", 404);
