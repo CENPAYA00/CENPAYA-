@@ -132,7 +132,10 @@ void describe("restricted payment-worker JWT", () => {
       SUPABASE_JWT_SECRET: secret,
     }, now);
     const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
-    assert.equal(claims.role, "cenpaya_payment_worker");
+    // The project does not permit custom Postgres roles; the Worker uses
+    // the authenticated role plus a private signed app_metadata capability.
+    assert.equal(claims.role, "authenticated");
+    assert.deepEqual(claims.app_metadata, { cenpaya_payment_worker: true });
     assert.equal(claims.sub, userId);
     assert.equal(claims.exp - claims.iat, 60);
   });
