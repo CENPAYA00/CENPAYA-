@@ -41,6 +41,7 @@ export default function Checkout() {
   const [method, setMethod] = useState<PaymentMethod>('wallet');
   const [payPhone, setPayPhone] = useState('');
   const [requirements, setRequirements] = useState('');
+  const [milestones, setMilestones] = useState<{ title: string; amount: number }[]>([]);
   const [processing, setProcessing] = useState(false);
   const checkoutIdempotencyKey = useRef<string | null>(null);
   const [err, setErr] = useState('');
@@ -96,6 +97,7 @@ export default function Checkout() {
           setFeeFixed(Number(quoteResponse.data.fee_fixed));
           setServerPlatformFee(Number(quoteResponse.data.platform_fee));
           setServerTotal(Number(quoteResponse.data.total));
+          setMilestones([{ title: 'Project delivery', amount: Number(quoteResponse.data.amount) }]);
           setQuoteReady(true);
         } catch { setQuoteReady(false); }
       } else if (serviceId) {
@@ -179,6 +181,10 @@ export default function Checkout() {
       if (item._kind === 'service') {
         if (method !== 'wallet') throw new Error('Freelance escrow currently supports wallet payment only.');
         if (requirements.trim().length < 5) throw new Error('Please describe the work required (at least 5 characters).');
+        if (milestones.length === 0 || milestones.some(m => !m.title.trim() || !Number.isSafeInteger(m.amount) || m.amount <= 0) ||
+            milestones.reduce((sum, m) => sum + m.amount, 0) !== amount) {
+          throw new Error('Milestone amounts must be positive and add up exactly to the service price.');
+        }
         const proposedDeadline = new Date(Date.now() + Math.max(1, Number((item as any).delivery_days) || 7) * 86400000);
         const response = await supabaseWorkerRequest<{ data: { order_id?: string; id?: string; ok?: boolean; error?: string } }>('/api/v1/checkout/service-orders', {
           method: 'POST',
@@ -186,6 +192,7 @@ export default function Checkout() {
             seller_id: item.seller_id, service_id: item.id, package_id: packageId || null,
             amount, requirements: requirements.trim(), due_at: proposedDeadline.toISOString(),
             payment_method: 'wallet',
+            milestones: milestones.map(m => ({ title: m.title.trim(), amount: m.amount, due_at: proposedDeadline.toISOString() })),
           }),
         });
         const orderId = response.data.order_id || response.data.id;
@@ -282,8 +289,9 @@ export default function Checkout() {
       )}
 
       {item._kind === 'service' && (
-        <div className="px-3 mb-3">
-          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Requirements for the seller</p>
+        <div className="px-3 mb-3 space-y-3">
+          <div>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Requirements for the seller</p>
           <textarea
             value={requirements}
             onChange={e => setRequirements(e.target.value)}
@@ -291,6 +299,24 @@ export default function Checkout() {
             placeholder="What should the freelancer know about your project?"
             className="w-full p-3 rounded-xl border border-gray-200 dark:border-darkline bg-white dark:bg-darkcard text-[12px] resize-none"
           />
+          </div>
+          <div className="bg-white dark:bg-darkcard rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Milestone funding</p>
+              <button type="button" onClick={() => setMilestones(rows => [...rows, { title: '', amount: 0 }])}
+                className="text-[10px] font-bold text-accent">+ Add milestone</button>
+            </div>
+            {milestones.map((m, index) => (
+              <div key={index} className="flex gap-2 mb-2">
+                <input value={m.title} onChange={e => setMilestones(rows => rows.map((row,i) => i === index ? { ...row, title: e.target.value } : row))}
+                  placeholder={`Milestone ${index + 1}`} className="min-w-0 flex-1 p-2 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+                <input type="number" min="1" value={m.amount || ''} onChange={e => setMilestones(rows => rows.map((row,i) => i === index ? { ...row, amount: Number(e.target.value) } : row))}
+                  placeholder="XAF" className="w-24 p-2 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+                {milestones.length > 1 && <button type="button" onClick={() => setMilestones(rows => rows.filter((_,i) => i !== index))} className="text-red-500 text-xs">×</button>}
+              </div>
+            ))}
+            <p className="text-[10px] text-gray-500">Allocated: {milestones.reduce((sum,m) => sum + (Number(m.amount)||0),0).toLocaleString()} / {amount.toLocaleString()} XAF</p>
+          </div>
         </div>
       )}
 
