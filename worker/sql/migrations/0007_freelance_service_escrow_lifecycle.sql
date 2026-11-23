@@ -245,3 +245,8 @@ grant execute on function public.create_service_order(uuid,uuid,uuid,bigint,text
  public.approve_service_deadline_change(uuid),public.submit_service_milestone(uuid,uuid,text,text),
  public.approve_service_milestone(uuid,uuid),public.request_service_revision(uuid,uuid,text),
  public.buyer_confirm_service_order(uuid),public.open_service_dispute(uuid,text) to authenticated;
+
+-- Retire legacy overloads that referenced the removed Supabase service catalog.
+revoke all on function public.create_service_order(uuid,uuid,text,boolean) from public,anon,authenticated;
+revoke all on function public.accept_service_order(uuid) from public,anon,authenticated;
+revoke all on function public.approve_service_delivery(uuid) from public,anon,authenticated;
