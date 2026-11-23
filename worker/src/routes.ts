@@ -324,13 +324,30 @@ export async function handleAuthenticatedApi(
     if (!body || !onlyKeys(body, ["seller_id","service_id","package_id","amount","requirements","due_at","milestones","payment_method"])) {
       return failure("invalid_service_order_checkout", 400, headers);
     }
-    if (!isUuid(body.seller_id) || !isUuid(body.service_id) || !isUuid(body.package_id) ||
+    if (!isUuid(body.seller_id) || !isUuid(body.service_id) ||
+        (body.package_id !== undefined && body.package_id !== null && !isUuid(body.package_id)) ||
         !integerIn(body.amount, 1, 1_000_000_000_000) || !isText(body.requirements, 8000, 5) ||
         typeof body.due_at !== "string" || !Number.isFinite(Date.parse(body.due_at)) ||
         (body.payment_method !== undefined && body.payment_method !== "wallet") ||
         (body.milestones !== undefined && (!Array.isArray(body.milestones) || body.milestones.length > 20))) {
       return failure("invalid_service_order_checkout", 400, headers);
     }
+    if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) return failure("service_quote_unavailable", 503, headers);
+    try {
+      const quoteResponse = await env.D1_IDENTITY.fetch(
+        `https://d1.internal/internal/v1/market/listings/${encodeURIComponent(String(body.service_id))}/quote`,
+        { headers: { "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET }, signal: AbortSignal.timeout(5_000) },
+      );
+      const quote = await quoteResponse.json() as { success?: boolean; data?: Record<string, unknown> };
+      const canonicalSeller = quote.data?.seller_id;
+      const canonicalAmount = Number(quote.data?.price);
+      const listingType = String(quote.data?.listing_type || "");
+      if (!quoteResponse.ok || !quote.success || canonicalSeller !== body.seller_id ||
+          canonicalAmount !== body.amount || (listingType && listingType !== "service")) {
+        return failure("service_quote_mismatch", 409, headers);
+      }
+    } catch { return failure("service_quote_unavailable", 503, headers); }
+
     const milestones = (body.milestones || []).map((item: any) => ({
       title: item?.title, description: item?.description || null,
       amount: item?.amount, due_at: item?.due_at || body.due_at,
@@ -340,7 +357,8 @@ export async function handleAuthenticatedApi(
       return failure("invalid_service_order_milestones", 400, headers);
     }
     const result = await rpc(supabase, "create_service_order", {
-      p_seller_id: body.seller_id, p_service_id: body.service_id, p_package_id: body.package_id,
+      p_seller_id: body.seller_id, p_service_id: body.service_id,
+      p_package_id: body.package_id || null,
       p_amount: body.amount, p_requirements: String(body.requirements).trim(),
       p_due_at: new Date(body.due_at).toISOString(), p_milestones: milestones,
     });
