@@ -265,10 +265,7 @@ export default function ServiceOrder() {
           <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-2">Payment method</p>
 
           <button
-            onClick={() => setPayMethod('wallet')}
-            className={`w-full p-3 rounded-xl border-2 mb-2 flex items-center gap-3 ${
-              payMethod === 'wallet' ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-darkline'
-            }`}
+            className="w-full p-3 rounded-xl border-2 mb-2 flex items-center gap-3 border-accent bg-accent/5"
           >
             <div className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center text-white">
               <Wallet size={16} />
