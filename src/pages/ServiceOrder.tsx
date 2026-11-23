@@ -32,6 +32,7 @@ export default function ServiceOrder() {
   const [walletBalance, setWalletBalance] = useState(0);
 
   const [deliveryNote, setDeliveryNote] = useState('');
+  const [confirmedDeadline, setConfirmedDeadline] = useState('');
   const [deliveryFile, setDeliveryFile] = useState<File | null>(null);
 
   useEffect(() => {
@@ -93,10 +94,17 @@ export default function ServiceOrder() {
     setBusy(true);
 
     try {
-      await supabaseWorkerRequest('/api/v1/checkout/service-orders', {
+      if (payMethod !== 'wallet') throw new Error('Freelance escrow checkout currently supports wallet payment only.');
+      const due = new Date(Date.now() + Math.max(1, Number(pkg.delivery_days) || 7) * 86400000);
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/checkout/service-orders', {
         method: 'POST',
-        body: JSON.stringify({ service_id: service.id, package_id: pkg.id, requirements: requirements.trim(), payment_method: payMethod }),
+        body: JSON.stringify({
+          seller_id: service.seller_id, service_id: service.id, package_id: pkg.id,
+          amount: Number(pkg.price), requirements: requirements.trim(),
+          due_at: due.toISOString(), payment_method: 'wallet',
+        }),
       });
+      navigate(`/service-order/${result.data.id}`, { replace: true });
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Service order checkout is unavailable.');
     }
@@ -122,14 +130,14 @@ export default function ServiceOrder() {
     }
 
     try {
-      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/delivery`, { method: 'POST', body: JSON.stringify({ delivery_note: deliveryNote.trim(), delivery_file_url: fileUrl }) });
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/milestones/submit`, { method: 'POST', body: JSON.stringify({ milestone_id: order.service_order_milestones?.[0]?.id, delivery_note: deliveryNote.trim(), delivery_file_url: fileUrl }) });
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Service delivery is unavailable.');
       setBusy(false);
       return;
     }
 
-    alert('Delivered! Buyer has 72 hours to review.');
+    alert('Milestone submitted. The buyer can review and accept it or request revisions.');
     window.location.reload();
   };
 
@@ -137,7 +145,7 @@ export default function ServiceOrder() {
     if (!window.confirm('Approve this delivery and release funds?')) return;
     setBusy(true);
     try {
-      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/approve`, { method: 'POST', body: JSON.stringify({}) });
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/milestones/approve`, { method: 'POST', body: JSON.stringify({ milestone_id: order.service_order_milestones?.find((m: any) => m.status === 'submitted')?.id }) });
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Service order approval is unavailable.');
       setBusy(false);
@@ -228,8 +236,8 @@ export default function ServiceOrder() {
           ))}
         </div>
 
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] p-3 rounded-xl mb-3">
-          Service-order checkout is paused. Its financial tables and atomic payment settlement are not present in the current Supabase schema; fees will not be estimated or charged in the browser.
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-[11px] p-3 rounded-xl mb-3">
+          Funds are held securely in escrow. The seller must accept the project and confirm the delivery deadline before work begins.
         </div>
 
         {errorMsg && (
@@ -240,10 +248,10 @@ export default function ServiceOrder() {
 
         <button
           onClick={createOrder}
-          disabled={true}
+          disabled={busy || payMethod !== 'wallet'}
           className="w-full bg-accent text-white font-bold py-3 rounded-xl text-[12px] disabled:opacity-50"
         >
-          {busy ? 'Processing...' : 'Service orders unavailable'}
+          {busy ? 'Processing...' : 'Fund escrow'}
         </button>
       </div>
     );
@@ -256,8 +264,12 @@ export default function ServiceOrder() {
   const isBuyer = me?.id === order.buyer_id;
 
   const statusColor: Record<string, string> = {
+    awaiting_acceptance: 'bg-yellow-100 text-yellow-700',
     hold: 'bg-yellow-100 text-yellow-700',
+    in_progress: 'bg-blue-100 text-blue-700',
+    revision_requested: 'bg-amber-100 text-amber-700',
     delivered: 'bg-blue-100 text-blue-700',
+    deadline_refunded: 'bg-gray-100 text-gray-700',
     released: 'bg-green-100 text-green-700',
     auto_released_72h: 'bg-green-100 text-green-700',
     disputed: 'bg-red-100 text-red-700',
@@ -284,6 +296,9 @@ export default function ServiceOrder() {
         {pkg && <p className="text-[12px] font-bold text-navy dark:text-white mt-0.5">{pkg.title}</p>}
         <p className="text-[16px] font-black text-accent mt-2">{Number(order.amount).toLocaleString()} XAF</p>
 
+        {order.confirmed_delivery_at && ['awaiting_acceptance','in_progress','revision_requested'].includes(order.escrow_status) && (
+          <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1"><Clock size={11} /> Seller-confirmed deadline: {new Date(order.confirmed_delivery_at).toLocaleString()}</p>
+        )}
         {order.auto_release_deadline_at && order.escrow_status === 'delivered' && (
           <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1">
             <Clock size={11} /> Auto-releases {new Date(order.auto_release_deadline_at).toLocaleString()}
@@ -312,7 +327,28 @@ export default function ServiceOrder() {
         </div>
       )}
 
-      {isSeller && order.escrow_status === 'hold' && (
+      {isSeller && order.escrow_status === 'awaiting_acceptance' && (
+        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
+          <p className="text-[11px] font-bold text-navy dark:text-white mb-2">Accept project and confirm delivery date</p>
+          <input type="date" min={new Date(Date.now() + 86400000).toISOString().slice(0,10)}
+            value={confirmedDeadline} onChange={e => setConfirmedDeadline(e.target.value)}
+            className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs mb-2" />
+          <button onClick={async () => {
+            if (!confirmedDeadline) { setErrorMsg('Confirm a delivery date first.'); return; }
+            setBusy(true);
+            try {
+              await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/accept`, {
+                method: 'POST', body: JSON.stringify({ confirmed_deadline: new Date(confirmedDeadline + 'T23:59:59').toISOString() })
+              });
+              window.location.reload();
+            } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not accept project.'); setBusy(false); }
+          }} disabled={busy} className="w-full bg-accent text-white font-bold py-2.5 rounded-lg text-[12px] disabled:opacity-50">
+            {busy ? 'Accepting...' : 'Accept project & confirm deadline'}
+          </button>
+        </div>
+      )}
+
+      {isSeller && ['in_progress','revision_requested'].includes(order.escrow_status) && (
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
           <p className="text-[11px] font-bold text-navy dark:text-white mb-2">Deliver your service</p>
           <textarea
