@@ -58,8 +58,8 @@ begin
   begin perform public.release_order_escrow(r.id);
   exception when others then insert into public.escrow_auto_release_failures(order_id,attempted_status,error_message) values(r.id,'released',sqlerrm); end;
  end loop;
- for r in select id from public.service_orders where escrow_status in ('awaiting_acceptance','in_progress','revision_requested')
-  and dispute_hold=false and confirmed_delivery_at<=now() order by confirmed_delivery_at for update skip locked
+ for r in select id from public.service_orders where escrow_status in ('in_progress','revision_requested')
+  and dispute_hold=false and confirmed_delivery_at is not null and confirmed_delivery_at<=now() order by confirmed_delivery_at for update skip locked
  loop
   begin perform public.refund_service_order(r.id,'seller_missed_confirmed_delivery_deadline');
   exception when others then insert into public.escrow_auto_release_failures(order_id,attempted_status,error_message) values(r.id,'deadline_refunded',sqlerrm); end;
