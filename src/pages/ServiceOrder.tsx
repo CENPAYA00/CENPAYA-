@@ -28,6 +28,7 @@ export default function ServiceOrder() {
   const [me, setMe] = useState<any>(null);
 
   const [requirements, setRequirements] = useState('');
+  const [milestones, setMilestones] = useState<{ title: string; amount: number }[]>([]);
   const [payMethod, setPayMethod] = useState<'wallet' | Method>('wallet');
   const [walletBalance, setWalletBalance] = useState(0);
 
@@ -53,6 +54,7 @@ export default function ServiceOrder() {
         const selectedPackage = (packagesRes.data || []).find((row: any) => row.id === packageId) || null;
         setService(svcRes.data);
         setPkg(selectedPackage);
+        if (selectedPackage) setMilestones([{ title: 'Project delivery', amount: Number(selectedPackage.price) }]);
         setWalletBalance(walletRes.data?.available_funds || 0);
 
         if (svcRes.data?.seller_id) {
@@ -95,6 +97,10 @@ export default function ServiceOrder() {
 
     try {
       if (payMethod !== 'wallet') throw new Error('Freelance escrow checkout currently supports wallet payment only.');
+      if (milestones.length === 0 || milestones.some(m => !m.title.trim() || !Number.isSafeInteger(m.amount) || m.amount <= 0) ||
+          milestones.reduce((sum, m) => sum + m.amount, 0) !== Number(pkg.price)) {
+        throw new Error('Milestone amounts must be positive and add up exactly to the package price.');
+      }
       const due = new Date(Date.now() + Math.max(1, Number(pkg.delivery_days) || 7) * 86400000);
       const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/checkout/service-orders', {
         method: 'POST',
@@ -102,6 +108,7 @@ export default function ServiceOrder() {
           seller_id: service.seller_id, service_id: service.id, package_id: pkg.id,
           amount: Number(pkg.price), requirements: requirements.trim(),
           due_at: due.toISOString(), payment_method: 'wallet',
+          milestones: milestones.map(m => ({ title: m.title.trim(), amount: m.amount, due_at: due.toISOString() })),
         }),
       });
       navigate(`/service-order/${result.data.id}`, { replace: true });
@@ -221,6 +228,24 @@ export default function ServiceOrder() {
           <p className="text-[11px] text-gray-500">{service.title}</p>
           <p className="text-[13px] font-bold text-navy dark:text-white mt-1">{pkg.title} · {pkg.delivery_days} days</p>
           <p className="text-[16px] font-black text-accent mt-1">{amount.toLocaleString()} XAF</p>
+        </div>
+
+        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400">Project milestones</p>
+            <button type="button" onClick={() => setMilestones(rows => [...rows, { title: '', amount: 0 }])}
+              className="text-[10px] text-accent font-bold">+ Add milestone</button>
+          </div>
+          {milestones.map((milestone, index) => (
+            <div key={index} className="flex gap-2 mb-2">
+              <input value={milestone.title} onChange={e => setMilestones(rows => rows.map((m,i) => i === index ? { ...m, title: e.target.value } : m))}
+                placeholder={`Milestone ${index + 1}`} className="min-w-0 flex-1 p-2 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+              <input type="number" min="1" value={milestone.amount || ''} onChange={e => setMilestones(rows => rows.map((m,i) => i === index ? { ...m, amount: Number(e.target.value) } : m))}
+                placeholder="XAF" className="w-24 p-2 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+              {milestones.length > 1 && <button type="button" onClick={() => setMilestones(rows => rows.filter((_,i) => i !== index))} className="text-red-500 text-xs">×</button>}
+            </div>
+          ))}
+          <p className="text-[10px] text-gray-500">Allocated: {milestones.reduce((sum,m) => sum + (Number(m.amount)||0),0).toLocaleString()} / {amount.toLocaleString()} XAF</p>
         </div>
 
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
