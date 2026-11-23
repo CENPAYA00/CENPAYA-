@@ -341,7 +341,7 @@ export async function handleAuthenticatedApi(
     }
     const result = await rpc(supabase, "create_service_order", {
       p_seller_id: body.seller_id, p_service_id: body.service_id, p_package_id: body.package_id,
-      p_amount: body.amount, p_requirements: body.requirements.trim(),
+      p_amount: body.amount, p_requirements: String(body.requirements).trim(),
       p_due_at: new Date(body.due_at).toISOString(), p_milestones: milestones,
     });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
@@ -354,7 +354,7 @@ export async function handleAuthenticatedApi(
     if (method === "GET" && actionPath === "") {
       const { data, error } = await supabase.from("service_orders")
         .select("*,service_order_milestones(*),service_order_deadline_changes(*)")
-        .eq("id", orderId).maybeSingle().abortSignal(AbortSignal.timeout(5_000));
+        .eq("id", orderId).abortSignal(AbortSignal.timeout(5_000)).maybeSingle();
       if (error) return failure("service_order_lookup_failed", 502, headers);
       return data ? success(data, headers) : failure("service_order_not_found", 404, headers);
     }
