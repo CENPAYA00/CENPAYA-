@@ -1,12 +1,28 @@
 # Supabase database migrations
 
-These migrations are committed to the existing `migration/supabase-worker-api` branch. They are **not automatically applied by a Worker deployment**. Migrations 0001, 0002, 0003, and 0004 have now been applied to the connected live Supabase project.
+These migrations are committed to the existing `migration/supabase-worker-api` branch. They are applied separately from Worker deployment.
 
-Apply them in numeric order in the Supabase SQL Editor, after reviewing the SQL:
+## Financial escrow migrations
 
-1. `0001_secure_financial_worker_operations.sql` — adds the restricted Worker payment operations, idempotent top-up/withdrawal records, provider-attempt metadata, and secure gateway-credential retrieval used by the Worker. The migration is installed in the live project. It uses the existing `authenticated` role plus a short-lived signed `app_metadata.cenpaya_payment_worker` claim; it does not create a custom Postgres role.
-2. `0002_attach_order_escrow_hold.sql` — attaches the existing `public.hold_escrow_on_order_insert()` function to `public.orders`. Live-database inspection confirmed the function exists but no trigger invokes it. The existing `trg_cenpaya_product_order_fee` trigger already calculates seller-specific fees before insert.
-3. `0003_wallet_status_and_withdrawal_finalizer.sql` — installs `get_wallet_topup_status(uuid)` and `finalize_withdrawal_from_gateway(uuid,text,text,text,text)`. These two RPCs are installed in the live project and verified. The finalizer is restricted to short-lived Worker-signed JWTs carrying the private `app_metadata.cenpaya_payment_worker` claim; it does not require creating a custom Postgres role.
-4. `0004_restrict_user_scoped_wallet_rpcs.sql` — removes `service_role` execute privileges from user-scoped top-up creation and status RPCs. Applied to the live project and verified.
+1. `0001_secure_financial_worker_operations.sql` — secure Worker payment operations and gateway credential handling.
+2. `0002_attach_order_escrow_hold.sql` — attaches the buyer wallet escrow hold to product order creation.
+3. `0003_wallet_status_and_withdrawal_finalizer.sql` — wallet top-up status and withdrawal finalizer.
+4. `0004_restrict_user_scoped_wallet_rpcs.sql` — restricts user-scoped wallet RPC privileges.
+5. `0005_escrow_buyer_fee_and_verified_delivery_settlement.sql` — buyer-paid marketplace fee, full seller-price payout, verified delivery, inspection-window auto-release.
+6. `0006_freelance_service_escrow_tables.sql` — service orders, mutually approved deadline changes, and milestone records with participant read policies.
+7. `0007_freelance_service_escrow_lifecycle.sql` — atomic freelance wallet funding, seller acceptance and deadline confirmation, milestones, revisions, deadline changes, and service disputes.
+8. `0008_escrow_auto_settlement_and_dispute_resolution.sql` — missed-deadline refunds, 72-hour submitted-milestone review auto-release, product/service dispute settlement, and admin escrow actions.
 
-Do not test marketplace wallet checkout with real money. Use a dedicated test account and controlled test balance before launch. Top-ups and withdrawals remain dependent on correctly configured gateway credentials and end-to-end provider verification.
+## Escrow rules implemented
+
+- Buyer pays the listed amount plus the platform fee; seller receives the full listed amount. The fee is recognized separately.
+- Physical orders remain held until buyer confirmation or verified delivery plus the configured inspection window. A dispatch event alone does not start automatic release.
+- Freelance service escrow is a separate lifecycle. Seller accepts and confirms the delivery deadline; changing that deadline requires both parties' approval and is recorded.
+- If the seller misses the confirmed project deadline, remaining escrow is refunded to the buyer by the hourly escrow scheduler.
+- Freelance work can be split into separately funded milestones. Buyer acceptance releases each milestone; if no dispute or revision is raised, a submitted milestone is auto-released after the 72-hour review period.
+- A dispute holds settlement until staff resolution. Admin actions cannot bypass service milestone review.
+- Direct client-side writes to service escrow tables are disabled; financial mutations use authenticated Worker RPCs.
+
+## Operational note
+
+The Supabase project has these schema and function changes applied. The Worker is committed to this branch but is not deployed by this migration process. Do not test real-money checkout; use a dedicated test account and controlled test balance first.
