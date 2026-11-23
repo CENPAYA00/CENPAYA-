@@ -341,7 +341,7 @@ export async function handleAuthenticatedApi(
         p_seller_id: sellerId, p_amount: amount,
       });
       if (fee.error || !fee.data || typeof fee.data !== "object") return failure("service_quote_unavailable", 503, headers);
-      const feeData = fee.data as Record<string, unknown>;
+      const feeData = (Array.isArray(fee.data) ? fee.data[0] : fee.data) as Record<string, unknown>;
       const feePct = Number(feeData.calculated_fee_pct || 0);
       const feeFixed = Number(feeData.calculated_fee_fixed || 0);
       const platformFee = Number(feeData.calculated_platform_fee || 0);
