@@ -86,8 +86,11 @@ begin
  if d.order_type='service' then
   select * into v from public.service_orders where id=d.order_id for update;
   if not found then return jsonb_build_object('ok',false,'error','service order missing'); end if;
-  if p_outcome in ('buyer_wins','withdrawn') then r:=public.refund_service_order(v.id,coalesce(p_notes,'dispute resolved for buyer'));
-  elsif p_outcome='seller_wins' then update public.service_orders set dispute_hold=false,escrow_status='in_progress',updated_at=now() where id=v.id;
+  if p_outcome='buyer_wins' then r:=public.refund_service_order(v.id,coalesce(p_notes,'dispute resolved for buyer'));
+  elsif p_outcome in ('seller_wins','withdrawn') then
+   update public.service_orders set dispute_hold=false,
+    escrow_status=case when exists(select 1 from public.service_order_milestones where service_order_id=v.id and status='submitted') then 'delivered' else 'in_progress' end,
+    updated_at=now() where id=v.id;
   else return jsonb_build_object('ok',false,'error','split service dispute requires explicit milestone settlement'); end if;
  else
   if p_outcome='buyer_wins' then r:=public.refund_order_escrow(d.order_id,coalesce(p_notes,'dispute resolved for buyer'));
