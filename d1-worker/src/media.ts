@@ -171,7 +171,7 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
   const maximum = isImage ? 10 * 1024 * 1024 : 20 * 1024 * 1024;
   if (file.size < 1 || file.size > maximum) return fail("Marketplace media file is too large");
   const key = ["marketplace", user.id, folder.replace("/", "-"), uuid() + "." + extension].join("/");
-  await env.MEDIA_BUCKET.put(key, file.stream(), {
+  await bucket.put(key, file.stream(), {
     httpMetadata: { contentType: mime },
     customMetadata: { ownerId: user.id, folder, purpose: isImage ? "listing_image" : "listing_document" }
   });
