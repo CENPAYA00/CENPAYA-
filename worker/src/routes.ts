@@ -342,8 +342,10 @@ export async function handleAuthenticatedApi(
       const canonicalSeller = quote.data?.seller_id;
       const canonicalAmount = Number(quote.data?.price);
       const listingType = String(quote.data?.listing_type || "");
+      const quoteCurrency = String(quote.data?.currency_code || "XAF").toUpperCase();
       if (!quoteResponse.ok || !quote.success || canonicalSeller !== body.seller_id ||
-          canonicalAmount !== body.amount || (listingType && listingType !== "service")) {
+          canonicalAmount !== body.amount || quoteCurrency !== "XAF" ||
+          (listingType && listingType !== "service")) {
         return failure("service_quote_mismatch", 409, headers);
       }
     } catch { return failure("service_quote_unavailable", 503, headers); }
