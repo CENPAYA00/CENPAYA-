@@ -193,7 +193,7 @@ export default function ServiceOrder() {
 
   const requestDeadlineChange = async () => {
     const proposed = window.prompt('Enter the new delivery date (YYYY-MM-DD). The other party must approve it.');
-    if (!proposed || !/^\\d{4}-\\d{2}-\\d{2}$/.test(proposed)) return;
+    if (!proposed || !/^\d{4}-\d{2}-\d{2}$/.test(proposed)) return;
     setBusy(true);
     try {
       await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/deadline`, {
