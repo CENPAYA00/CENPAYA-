@@ -126,3 +126,54 @@ begin
  values(v_uid,'escrow_action',p_kind,p_id,jsonb_build_object('action',p_action,'reason',p_reason));
  return jsonb_build_object('ok',true,'settlement',r);
 end $$;
+
+
+-- Product disputes are opened atomically with the escrow hold.
+create or replace function public.open_product_dispute(p_order_id uuid,p_reason text)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare v public.orders%rowtype; v_id uuid;
+begin
+ if auth.uid() is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
+ if p_reason is null or length(trim(p_reason))<10 then return jsonb_build_object('ok',false,'error','reason too short'); end if;
+ select * into v from public.orders where id=p_order_id for update;
+ if not found or auth.uid() not in (v.buyer_id,v.seller_id) then return jsonb_build_object('ok',false,'error','not your order'); end if;
+ if v.escrow_status<>'hold' then return jsonb_build_object('ok',false,'error','order is not held'); end if;
+ update public.orders set dispute_hold=true,escrow_status='disputed',updated_at=now() where id=p_order_id;
+ insert into public.order_disputes(order_id,order_type,raised_by,reason,status)
+ values(p_order_id,'product',auth.uid(),trim(p_reason),'open') returning id into v_id;
+ return jsonb_build_object('ok',true,'dispute_id',v_id);
+end $$;
+revoke all on function public.open_product_dispute(uuid,text) from public,anon;
+grant execute on function public.open_product_dispute(uuid,text) to authenticated;
+
+-- Mark seller-win dispute resolved before release guard evaluates active disputes.
+create or replace function public.admin_resolve_dispute(p_dispute_id uuid,p_outcome text,p_notes text default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare d public.order_disputes%rowtype; v public.service_orders%rowtype; r jsonb;
+begin
+ if not (public.is_super_admin() or public.is_support_or_admin()) then return jsonb_build_object('ok',false,'error','only staff'); end if;
+ if p_outcome not in ('buyer_wins','seller_wins','split','withdrawn') then return jsonb_build_object('ok',false,'error','invalid outcome'); end if;
+ select * into d from public.order_disputes where id=p_dispute_id for update;
+ if not found or d.status='resolved' then return jsonb_build_object('ok',false,'error','dispute not found or resolved'); end if;
+ if d.order_type='service' then
+  select * into v from public.service_orders where id=d.order_id for update;
+  if not found then return jsonb_build_object('ok',false,'error','service order missing'); end if;
+  if p_outcome in ('buyer_wins','withdrawn') then r:=public.refund_service_order(v.id,coalesce(p_notes,'dispute resolved for buyer'));
+  elsif p_outcome='seller_wins' then update public.service_orders set dispute_hold=false,escrow_status='in_progress',updated_at=now() where id=v.id;
+  else return jsonb_build_object('ok',false,'error','split service dispute requires explicit milestone settlement'); end if;
+ else
+  if p_outcome='buyer_wins' then r:=public.refund_order_escrow(d.order_id,coalesce(p_notes,'dispute resolved for buyer'));
+  elsif p_outcome='seller_wins' then
+   update public.order_disputes set status='resolved',outcome='seller_wins',resolved_by=auth.uid(),resolved_at=now(),updated_at=now() where id=p_dispute_id;
+   update public.orders set dispute_hold=false where id=d.order_id;
+   perform public.release_order_escrow(d.order_id);
+  elsif p_outcome='withdrawn' then update public.orders set dispute_hold=false,escrow_status='hold' where id=d.order_id and escrow_status='disputed';
+  else return jsonb_build_object('ok',false,'error','split product dispute requires explicit partial settlement'); end if;
+ end if;
+ update public.order_disputes set status='resolved',
+  outcome=case when p_outcome='seller_wins' then 'seller_wins' when p_outcome='withdrawn' then 'withdrawn' else 'buyer_wins' end,
+  resolved_by=auth.uid(),resolved_at=coalesce(resolved_at,now()),updated_at=now() where id=p_dispute_id;
+ insert into public.admin_audit_log(actor_id,action,target_table,target_id,new_value)
+ values(auth.uid(),'resolve_dispute','order_disputes',p_dispute_id,jsonb_build_object('outcome',p_outcome,'notes',p_notes));
+ return jsonb_build_object('ok',true,'settlement',r);
+end $$;
