@@ -51,7 +51,11 @@ export default function ServiceOrder() {
           d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(serviceId)}/packages`),
           supabaseWorkerRequest<{ data: { available_funds?: number } }>('/api/v1/wallet'),
         ]);
-        const selectedPackage = (packagesRes.data || []).find((row: any) => row.id === packageId) || null;
+        const selectedPackage = (packagesRes.data || []).find((row: any) => row.id === packageId) ||
+          ((packagesRes.data || []).length === 0 && svcRes.data ? {
+            id: null, title: 'Standard service', price: svcRes.data.price,
+            delivery_days: svcRes.data.delivery_days || 7,
+          } : null);
         setService(svcRes.data);
         setPkg(selectedPackage);
         if (selectedPackage) setMilestones([{ title: 'Project delivery', amount: Number(selectedPackage.price) }]);
