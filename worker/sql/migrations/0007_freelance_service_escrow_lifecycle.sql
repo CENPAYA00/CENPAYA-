@@ -3,6 +3,7 @@
 -- Seller receives the full milestone principal. All RPCs use auth.uid().
 
 alter table public.service_orders
+  add column if not exists proposed_delivery_at timestamptz,
   add column if not exists released_amount bigint not null default 0,
   add column if not exists refunded_amount bigint not null default 0,
   add column if not exists fee_earned bigint not null default 0,
@@ -45,12 +46,12 @@ begin
  if v_wallet.user_id is null or v_wallet.available_funds<v_total then
   return jsonb_build_object('ok',false,'error','insufficient wallet funds'); end if;
  insert into public.service_orders(service_id,package_id,buyer_id,seller_id,amount,fee_pct,fee_fixed,
-  platform_fee,total_amount,currency_code,requirements,escrow_status,confirmed_delivery_at,original_delivery_at)
+  platform_fee,total_amount,currency_code,requirements,escrow_status,proposed_delivery_at)
  values(p_service_id,p_package_id,v_buyer,p_seller_id,p_amount,v_fee.calculated_fee_pct,
   v_fee.calculated_fee_fixed,v_fee.calculated_platform_fee,v_total,
   coalesce((select c.currency_code from public.regional_market_configurations c join public.account_controls a
     on a.country_iso=c.country_iso where a.user_id=v_buyer and c.is_operational limit 1),'XAF'),
-  trim(p_requirements),'awaiting_acceptance',p_due_at,p_due_at) returning * into v_order;
+  trim(p_requirements),'awaiting_acceptance',p_due_at) returning * into v_order;
  update public.wallets set available_funds=available_funds-v_total,updated_at=now() where user_id=v_buyer;
  insert into public.wallet_historical_ledger(user_id,currency_code,entry_type,amount_mutated,
   running_balance_snapshot,associated_reference_id,description)
