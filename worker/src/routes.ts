@@ -319,6 +319,37 @@ export async function handleAuthenticatedApi(
     if (error || !order?.id) return failure("order_creation_failed", 409, headers);
     return success({ id: order.id, amount, fee_pct: feePct, fee_fixed: feeFixed }, headers);
   }
+  if (method === "GET" && path === "/api/v1/checkout/service-quote") {
+    const serviceId = url.searchParams.get("service_id") || "";
+    if (!isUuid(serviceId)) return failure("invalid_service_id", 400, headers);
+    if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) return failure("service_quote_unavailable", 503, headers);
+    try {
+      const response = await env.D1_IDENTITY.fetch(
+        `https://d1.internal/internal/v1/market/listings/${encodeURIComponent(serviceId)}/quote`,
+        { headers: { "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET }, signal: AbortSignal.timeout(5_000) },
+      );
+      const quote = await response.json() as { success?: boolean; data?: Record<string, unknown> };
+      const sellerId = quote.data?.seller_id;
+      const amount = Number(quote.data?.price);
+      const listingType = String(quote.data?.listing_type || "");
+      const currency = String(quote.data?.currency_code || "XAF").toUpperCase();
+      if (!response.ok || !quote.success || !isUuid(sellerId) || !Number.isSafeInteger(amount) ||
+          amount <= 0 || currency !== "XAF" || (listingType && listingType !== "service")) {
+        return failure("service_quote_unavailable", 409, headers);
+      }
+      const fee = await rpc(supabase, "cenpaya_calculate_platform_fee", {
+        p_seller_id: sellerId, p_amount: amount,
+      });
+      if (fee.error || !fee.data || typeof fee.data !== "object") return failure("service_quote_unavailable", 503, headers);
+      const feeData = fee.data as Record<string, unknown>;
+      const feePct = Number(feeData.calculated_fee_pct || 0);
+      const feeFixed = Number(feeData.calculated_fee_fixed || 0);
+      const platformFee = Number(feeData.calculated_platform_fee || 0);
+      return success({ seller_id: sellerId, amount, fee_pct: feePct, fee_fixed: feeFixed,
+        platform_fee: platformFee, total: amount + platformFee, currency_code: currency }, headers);
+    } catch { return failure("service_quote_unavailable", 503, headers); }
+  }
+
   if (method === "POST" && path === "/api/v1/checkout/service-orders") {
     const body = await readJsonObject(request, 32_000);
     if (!body || !onlyKeys(body, ["seller_id","service_id","package_id","amount","requirements","due_at","milestones","payment_method"])) {
