@@ -7,6 +7,12 @@ on:
     paths:
       - 'worker/**'
       - '.github/workflows/worker-verify.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-verify.yml'
   workflow_dispatch:
 
 jobs:
