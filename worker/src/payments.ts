@@ -401,7 +401,7 @@ export async function handleAuthenticatedPaymentApi(
       const recorded = await retryRpcTrue(db, "record_wallet_topup_provider_reference", {
         p_topup_id: topupId, p_provider: providerName,
         p_provider_transaction_id: started.reference, p_checkout_url: started.checkoutUrl,
-      });
+      }, topupId);
       if (recorded !== true) throw new Error("reference_not_recorded");
       return jsonResponse({ success: true, data: {
         id: topupId, provider: providerName, amount: value, currency_code: "XAF",
@@ -523,7 +523,7 @@ export async function handleAuthenticatedPaymentApi(
       const reference = await startPayout(gateway, creds, env, withdrawalId, value, mobile, destination, recipientName);
       const recorded = await retryRpcTrue(db, "record_withdrawal_provider_reference", {
         p_withdrawal_id: withdrawalId, p_gateway_provider: gateway, p_gateway_reference: reference,
-      });
+      }, String(withdrawalId));
       if (recorded !== true) throw new Error("reference_not_recorded");
       let state = "pending";
       try {
