@@ -1,4 +1,5 @@
 -- Freelance service escrow RPC lifecycle.
+alter table public.service_orders alter column package_id drop not null;
 -- Service escrow is funded from the buyer's wallet; platform fee is paid by buyer.
 -- Seller receives the full milestone principal. All RPCs use auth.uid().
 
