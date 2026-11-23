@@ -346,12 +346,8 @@ export default function Checkout() {
             <span className="font-bold text-navy dark:text-white">{amount.toLocaleString()} XAF</span>
           </div>
           <div className="flex justify-between text-[11px]">
-            <span className="text-gray-500">Platform fee ({feePct}%)</span>
+            <span className="text-gray-500">Platform fee</span>
             <span className="font-bold text-navy dark:text-white">{feePctAmount.toLocaleString()} XAF</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <span className="text-gray-500">Service fee</span>
-            <span className="font-bold text-navy dark:text-white">{feeFixed.toLocaleString()} XAF</span>
           </div>
           <div className="flex justify-between text-[13px] pt-1.5 border-t border-gray-100 dark:border-darkline">
             <span className="font-bold text-navy dark:text-white">Total</span>
