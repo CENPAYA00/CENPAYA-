@@ -67,6 +67,7 @@ export default function ServiceOrder() {
           const result = await supabaseWorkerRequest<{ data: any }>(`/api/v1/service-orders/${encodeURIComponent(id)}`);
           existingOrder = result.data;
           setOrder(existingOrder);
+          setConfirmedDeadline(existingOrder.proposed_delivery_at ? new Date(existingOrder.proposed_delivery_at).toISOString().slice(0, 10) : '');
         } catch (error: unknown) {
           setErrorMsg(error instanceof Error ? error.message : 'Service orders are unavailable until the financial schema is migrated.');
           setLoading(false);
@@ -355,7 +356,10 @@ export default function ServiceOrder() {
         {pkg && <p className="text-[12px] font-bold text-navy dark:text-white mt-0.5">{pkg.title}</p>}
         <p className="text-[16px] font-black text-accent mt-2">{Number(order.amount).toLocaleString()} XAF</p>
 
-        {order.confirmed_delivery_at && ['awaiting_acceptance','in_progress','revision_requested'].includes(order.escrow_status) && (
+        {order.proposed_delivery_at && order.escrow_status === 'awaiting_acceptance' && (
+          <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1"><Clock size={11} /> Buyer requested date: {new Date(order.proposed_delivery_at).toLocaleDateString()} · awaiting seller confirmation</p>
+        )}
+        {order.confirmed_delivery_at && ['in_progress','revision_requested'].includes(order.escrow_status) && (
           <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1"><Clock size={11} /> Seller-confirmed deadline: {new Date(order.confirmed_delivery_at).toLocaleString()}</p>
         )}
         {order.auto_release_deadline_at && order.escrow_status === 'delivered' && (
