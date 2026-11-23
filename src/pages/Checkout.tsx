@@ -99,11 +99,18 @@ export default function Checkout() {
           setQuoteReady(true);
         } catch { setQuoteReady(false); }
       } else if (serviceId) {
-        setFeePct(0);
-        setFeeFixed(0);
-        setServerPlatformFee(0);
-        if (!packageId) setServerTotal(Number(loadedItem?.starting_price || 0));
-        setQuoteReady(true);
+        try {
+          const quoteResponse = await supabaseWorkerRequest<{ data: {
+            seller_id: string; amount: number; fee_pct: number; fee_fixed: number;
+            platform_fee: number; total: number; currency_code: string;
+          } }>(`/api/v1/checkout/service-quote?service_id=${encodeURIComponent(serviceId)}`);
+          setServerAmount(Number(quoteResponse.data.amount));
+          setFeePct(Number(quoteResponse.data.fee_pct));
+          setFeeFixed(Number(quoteResponse.data.fee_fixed));
+          setServerPlatformFee(Number(quoteResponse.data.platform_fee));
+          setServerTotal(Number(quoteResponse.data.total));
+          setQuoteReady(true);
+        } catch { setQuoteReady(false); }
       } else {
         setQuoteReady(false);
       }
@@ -170,10 +177,16 @@ export default function Checkout() {
 
     try {
       if (item._kind === 'service') {
-        if (method !== 'wallet') throw new Error('Mobile Money service checkout is not yet supported by the configured financial Worker.');
+        if (method !== 'wallet') throw new Error('Freelance escrow currently supports wallet payment only.');
+        if (requirements.trim().length < 5) throw new Error('Please describe the work required (at least 5 characters).');
+        const proposedDeadline = new Date(Date.now() + Math.max(1, Number((item as any).delivery_days) || 7) * 86400000);
         const response = await supabaseWorkerRequest<{ data: { order_id?: string; id?: string; ok?: boolean; error?: string } }>('/api/v1/checkout/service-orders', {
           method: 'POST',
-          body: JSON.stringify({ service_id: item.id, package_id: packageId, requirements: requirements.trim() || null, payment_method: 'wallet' }),
+          body: JSON.stringify({
+            seller_id: item.seller_id, service_id: item.id, package_id: packageId || null,
+            amount, requirements: requirements.trim(), due_at: proposedDeadline.toISOString(),
+            payment_method: 'wallet',
+          }),
         });
         const orderId = response.data.order_id || response.data.id;
         if (!orderId) throw new Error(response.data.error || 'Service order was not created.');
@@ -199,7 +212,7 @@ export default function Checkout() {
       if (/insufficient/i.test(message)) setErr('Insufficient wallet balance. Top up first.');
       else if (/idempotency|duplicate/i.test(message)) setErr('This checkout was already submitted. Refresh your orders before retrying.');
       else if (/marketplace_mobile_money_checkout_unavailable/i.test(message)) setErr('Mobile Money marketplace checkout is not available yet. Use your wallet or top up first.');
-      else if (/service_order_schema_not_present/i.test(message)) setErr('Service orders are paused until their financial database tables and settlement transaction are migrated.');
+      else if (/service_quote_unavailable/i.test(message)) setErr('The service price could not be verified. Please refresh and try again.');
       else if (/provider_rejected/i.test(message)) setErr('The payment provider rejected the request. Check the payment details and try again.');
       else if (/uncertain|timeout|network/i.test(message)) setErr('Payment status is uncertain. Check your orders before retrying to avoid duplicate payment.');
       else setErr(message);
@@ -300,7 +313,7 @@ export default function Checkout() {
           {method === 'wallet' && <Check size={16} className="text-accent" />}
         </button>
 
-        <button
+        {item._kind === 'listing' && <button
           onClick={() => setMethod('momo')}
           className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left cursor-pointer ${
             method === 'momo' ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-darkline'
@@ -314,9 +327,9 @@ export default function Checkout() {
             <p className="text-[10px] text-gray-500">MTN / Orange MoMo</p>
           </div>
           {method === 'momo' && <Check size={16} className="text-accent" />}
-        </button>
+        </button>}
 
-        {method === 'momo' && (
+        {item._kind === 'listing' && method === 'momo' && (
           <input
             value={payPhone}
             onChange={e => setPayPhone(e.target.value)}
@@ -351,7 +364,7 @@ export default function Checkout() {
         <div className="bg-gray-50 dark:bg-darkbg rounded-xl p-3 flex items-start gap-2">
           <Shield size={14} className="text-accent shrink-0 mt-0.5" />
           <p className="text-[10px] text-gray-600 dark:text-gray-300 leading-relaxed">
-            Your payment is held in escrow. The seller is only paid after you confirm delivery, or automatically 48 hours after they mark delivered.
+            Your payment is held in escrow. For physical goods, release requires your confirmation or verified delivery plus the inspection window. For freelance services, the seller confirms the deadline; missed deadlines refund the remaining escrow, and accepted milestones are paid individually.
           </p>
         </div>
       </div>
