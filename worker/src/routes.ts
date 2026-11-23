@@ -479,7 +479,7 @@ export async function handleAuthenticatedApi(
     if (action === "dispute") {
       const reason = typeof body.reason === "string" ? body.reason.trim() : "";
       if (reason.length < 10 || reason.length > 2000) return failure("invalid_dispute_reason", 400, headers);
-      const { error: disputeError } = await supabase.from("order_disputes").insert({ order_id: orderAction[1], raised_by: userId, reason, status: "open" });
+      const { error: disputeError } = await supabase.from("order_disputes").insert({ order_id: orderAction[1], order_type: "product", raised_by: userId, reason, status: "open" });
       if (disputeError) return failure("dispute_creation_failed", 409, headers);
       const result = await rpc(supabase, "transition_escrow", { p_order_id: orderAction[1], p_target_status: "disputed" });
       return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
