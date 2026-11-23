@@ -89,6 +89,18 @@ const ADMIN_RPC_SCHEMAS: Record<string, AdminRpcSchema> = {
       isText(a.p_api_secret_key,4096) &&
       (a.p_webhook_secret === undefined || a.p_webhook_secret === null || isText(a.p_webhook_secret,4096)) &&
       (a.p_environment === undefined || ["sandbox","production"].includes(String(a.p_environment))), false),
+  admin_set_app_setting: defineRpc(["p_key","p_value"], [],
+    (a) => {
+      const key = String(a.p_key || "");
+      const value = typeof a.p_value === "string" ? a.p_value.trim() : "";
+      const allowed = [
+        "fee_pct_member", "fee_fixed_member", "fee_pct_non_member",
+        "fee_fixed_non_member", "referral_l1_points", "membership_fee", "subscription_fee",
+      ];
+      const numeric = Number(value);
+      return allowed.includes(key) && value.length > 0 && Number.isFinite(numeric) &&
+        numeric >= 0 && (!key.startsWith("fee_pct_") || numeric <= 100);
+    }),
   admin_set_provider_active: defineRpc(["p_provider_name","p_active"], [],
     (a) => isText(a.p_provider_name,80) && isBool(a.p_active)),
   admin_toggle_payment_method: defineRpc(["p_method_name","p_active"], [],
@@ -682,6 +694,7 @@ export async function handleAuthenticatedApi(
   const adminRpc = path.match(/^\/api\/v1\/admin\/rpc\/([a-z_]+)$/);
   if (method === "POST" && adminRpc) {
     const name = adminRpc[1];
+    if (!ADMIN_RPC_SCHEMAS[name]) return failure("not_found", 404, headers);
     const body = await readJsonObject(request, 64_000);
     if (!body || !onlyKeys(body, ["args"])) return failure("invalid_json_body", 400, headers);
     const args = body.args === undefined ? {} :
