@@ -1,0 +1,31 @@
+name: D1 Worker CI
+
+on:
+  push:
+    branches:
+      - migration/d1-worker-api-v2
+      - integration/main-d1-supabase-monolith
+  pull_request:
+    branches:
+      - main
+      - integration/main-d1-supabase-monolith
+    paths:
+      - "d1-worker/**"
+      - "database/d1/migrations/**"
+      - ".github/workflows/d1-worker-ci.yml"
+
+jobs:
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: d1-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
