@@ -365,6 +365,23 @@ export default function ServiceOrder() {
         )}
       </div>
 
+      {(order.service_order_milestones || []).length > 0 && (
+        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
+          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Project milestones</p>
+          {order.service_order_milestones.map((m: any) => (
+            <div key={m.id} className="border-b last:border-0 border-gray-100 dark:border-darkline py-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-bold text-navy dark:text-white">{m.sequence_no}. {m.title}</p>
+                <span className="text-[10px] text-gray-500">{m.status}</span>
+              </div>
+              <p className="text-[11px] text-accent font-bold">{Number(m.amount).toLocaleString()} XAF</p>
+              {m.delivery_note && <p className="text-[10px] text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{m.delivery_note}</p>}
+              {m.delivery_file_url && <a href={m.delivery_file_url} target="_blank" rel="noreferrer" className="text-[10px] text-accent underline">View milestone submission</a>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {order.requirements && (
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
           <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Requirements</p>
