@@ -320,11 +320,71 @@ export async function handleAuthenticatedApi(
     return success({ id: order.id, amount, fee_pct: feePct, fee_fixed: feeFixed }, headers);
   }
   if (method === "POST" && path === "/api/v1/checkout/service-orders") {
-    return failure("service_order_schema_not_present_in_financial_database", 501, headers);
+    const body = await readJsonObject(request, 32_000);
+    if (!body || !onlyKeys(body, ["seller_id","service_id","package_id","amount","requirements","due_at","milestones","payment_method"])) {
+      return failure("invalid_service_order_checkout", 400, headers);
+    }
+    if (!isUuid(body.seller_id) || !isUuid(body.service_id) || !isUuid(body.package_id) ||
+        !integerIn(body.amount, 1, 1_000_000_000_000) || !isText(body.requirements, 8000, 5) ||
+        typeof body.due_at !== "string" || !Number.isFinite(Date.parse(body.due_at)) ||
+        (body.payment_method !== undefined && body.payment_method !== "wallet") ||
+        (body.milestones !== undefined && (!Array.isArray(body.milestones) || body.milestones.length > 20))) {
+      return failure("invalid_service_order_checkout", 400, headers);
+    }
+    const milestones = (body.milestones || []).map((item: any) => ({
+      title: item?.title, description: item?.description || null,
+      amount: item?.amount, due_at: item?.due_at || body.due_at,
+    }));
+    if (milestones.some((m: any) => !isText(m.title,160,2) || !integerIn(m.amount,1,1_000_000_000_000) ||
+        typeof m.due_at !== "string" || !Number.isFinite(Date.parse(m.due_at)))) {
+      return failure("invalid_service_order_milestones", 400, headers);
+    }
+    const result = await rpc(supabase, "create_service_order", {
+      p_seller_id: body.seller_id, p_service_id: body.service_id, p_package_id: body.package_id,
+      p_amount: body.amount, p_requirements: body.requirements.trim(),
+      p_due_at: new Date(body.due_at).toISOString(), p_milestones: milestones,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
-  const serviceOrderPath = path.match(/^\/api\/v1\/service-orders\/([0-9a-f-]{36})(?:\/(delivery|approve|dispute))?$/i);
-  if (serviceOrderPath && (method === "GET" || method === "POST")) {
-    return failure("service_order_schema_not_present_in_financial_database", 501, headers);
+
+  const serviceOrderPath = path.match(/^\/api\/v1\/service-orders\/([0-9a-f-]{36})(?:\/(.*))?$/i);
+  if (serviceOrderPath) {
+    const orderId = serviceOrderPath[1];
+    const actionPath = serviceOrderPath[2] || "";
+    if (method === "GET" && actionPath === "") {
+      const { data, error } = await supabase.from("service_orders")
+        .select("*,service_order_milestones(*),service_order_deadline_changes(*)")
+        .eq("id", orderId).maybeSingle().abortSignal(AbortSignal.timeout(5_000));
+      if (error) return failure("service_order_lookup_failed", 502, headers);
+      return data ? success(data, headers) : failure("service_order_not_found", 404, headers);
+    }
+    if (method !== "POST") return failure("method_not_allowed", 405, headers);
+    const body = await readJsonObject(request, 16_000);
+    if (!body) return failure("invalid_json_body", 400, headers);
+    let name = "";
+    let args: Record<string, unknown> = { p_order_id: orderId };
+    if (actionPath === "accept" && onlyKeys(body, [])) name = "accept_service_order";
+    else if (actionPath === "confirm" && onlyKeys(body, [])) name = "buyer_confirm_service_order";
+    else if (actionPath === "dispute" && onlyKeys(body, ["reason"]) && isText(body.reason,2000,10)) {
+      name = "open_service_dispute"; args.p_reason = body.reason;
+    } else if (actionPath === "deadline" && onlyKeys(body, ["new_deadline"]) &&
+      typeof body.new_deadline === "string" && Number.isFinite(Date.parse(body.new_deadline))) {
+      name = "request_service_deadline_change"; args.p_new_deadline = new Date(body.new_deadline).toISOString();
+    } else if (actionPath === "milestones/submit" && onlyKeys(body, ["milestone_id","delivery_note","delivery_file_url"]) &&
+      isUuid(body.milestone_id) && isText(body.delivery_note,8000,5) &&
+      (body.delivery_file_url === undefined || body.delivery_file_url === null || isText(body.delivery_file_url,2048))) {
+      name = "submit_service_milestone"; args.p_milestone_id = body.milestone_id;
+      args.p_delivery_note = body.delivery_note; args.p_delivery_file_url = body.delivery_file_url || null;
+    } else if (actionPath === "milestones/approve" && onlyKeys(body, ["milestone_id"]) && isUuid(body.milestone_id)) {
+      name = "approve_service_milestone"; args.p_milestone_id = body.milestone_id;
+    } else if (actionPath === "milestones/revision" && onlyKeys(body, ["milestone_id","note"]) &&
+      isUuid(body.milestone_id) && isText(body.note,2000,3)) {
+      name = "request_service_revision"; args.p_milestone_id = body.milestone_id; args.p_note = body.note;
+    } else if (actionPath === "deadline/approve" && onlyKeys(body, ["change_id"]) && isUuid(body.change_id)) {
+      name = "approve_service_deadline_change"; args = { p_change_id: body.change_id };
+    } else return failure("invalid_service_order_action", 400, headers);
+    const result = await rpc(supabase, name, args);
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
 
   if (method === "GET" && path === "/api/v1/me/profile") {
