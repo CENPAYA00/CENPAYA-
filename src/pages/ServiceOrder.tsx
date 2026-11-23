@@ -5,11 +5,8 @@ import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Shield, Upload, Check, AlertTriangle, Wallet, Clock } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
-import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
 import { compressImage } from '../utils/compressImage';
 
-type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
-const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
 
 export default function ServiceOrder() {
   const { id } = useParams();
@@ -29,7 +26,7 @@ export default function ServiceOrder() {
 
   const [requirements, setRequirements] = useState('');
   const [milestones, setMilestones] = useState<{ title: string; amount: number }[]>([]);
-  const [payMethod, setPayMethod] = useState<'wallet' | Method>('wallet');
+  const payMethod = 'wallet' as const;
   const [walletBalance, setWalletBalance] = useState(0);
 
   const [deliveryNote, setDeliveryNote] = useState('');
@@ -265,7 +262,7 @@ export default function ServiceOrder() {
         </div>
 
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
-          <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-2">Pay with</p>
+          <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-2">Payment method</p>
 
           <button
             onClick={() => setPayMethod('wallet')}
@@ -278,26 +275,12 @@ export default function ServiceOrder() {
             </div>
             <div className="flex-1 text-left">
               <p className="text-[12px] font-bold text-navy dark:text-white">Pay from Wallet</p>
-              <p className="text-[10px] text-gray-500">Balance: {walletBalance.toLocaleString()} XAF</p>
+              <p className="text-[10px] text-gray-500">Available balance: {walletBalance.toLocaleString()} XAF · platform fee is shown in checkout response</p>
             </div>
             {payMethod === 'wallet' && <Check size={16} className="text-accent" />}
           </button>
 
-          {METHODS.map(m => (
-            <button
-              key={m}
-              onClick={() => setPayMethod(m)}
-              className={`w-full p-3 rounded-xl border-2 mb-2 flex items-center gap-3 ${
-                payMethod === m ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-darkline'
-              }`}
-            >
-              <PaymentMethodLogo method={m} size={32} />
-              <p className="flex-1 text-left text-[12px] font-bold text-navy dark:text-white">
-                {METHOD_LABELS[m]}
-              </p>
-              {payMethod === m && <Check size={16} className="text-accent" />}
-            </button>
-          ))}
+
         </div>
 
         <div className="bg-blue-50 border border-blue-200 text-blue-800 text-[11px] p-3 rounded-xl mb-3">
