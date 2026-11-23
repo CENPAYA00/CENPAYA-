@@ -363,19 +363,22 @@ export async function handleAuthenticatedApi(
     if (!body) return failure("invalid_json_body", 400, headers);
     let name = "";
     let args: Record<string, unknown> = { p_order_id: orderId };
-    if (actionPath === "accept" && onlyKeys(body, [])) name = "accept_service_order";
+    if (actionPath === "accept" && onlyKeys(body, ["confirmed_deadline"]) &&
+      typeof body.confirmed_deadline === "string" && Number.isFinite(Date.parse(body.confirmed_deadline))) {
+      name = "accept_service_order"; args.p_confirmed_deadline = new Date(body.confirmed_deadline).toISOString();
+    }
     else if (actionPath === "confirm" && onlyKeys(body, [])) name = "buyer_confirm_service_order";
     else if (actionPath === "dispute" && onlyKeys(body, ["reason"]) && isText(body.reason,2000,10)) {
       name = "open_service_dispute"; args.p_reason = body.reason;
     } else if (actionPath === "deadline" && onlyKeys(body, ["new_deadline"]) &&
       typeof body.new_deadline === "string" && Number.isFinite(Date.parse(body.new_deadline))) {
       name = "request_service_deadline_change"; args.p_new_deadline = new Date(body.new_deadline).toISOString();
-    } else if (actionPath === "milestones/submit" && onlyKeys(body, ["milestone_id","delivery_note","delivery_file_url"]) &&
+    } else if ((actionPath === "milestones/submit" || actionPath === "delivery") && onlyKeys(body, ["milestone_id","delivery_note","delivery_file_url"]) &&
       isUuid(body.milestone_id) && isText(body.delivery_note,8000,5) &&
       (body.delivery_file_url === undefined || body.delivery_file_url === null || isText(body.delivery_file_url,2048))) {
       name = "submit_service_milestone"; args.p_milestone_id = body.milestone_id;
       args.p_delivery_note = body.delivery_note; args.p_delivery_file_url = body.delivery_file_url || null;
-    } else if (actionPath === "milestones/approve" && onlyKeys(body, ["milestone_id"]) && isUuid(body.milestone_id)) {
+    } else if ((actionPath === "milestones/approve" || actionPath === "approve") && onlyKeys(body, ["milestone_id"]) && isUuid(body.milestone_id)) {
       name = "approve_service_milestone"; args.p_milestone_id = body.milestone_id;
     } else if (actionPath === "milestones/revision" && onlyKeys(body, ["milestone_id","note"]) &&
       isUuid(body.milestone_id) && isText(body.note,2000,3)) {
