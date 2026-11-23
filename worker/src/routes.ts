@@ -371,6 +371,32 @@ export async function handleAuthenticatedApi(
     if (error) return failure("ledger_lookup_failed", 502, headers);
     return success(data || [], headers);
   }
+  const deliveryVerification = path.match(/^\/api\/v1\/admin\/orders\/([0-9a-f-]{36})\/verify-delivery$/i);
+  if (method === "POST" && deliveryVerification) {
+    const body = await readJsonObject(request, 4096);
+    if (!body || !onlyKeys(body, ["delivery_method", "tracking_number", "estimated_delivery_at", "inspection_window_hours"])) {
+      return failure("invalid_delivery_verification", 400, headers);
+    }
+    const deliveryMethod = body.delivery_method;
+    const trackingNumber = body.tracking_number;
+    const estimatedDeliveryAt = body.estimated_delivery_at;
+    const inspectionHours = body.inspection_window_hours;
+    if ((deliveryMethod !== "courier" && deliveryMethod !== "seller_transport") ||
+        (trackingNumber !== null && trackingNumber !== undefined && !isText(trackingNumber, 200)) ||
+        typeof estimatedDeliveryAt !== "string" || !Number.isFinite(Date.parse(estimatedDeliveryAt)) ||
+        !integerIn(inspectionHours, 1, 168)) {
+      return failure("invalid_delivery_verification", 400, headers);
+    }
+    const result = await rpc(supabase, "admin_verify_order_delivery", {
+      p_order_id: deliveryVerification[1],
+      p_delivery_method: deliveryMethod,
+      p_tracking_number: trackingNumber || null,
+      p_estimated_delivery_at: new Date(estimatedDeliveryAt).toISOString(),
+      p_inspection_window_hours: inspectionHours,
+    });
+    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+
   const orderAction = path.match(/^\/api\/v1\/orders\/([0-9a-f-]{36})\/action$/i);
   if (method === "POST" && orderAction) {
     const body = await readJsonObject(request, 4096);
