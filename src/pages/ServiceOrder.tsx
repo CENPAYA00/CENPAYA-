@@ -170,6 +170,40 @@ export default function ServiceOrder() {
     window.location.reload();
   };
 
+  const requestRevision = async (milestoneId: string) => {
+    const note = window.prompt('What needs to be revised?');
+    if (!note || note.trim().length < 3) return;
+    setBusy(true);
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/milestones/revision`, {
+        method: 'POST', body: JSON.stringify({ milestone_id: milestoneId, note: note.trim() })
+      });
+      window.location.reload();
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not request revision.'); setBusy(false); }
+  };
+
+  const requestDeadlineChange = async () => {
+    const proposed = window.prompt('Enter the new delivery date (YYYY-MM-DD). The other party must approve it.');
+    if (!proposed || !/^\\d{4}-\\d{2}-\\d{2}$/.test(proposed)) return;
+    setBusy(true);
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/deadline`, {
+        method: 'POST', body: JSON.stringify({ new_deadline: new Date(proposed + 'T23:59:59').toISOString() })
+      });
+      window.location.reload();
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not request deadline change.'); setBusy(false); }
+  };
+
+  const approveDeadlineChange = async (changeId: string) => {
+    setBusy(true);
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/deadline/approve`, {
+        method: 'POST', body: JSON.stringify({ change_id: changeId })
+      });
+      window.location.reload();
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not approve deadline change.'); setBusy(false); }
+  };
+
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
 
   // ---------- NEW ORDER ----------
@@ -373,7 +407,24 @@ export default function ServiceOrder() {
         </div>
       )}
 
+      {['in_progress','revision_requested'].includes(order.escrow_status) && (
+        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
+          <p className="text-[11px] font-bold text-navy dark:text-white mb-2">Project deadline</p>
+          <p className="text-[10px] text-gray-500 mb-2">Any change requires approval from both buyer and seller.</p>
+          <button onClick={requestDeadlineChange} disabled={busy} className="w-full border border-gray-300 dark:border-darkline rounded-lg py-2 text-[11px] font-bold">Propose new deadline</button>
+          {(order.service_order_deadline_changes || []).filter((x: any) => !x.applied_at).map((x: any) => {
+            const alreadyApproved = isBuyer ? !!x.buyer_approved_at : !!x.seller_approved_at;
+            return <div key={x.id} className="mt-2 p-2 bg-gray-50 dark:bg-darkbg rounded-lg">
+              <p className="text-[10px]">Proposed: {new Date(x.proposed_deadline_at).toLocaleString()}</p>
+              <p className="text-[10px] text-gray-500">Buyer: {x.buyer_approved_at ? 'approved' : 'pending'} · Seller: {x.seller_approved_at ? 'approved' : 'pending'}</p>
+              {!alreadyApproved && <button onClick={() => approveDeadlineChange(x.id)} disabled={busy} className="text-[11px] text-accent font-bold mt-1">Approve deadline change</button>}
+            </div>;
+          })}
+        </div>
+      )}
+
       {isBuyer && order.escrow_status === 'delivered' && (
+
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3 flex flex-col gap-2">
           <button
             onClick={approve}
@@ -382,6 +433,12 @@ export default function ServiceOrder() {
           >
             <Check size={13} /> {busy ? 'Confirming...' : 'Approve & release funds'}
           </button>
+          {order.service_order_milestones?.filter((m: any) => m.status === 'submitted').map((m: any) => (
+            <button key={m.id} onClick={() => requestRevision(m.id)} disabled={busy}
+              className="w-full border border-amber-300 text-amber-700 font-bold py-2.5 rounded-lg text-[12px]">
+              Request revision
+            </button>
+          ))}
           <button
             onClick={openDispute}
             className="w-full border border-red-300 text-red-600 font-bold py-2.5 rounded-lg text-[12px] flex items-center justify-center gap-1"
