@@ -300,7 +300,7 @@ export async function handleAuthenticatedApi(
       shipping_city: cleanText(body.shipping_city, 100) || null,
       shipping_address: cleanText(body.shipping_address, 500) || null,
       payment_method: paymentMethod,
-      payment_phone: paymentMethod === "momo" ? cleanText(body.payment_phone, 32) || null : null,
+      payment_phone: null,
     };
     if (paymentMethod !== "wallet") return failure("marketplace_mobile_money_checkout_unavailable", 501, headers);
     const { data: order, error } = await supabase.from("orders").insert(payload).select("id").single();
@@ -388,8 +388,7 @@ export async function handleAuthenticatedApi(
   const orderDetail = path.match(/^\/api\/v1\/orders\/([0-9a-f-]{36})$/i);
   if (method === "GET" && orderDetail) {
     const { data, error } = await supabase.from("orders").select("*").eq("id", orderDetail[1])
-      .or("buyer_id.eq." + userId + ",seller_id.eq." + userId).maybeSingle()
-      .abortSignal(AbortSignal.timeout(5_000));
+      .or("buyer_id.eq." + userId + ",seller_id.eq." + userId).maybeSingle();
     if (error) return failure("order_lookup_failed", 502, headers);
     return data ? success(data, headers) : failure("order_not_found", 404, headers);
   }
@@ -397,8 +396,7 @@ export async function handleAuthenticatedApi(
     const { data, error } = await supabase.from("orders")
       .select("*")
       .or("buyer_id.eq." + userId + ",seller_id.eq." + userId)
-      .order("escrow_created_at", { ascending: false }).limit(pageSize(url, 50))
-      .abortSignal(AbortSignal.timeout(5_000));
+      .order("escrow_created_at", { ascending: false }).limit(pageSize(url, 50));
     if (error) return failure("orders_lookup_failed", 502, headers);
     return success(data || [], headers);
   }
