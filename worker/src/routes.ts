@@ -777,7 +777,7 @@ export async function handleAuthenticatedApi(
     if (!body || !onlyKeys(body, ["role"]) || !["user", "support_agent", "staff_member", "super_admin"].includes(role)) return failure("invalid_role_assignment", 400, headers);
     const result = await rpc(supabase, "admin_assign_role", { p_target_user_id: adminRole[1], p_new_role: role });
     if (result.error) return failure(result.error, result.status, headers);
-    if (["user","support_agent","staff_member"].includes(role)) {
+    if (["user","support_agent","staff_member","super_admin"].includes(role)) {
       if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) return failure("staff_workspace_sync_unavailable", 503, headers);
       try {
         const sync = await env.D1_IDENTITY.fetch("https://d1-identity.internal/internal/v1/staff/workspace/sync", {
