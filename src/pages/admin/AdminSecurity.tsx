@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { Shield, Lock, Check, AlertCircle } from 'lucide-react';
 
 export default function AdminSecurity() {
@@ -14,9 +14,15 @@ export default function AdminSecurity() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.rpc('admin_has_password');
-      setHasPassword(!!data?.has_password);
-      setLoading(false);
+      try {
+        const result = await supabaseWorkerRequest<{ data: { ok?: boolean; has_password?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_has_password', {
+          method: 'POST', body: JSON.stringify({ args: {} }),
+        });
+        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not load admin security status.');
+        setHasPassword(!!result.data.has_password);
+      } catch (error: any) {
+        setErr(error?.message || 'Could not load admin security status.');
+      } finally { setLoading(false); }
     })();
   }, []);
 
@@ -26,12 +32,17 @@ export default function AdminSecurity() {
     if (newPass !== confirm) return setErr('Passwords do not match.');
 
     setBusy(true);
-    const { data, error } = await supabase.rpc('admin_set_password', {
-      p_new_password: newPass,
-      p_current_password: hasPassword ? current : null,
-    });
-    if (error || !data?.ok) {
-      setErr(error?.message || data?.error || 'Could not save password.');
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_set_password', {
+        method: 'POST',
+        body: JSON.stringify({ args: {
+          p_new_password: newPass,
+          p_current_password: hasPassword ? current : null,
+        } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not save password.');
+    } catch (error: any) {
+      setErr(error?.message || 'Could not save password.');
       setBusy(false);
       return;
     }
