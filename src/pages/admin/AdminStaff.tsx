@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { d1Request } from '../../lib/d1Api';
 import { UserPlus, X, Mail, Shield, Copy, Check, Ban, Clock } from 'lucide-react';
 
 const PERMISSIONS = [
@@ -18,12 +19,55 @@ export default function AdminStaff() {
   const [showInvite, setShowInvite] = useState(false);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
+  const [taskAssignee, setTaskAssignee] = useState('');
+  const [taskDue, setTaskDue] = useState('');
+  const [taskError, setTaskError] = useState('');
+  const [taskSaving, setTaskSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.rpc('admin_list_invitations');
-    setInvitations(data?.invitations || []);
+    const [{ data: invitationData }, { data: memberData }, taskResult] = await Promise.all([
+      supabase.rpc('admin_list_invitations'),
+      supabase.from('users').select('id,username,email').eq('role', 'staff_member').eq('banned', false).order('username'),
+      d1Request<{ data: any[] }>('/api/admin/staff/tasks').catch(() => ({ data: [] })),
+    ]);
+    setInvitations(invitationData?.invitations || []);
+    setStaffMembers(memberData || []);
+    setTasks(taskResult.data || []);
     setLoading(false);
+  };
+
+  const createTask = async () => {
+    setTaskError('');
+    if (!taskTitle.trim() || !taskAssignee) {
+      setTaskError('Choose a staff member and enter a task title.');
+      return;
+    }
+    setTaskSaving(true);
+    try {
+      await d1Request('/api/admin/staff/tasks', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: taskTitle.trim(),
+          description: taskDescription.trim(),
+          assigned_to_user_id: taskAssignee,
+          due_at: taskDue ? new Date(taskDue).toISOString() : null,
+        }),
+      });
+      setTaskTitle('');
+      setTaskDescription('');
+      setTaskAssignee('');
+      setTaskDue('');
+      await load();
+    } catch (error: any) {
+      setTaskError(error.message || 'Could not create task.');
+    } finally {
+      setTaskSaving(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -61,6 +105,39 @@ export default function AdminStaff() {
           <UserPlus size={12} /> Invite
         </button>
       </div>
+
+      <section className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-3 mb-4">
+        <h3 className="text-[13px] font-bold text-navy dark:text-white mb-2">Staff tasks</h3>
+        <p className="text-[10px] text-gray-500 mb-3">Assign individual work. Staff Members can only see and update tasks assigned to their own account.</p>
+        {staffMembers.length === 0 ? (
+          <p className="text-[11px] text-gray-500">Invite and activate a Staff Member before assigning tasks.</p>
+        ) : (
+          <div className="space-y-2">
+            <select value={taskAssignee} onChange={e => setTaskAssignee(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs">
+              <option value="">Choose Staff Member</option>
+              {staffMembers.map(member => <option key={member.id} value={member.id}>@{member.username || member.email}</option>)}
+            </select>
+            <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} maxLength={160} placeholder="Task title" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            <textarea value={taskDescription} onChange={e => setTaskDescription(e.target.value)} maxLength={5000} placeholder="Instructions and expected result" rows={3} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            <input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            {taskError && <p role="alert" className="text-[11px] text-red-600">{taskError}</p>}
+            <button onClick={() => void createTask()} disabled={taskSaving || !taskTitle.trim() || !taskAssignee} className="w-full bg-accent text-white font-bold py-2.5 rounded-lg text-xs disabled:opacity-50">{taskSaving ? 'Assigning...' : 'Assign task'}</button>
+          </div>
+        )}
+        {tasks.length > 0 && (
+          <div className="mt-3 border-t border-gray-100 dark:border-darkline pt-3 space-y-2">
+            {tasks.slice(0,8).map(task => (
+              <div key={task.id} className="rounded-lg bg-gray-50 dark:bg-darkbg p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold text-navy dark:text-white">{task.title}</p>
+                  <span className="text-[9px] text-gray-500">{String(task.status).replace('_',' ')}</span>
+                </div>
+                <p className="text-[9px] text-gray-500 mt-1">Assigned to @{task.assignee_username || 'staff member'}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {invitations.length === 0 && (
         <div className="bg-white dark:bg-darkcard p-6 rounded-xl text-center shadow-sm">
