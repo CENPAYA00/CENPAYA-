@@ -102,13 +102,13 @@ Marketplace product checkout is wallet-only. Mobile Money marketplace checkout r
 - adds user-scoped top-up intent/status functions;
 - adds protected provider-reference, settlement, and withdrawal-finalization functions. They use the existing `authenticated` role plus the signed private `app_metadata.cenpaya_payment_worker` claim; no custom Postgres role is created.
 
-Migrations 0001, 0002, and 0003 are committed and have been applied to the connected live Supabase database. They add Worker RPCs and attach the escrow-hold trigger; they do not create users or move existing wallet balances.
+Migrations 0001, 0002, 0003, and 0004 are committed. Migration 0004 (`staff_member_role_and_invitation_sync`) has been applied to the connected live Supabase database. It adds the distinct Staff Member role, validates role-scoped invitation permissions, synchronizes role changes to the D1 identity service, and makes invitation acceptance idempotent. It does not create users or move existing wallet balances.
 
 ## Features intentionally not hosted here
 
 The current Supabase database does not contain the support-ticket, social-report, social-post/chat, app-settings, or service-order tables referenced by some old Supabase RPCs/Edge Functions. Those are D1/non-financial responsibilities under the agreed architecture, so this Worker does not expose stale `admin_list_tickets`, `admin_list_reports`, `admin_resolve_report`, feature-toggle, or service-order RPCs.
 
-The current main frontend helper still sends some staff/support/report/feature requests to the Supabase Worker. Those routes must be redirected to the D1 Worker in a separately approved frontend/D1 phase; they are deliberately not backed by nonexistent Supabase tables here. Service-order and subscription settlement are also intentionally fail-closed: the live financial database export does not contain the required service-order tables or a verified atomic subscription debit/settlement function.
+Support tickets, staff tasks, reports, and feature flags remain D1 responsibilities and are handled by the D1 Worker branch. This Worker only handles staff invitation acceptance and role changes that must be synchronized to D1. It does not expose stale support-ticket, report, or feature-toggle RPCs. Service-order and subscription settlement are also intentionally fail-closed: the live financial database export does not contain the required service-order tables or a verified atomic subscription debit/settlement function.
 
 ## Local verification
 
@@ -125,12 +125,14 @@ Wrangler build is a dry run; it does not deploy. Run typecheck, tests, and the d
 
 ## Not production-ready until
 
-1. D1 implements and deploys the agreed identity assertion endpoint.
-2. The active Supabase JWT algorithm/key is confirmed and configured in Cloudflare.
-3. The SQL migration is reviewed and applied.
-4. D1 user UUIDs are confirmed to match existing `public.users.id` values.
-5. Fapshi/Campay API credentials are configured in Vault; no webhook secret is required by this Worker.
-6. Provider payout status/reference contracts are confirmed and live end-to-end top-up/withdrawal tests pass.
-7. Cloudflare binding, origins, and secrets are configured and CI passes.
+1. D1 implements and deploys the agreed identity assertion endpoint and staff-workspace role-sync endpoint.
+2. D1 migrations 0063–0065 are applied in order after checking the D1 migration tracker.
+3. The active Supabase JWT algorithm/key is confirmed and configured in Cloudflare.
+4. Supabase migration 0004 and the existing financial SQL migrations are reviewed and applied.
+5. D1 user UUIDs are confirmed to match existing `public.users.id` values.
+6. Fapshi/Campay API credentials are configured in Vault; no webhook secret is required by this Worker.
+7. Provider payout status/reference contracts are confirmed and live end-to-end top-up/withdrawal tests pass.
+8. Cloudflare binding, origins, and secrets are configured and CI passes.
+9. Staff invitation, role promotion/demotion, ticket isolation, and individual task access tests pass.
 
-No Supabase Auth, Supabase Edge Functions, D1-branch changes, frontend changes, or live Supabase schema/data changes are included in this branch.
+The staff invitation and role-sync routes depend on the D1 Worker's private `/internal/v1/staff/workspace/sync` endpoint and the matching `D1_INTERNAL_CALL_SECRET`. Deploy both Worker branches and apply D1 migrations 0063–0065 before enabling Staff Member invitations or task assignment. The connected Supabase database has migration 0004 applied; production end-to-end behavior is not verified until both Workers are deployed and tested.
