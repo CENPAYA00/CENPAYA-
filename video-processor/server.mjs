@@ -38,11 +38,11 @@ async function processVideo(d){
   for(const r of renditions){
    const folder=join(dir,r.name);await (await import("node:fs/promises")).mkdir(folder,{recursive:true});
    await ff(["-y","-i",input,"-vf",`scale=w='min(1280,iw)':h='min(${r.height},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`,"-c:v","libx264","-preset","veryfast","-profile:v","main","-crf","23","-maxrate",String(Math.round(r.bandwidth*.9)),"-bufsize",String(r.bandwidth*2),"-c:a","aac","-b:a","96k","-ac","2","-f","hls","-hls_time","6","-hls_playlist_type","vod","-hls_flags","independent_segments","-hls_segment_filename",join(folder,"segment_%05d.ts"),join(folder,"index.m3u8")],dir);
-   outputs.push({...r,folder});
+   const outHeight=Math.min(r.height,Number(video.height));\n   const outWidth=Math.min(1280,Math.floor((Number(video.width)*outHeight/Number(video.height))/2)*2);\n   outputs.push({...r,folder,width:outWidth,height:outHeight});
   }
   const thumb=join(dir,"thumbnail.jpg");
   await ff(["-y","-ss",String(Math.min(1,Math.max(0,duration/4))),"-i",input,"-frames:v","1","-vf","scale=w=640:h=-2","-q:v","4",thumb],dir);
-  const master=["#EXTM3U","#EXT-X-VERSION:3",...outputs.flatMap(r=>[`#EXT-X-STREAM-INF:BANDWIDTH=${r.bandwidth},RESOLUTION=0x${r.height}`,r.name+"/index.m3u8"])].join("\n")+"\n";
+  const master=["#EXTM3U","#EXT-X-VERSION:3",...outputs.flatMap(r=>[`#EXT-X-STREAM-INF:BANDWIDTH=${r.bandwidth},RESOLUTION=${r.width}x${r.height}`,r.name+"/index.m3u8"])].join("\n")+"\n";
   const prefix="videos/hls/"+d.video_id+"/",playlist=Buffer.from(master);
   await putObject(b2,e.B2_BUCKET_NAME,prefix+"master.m3u8",playlist,"application/vnd.apple.mpegurl");
   const generated=[];
