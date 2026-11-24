@@ -25,5 +25,6 @@ export interface Env {
   MEDIA_BUCKET?: R2Bucket;
   MEDIA_URL_SIGNING_SECRET?: string;
   VIDEO_PROCESSOR?: Fetcher;
+  VIDEO_PROCESSOR_URL?: string;
   VIDEO_PROCESSOR_TOKEN?: string;
 }

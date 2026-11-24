@@ -5,8 +5,16 @@ const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,
 const fail=(error:string,status=400)=>json({success:false,error},status);
 const MAX_BYTES=500*1024*1024;
 async function processor(env:Env,path:string,data?:unknown,method="POST"){
- if(!env.VIDEO_PROCESSOR||!env.VIDEO_PROCESSOR_TOKEN)return null;
- return env.VIDEO_PROCESSOR.fetch("https://video-processor.internal"+path,{method,headers:{"Authorization":"Bearer "+env.VIDEO_PROCESSOR_TOKEN,...(data?{"Content-Type":"application/json"}:{})},body:data?JSON.stringify(data):undefined});
+ if(!env.VIDEO_PROCESSOR_TOKEN)return null;
+ const headers={"Authorization":"Bearer "+env.VIDEO_PROCESSOR_TOKEN,...(data?{"Content-Type":"application/json"}:{})};
+ const init:RequestInit={method,headers,body:data?JSON.stringify(data):undefined};
+ if(env.VIDEO_PROCESSOR)return env.VIDEO_PROCESSOR.fetch("https://video-processor.internal"+path,init);
+ const base=env.VIDEO_PROCESSOR_URL?.trim();
+ if(!base)return null;
+ let endpoint:URL;
+ try{endpoint=new URL(path,base);}catch{return null;}
+ if(endpoint.protocol!=="https:"||endpoint.username||endpoint.password)return null;
+ return fetch(endpoint,init);
 }
 export async function handleVideoRoutes(request:Request,env:Env,{url,path,method,user}:C):Promise<Response|null>{
  if(path==="/api/videos/upload-intent"&&method==="POST"){
@@ -90,9 +98,10 @@ export async function processVideoQueue(env:Env):Promise<void>{
  if(!env.VIDEO_PROCESSOR||!env.VIDEO_PROCESSOR_TOKEN)return;
  const jobs=await env.DB.prepare(`SELECT j.id AS job_id,v.id AS video_id,v.source_key,v.source_bytes,v.mime_type
   FROM video_processing_jobs j JOIN video_assets v ON v.id=j.video_id
-  WHERE j.status='queued' AND v.status='processing' ORDER BY j.created_at LIMIT 2`).all<Record<string,unknown>>();
+  WHERE (j.status='queued' OR (j.status='processing' AND j.updated_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 minutes')))
+    AND v.status='processing' ORDER BY j.created_at LIMIT 2`).all<Record<string,unknown>>();
  for(const job of jobs.results){
-  const claimed=await env.DB.prepare("UPDATE video_processing_jobs SET status='processing',attempts=attempts+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='queued'").bind(job.job_id).run();
+  const claimed=await env.DB.prepare("UPDATE video_processing_jobs SET status='processing',attempts=attempts+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') undefined").bind(job.job_id).run();
   if(!claimed.meta.changes)continue;
   try{
    const response=await processor(env,"/v1/process",{video_id:job.video_id,source_key:job.source_key,source_bytes:job.source_bytes,mime_type:job.mime_type});

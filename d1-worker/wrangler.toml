@@ -37,8 +37,11 @@ database_id = "68b307af-935e-45ca-933f-2e4cf6db8ee2"
 #
 # Never place provider credentials or secret values in this file.
 
-# Bind VIDEO_PROCESSOR to the separately deployed FFmpeg container service.
-# Set VIDEO_PROCESSOR_TOKEN as a Worker secret; B2/Tigris credentials stay in processor secrets.
+# FFmpeg processor integration:
+# Option A: bind VIDEO_PROCESSOR to an existing HTTPS-capable Worker gateway.
+# Option B: set VIDEO_PROCESSOR_URL to the public HTTPS base URL of the Docker processor.
+# Set VIDEO_PROCESSOR_TOKEN as a secret on THIS D1 Worker and on the processor host.
+# B2/Tigris credentials remain on the processor host; never put them in this file.
 
 [triggers]
 crons = ["* * * * *"]

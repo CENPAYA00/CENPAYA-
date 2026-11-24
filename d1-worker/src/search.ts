@@ -19,6 +19,13 @@ const firstString=(...values:unknown[]):string=>{
 const str=(value:unknown,max=200)=>typeof value==="string"?value.trim().slice(0,max):"";
 
 async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,viewerId:string|null):Promise<SearchHit[]>{
+  if(kind==="all"){
+    const [posts,listings]=await Promise.all([
+      fallbackSearch(env,url,q,"home",limit,viewerId),
+      fallbackSearch(env,url,q,"market",limit,viewerId),
+    ]);
+    return [...posts,...listings].slice(0,limit);
+  }
   const term="%"+q.replace(/[%_]/g,"")+"%",results:SearchHit[]=[];
   if(kind==="home"){
     const rows=await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_demo
@@ -69,6 +76,13 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
   const cacheKey="search:"+await digest(kind+":"+q.toLowerCase()+":"+limit+":"+(viewerId||"anonymous"));
   const cached=await cacheGet(env,cacheKey);
   if(cached)return json({success:true,data:cached,source:"cache"});
+  // AutoRAG does not provide a guaranteed cross-entity authorization contract.
+  // Verify both posts and marketplace records directly in D1 for "all" searches.
+  if(kind==="all"){
+    const fallback=await fallbackSearch(env,url,q,kind,limit,viewerId);
+    await cachePut(env,cacheKey,fallback,60);
+    return json({success:true,data:fallback,source:"d1-verified-all"});
+  }
   const ai=env.AI,aiSearchName=env.AI_SEARCH_NAME;
   if(!ai||!aiSearchName){
     const fallback=await fallbackSearch(env,url,q,kind,limit,viewerId);
