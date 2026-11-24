@@ -96,9 +96,11 @@ export default function AdminUsers() {
             {/* Role Changer */}
             <select
               value={u.role || 'user'}
+              disabled={u.role === 'owner'}
               onChange={(e) => changeRole(u, e.target.value)}
               className="text-[10px] bg-gray-100 dark:bg-darkline p-1 rounded font-bold outline-none"
             >
+              <option value="owner" disabled>Owner (protected)</option>
               <option value="user">User</option>
               <option value="support_agent">Support Agent</option>
               <option value="staff_member">Staff Member</option>
