@@ -24,4 +24,6 @@ export interface Env {
   D1_TO_SUPABASE_HMAC_SECRET?: string;
   MEDIA_BUCKET?: R2Bucket;
   MEDIA_URL_SIGNING_SECRET?: string;
+  VIDEO_PROCESSOR?: Fetcher;
+  VIDEO_PROCESSOR_TOKEN?: string;
 }

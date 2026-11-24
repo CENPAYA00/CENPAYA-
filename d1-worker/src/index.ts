@@ -9,6 +9,7 @@ import { handleCommunityRoutes } from "./community.js";
 import { handleSocialRoutes } from "./social.js";
 import { handleMediaRoutes } from "./media.js";
 import { handleSearchRoute } from "./search.js";
+import { handleVideoRoutes } from "./video.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -51,6 +52,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   const user=await auth(request,env);
   const searchResponse=await handleSearchRoute(request,env,user?.id||null);
   if(searchResponse)return searchResponse;
+  const videoResponse=await handleVideoRoutes(request,env,{path,method,user});
+  if(videoResponse)return videoResponse;
   const mediaResponse=await handleMediaRoutes(request,env,{url,path,method,user});
   if(mediaResponse)return mediaResponse;
   const profileResponse=await handleProfileRoutes(request,env,{url,path,method,user});
