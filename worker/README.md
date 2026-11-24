@@ -102,7 +102,7 @@ Marketplace product checkout is wallet-only. Mobile Money marketplace checkout r
 - adds user-scoped top-up intent/status functions;
 - adds protected provider-reference, settlement, and withdrawal-finalization functions. They use the existing `authenticated` role plus the signed private `app_metadata.cenpaya_payment_worker` claim; no custom Postgres role is created.
 
-Migrations 0001–0005 are committed. Migration 0004 (`staff_member_role_and_invitation_sync`) and migration 0005 (`reconcile_staff_admin_permissions`) have been applied to the connected live Supabase database. Migration 0005 removes stale role-specific grants during role changes and prevents an already-used invitation from restoring a role after it has been revoked. It adds the distinct Staff Member role, validates role-scoped invitation permissions, synchronizes role changes to the D1 identity service, and makes invitation acceptance idempotent. It does not create users or move existing wallet balances.
+Migrations 0001–0006 are committed. Migrations 0004 (`staff_member_role_and_invitation_sync`) and 0005 (`reconcile_staff_admin_permissions`) were applied to the connected Supabase database during the previous implementation session. Migration 0006 (`admin_control_plane_frontend_apis`) is code-only and has NOT been applied; it completes the authenticated frontend RPCs for invitations, permission management, admin-password controls, membership views, and Owner/Super Admin parity. Migration 0005 removes stale role-specific grants during role changes and prevents an already-used invitation from restoring a role after it has been revoked. It adds the distinct Staff Member role, validates role-scoped invitation permissions, synchronizes role changes to the D1 identity service, and makes invitation acceptance idempotent. It does not create users or move existing wallet balances.
 
 ## Features intentionally not hosted here
 
@@ -133,6 +133,8 @@ Wrangler build is a dry run; it does not deploy. Run typecheck, tests, and the d
 6. Fapshi/Campay API credentials are configured in Vault; no webhook secret is required by this Worker.
 7. Provider payout status/reference contracts are confirmed and live end-to-end top-up/withdrawal tests pass.
 8. Cloudflare binding, origins, and secrets are configured and CI passes.
-9. Staff invitation, role promotion/demotion, ticket isolation, and individual task access tests pass.
+9. Apply Supabase migration 0006 and D1 migrations 0063–0065 only after reviewing both migration trackers.
+10. Run frontend and Worker build/test suites; verify invitation acceptance, role sync, permission grants/revocations, task isolation, ticket isolation, and membership management.
+11. Deploy only after all checks pass and the user explicitly approves deployment.
 
-The staff invitation and role-sync routes depend on the D1 Worker's private `/internal/v1/staff/workspace/sync` endpoint and the matching `D1_INTERNAL_CALL_SECRET`. Deploy both Worker branches and apply D1 migrations 0063–0065 before enabling Staff Member invitations or task assignment. The connected Supabase database has migration 0004 applied; production end-to-end behavior is not verified until both Workers are deployed and tested.
+The staff invitation and role-sync routes depend on the D1 Worker's private `/internal/v1/staff/workspace/sync` endpoint and the matching `D1_INTERNAL_CALL_SECRET`. Before deployment, apply Supabase migration 0006 and D1 migrations 0063–0065 in order after checking each migration tracker. No Worker or frontend deployment is part of this change.
