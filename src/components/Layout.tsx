@@ -48,7 +48,7 @@ export default function Layout() {
       if (!user || !active) return;
       setUserId(user.id);
       const role = user.role || '';
-      if (['support_agent', 'super_admin', 'owner'].includes(role)) {
+      if (['support_agent', 'staff_member', 'super_admin', 'owner'].includes(role)) {
         setStaffRole(role);
         const [ticketsRes, reportsRes] = await Promise.all([
           supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
@@ -78,7 +78,7 @@ export default function Layout() {
 
   const goToPanel = () => {
     if (staffRole === 'owner' || staffRole === 'super_admin') navigate('/admin');
-    else if (staffRole === 'support_agent') navigate('/staff');
+    else if (staffRole === 'support_agent' || staffRole === 'staff_member') navigate('/staff');
   };
 
   return (
