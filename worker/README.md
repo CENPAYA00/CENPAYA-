@@ -126,7 +126,7 @@ Wrangler build is a dry run; it does not deploy. Run typecheck, tests, and the d
 ## Not production-ready until
 
 1. D1 implements and deploys the agreed identity assertion endpoint and staff-workspace role-sync endpoint.
-2. D1 migrations 0063–0065 are applied in order after checking the D1 migration tracker.
+2. D1 migrations 0063–0066 are applied in order after checking the D1 migration tracker.
 3. The active Supabase JWT algorithm/key is confirmed and configured in Cloudflare.
 4. Supabase migration 0004 and the existing financial SQL migrations are reviewed and applied.
 5. D1 user UUIDs are confirmed to match existing `public.users.id` values.
