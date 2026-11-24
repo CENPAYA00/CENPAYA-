@@ -59,6 +59,14 @@ const ADMIN_RPC_SCHEMAS: Record<string, AdminRpcSchema> = {
         (a.p_role === "support_agent"
           ? ["can_resolve_disputes","can_manage_tickets","can_review_reports"].includes(p)
           : ["can_manage_listings","can_review_reports","can_review_kyc"].includes(p)))),
+  admin_call_status: defineRpc([], [], noArgs),
+  admin_video_status: defineRpc([], [], noArgs),
+  admin_set_call_host: defineRpc(["p_host"], [], (a) => isText(a.p_host,80)),
+  admin_set_video_host: defineRpc(["p_host"], [], (a) => isText(a.p_host,80)),
+  admin_toggle_calls: defineRpc(["p_enabled"], ["p_max_minutes"],
+    (a) => isBool(a.p_enabled) && (a.p_max_minutes === undefined || integerIn(a.p_max_minutes,1,120))),
+  admin_toggle_video: defineRpc(["p_enabled"], ["p_max_seconds"],
+    (a) => isBool(a.p_enabled) && (a.p_max_seconds === undefined || integerIn(a.p_max_seconds,15,600))),
   admin_list_staff_permissions: defineRpc([], [], noArgs),
   admin_revoke_permission: defineRpc(["p_target_user_id","p_permission_key"], [],
     (a) => isUuid(a.p_target_user_id) && isText(a.p_permission_key,100)),
