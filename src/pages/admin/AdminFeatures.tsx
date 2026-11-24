@@ -58,8 +58,8 @@ export default function AdminFeatures() {
       setFlags(featureResult.data || []);
       setCallStatus(callsResult.data || null);
       setVideoStatus(videoResult.data || null);
-      setCallHost(callsResult.data?.host || 'none');
-      setVideoHost(videoResult.data?.host || 'none');
+      setCallHost(callsResult.data?.host && callsResult.data.host !== 'none' ? callsResult.data.host.toUpperCase() : 'none');
+      setVideoHost(videoResult.data?.host && videoResult.data.host !== 'none' ? videoResult.data.host.toUpperCase() : 'none');
       setCallMinutes(String(callsResult.data?.max_minutes || 30));
       setVideoSeconds(String(videoResult.data?.max_seconds || 90));
     } catch (err: any) {
@@ -174,7 +174,7 @@ export default function AdminFeatures() {
               {hosts.map(item => <option key={item.name} value={item.name}>{item.display_name || item.name}</option>)}
             </select>
           </label>
-          <button onClick={() => void saveHost(kind)} disabled={!!saving || host === (status?.host || 'none')} className="self-end px-4 py-2.5 rounded-lg bg-navy dark:bg-accent text-white text-[11px] font-bold disabled:opacity-50">
+          <button onClick={() => void saveHost(kind)} disabled={!!saving || host.toUpperCase() === (status?.host || 'none').toUpperCase()} className="self-end px-4 py-2.5 rounded-lg bg-navy dark:bg-accent text-white text-[11px] font-bold disabled:opacity-50">
             Save provider
           </button>
         </div>
