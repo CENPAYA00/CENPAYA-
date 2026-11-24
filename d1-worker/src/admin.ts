@@ -49,7 +49,9 @@ export async function handleAdminRoutes(
   { path, method, user }: Context,
 ): Promise<Response | null> {
   if (path === "/api/staff/tasks" && method === "GET") {
-    if (!user || user.role !== "staff_member") return fail("Staff Member access required", 403);
+    if (!user) return fail("Staff Member access required", 403);
+    const workspace = await env.DB.prepare("SELECT 1 AS active FROM staff_workspace_members WHERE user_id=? AND is_active=1 AND workspace_role='staff_member'").bind(user.id).first();
+    if (!workspace) return fail("Staff Member access required", 403);
     try {
       const rows = await env.DB.prepare(
         "SELECT id,title,description,status,due_at,created_at,updated_at,completed_at FROM staff_tasks WHERE assigned_to_user_id=? ORDER BY CASE status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'blocked' THEN 2 ELSE 3 END,COALESCE(due_at,'9999-12-31'),updated_at DESC LIMIT 200"
@@ -60,7 +62,9 @@ export async function handleAdminRoutes(
 
   const staffTask = path.match(/^\\/api\\/staff\\/tasks\\/([0-9a-f-]{36})$/i);
   if (staffTask && method === "PATCH") {
-    if (!user || user.role !== "staff_member") return fail("Staff Member access required", 403);
+    if (!user) return fail("Staff Member access required", 403);
+    const workspace = await env.DB.prepare("SELECT 1 AS active FROM staff_workspace_members WHERE user_id=? AND is_active=1 AND workspace_role='staff_member'").bind(user.id).first();
+    if (!workspace) return fail("Staff Member access required", 403);
     const contentType = request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
     if (contentType !== "application/json") return fail("JSON body required", 415);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
@@ -99,7 +103,7 @@ export async function handleAdminRoutes(
     if (title.length < 2 || title.length > 160 || description.length > 5000 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assignee)) return fail("Valid title, description and staff member are required");
     if (dueAt !== null && (typeof dueAt !== "string" || !Number.isFinite(Date.parse(dueAt)))) return fail("Invalid due date");
     try {
-      const target = await env.DB.prepare("SELECT id FROM users WHERE id=? AND role='staff_member' AND banned=0 AND deleted_at IS NULL").bind(assignee).first<{id:string}>();
+      const target = await env.DB.prepare("SELECT u.id FROM users u JOIN staff_workspace_members w ON w.user_id=u.id WHERE u.id=? AND u.banned=0 AND u.deleted_at IS NULL AND w.workspace_role='staff_member' AND w.is_active=1").bind(assignee).first<{id:string}>();
       if (!target) return fail("Assigned account is not an active Staff Member", 404);
       const id = uuid();
       await env.DB.prepare("INSERT INTO staff_tasks(id,title,description,assigned_to_user_id,created_by_user_id,due_at) VALUES(?,?,?,?,?,?)")
