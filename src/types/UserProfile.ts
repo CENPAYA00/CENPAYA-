@@ -1,6 +1,7 @@
 export type UserRole =
   | "user"
   | "support_agent"
+  | "staff_member"
   | "super_admin"
   | "owner";
 
