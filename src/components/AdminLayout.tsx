@@ -41,9 +41,7 @@ export default function AdminLayout() {
       }
 
       try {
-        const passwordStatus = await supabaseWorkerRequest<{ data: { ok?: boolean; has_password?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_has_password', {
-          method: 'POST', body: JSON.stringify({ args: {} }),
-        });
+        const passwordStatus = await supabaseWorkerRequest<{ data: { ok?: boolean; has_password?: boolean; error?: string } }>('/api/v1/admin/security/password/status');
         if (cancelled) return;
         if (passwordStatus.data?.ok === false) throw new Error(passwordStatus.data.error || 'Could not verify admin password status.');
         if (passwordStatus.data?.has_password) setNeedsPassword(true);
@@ -64,8 +62,8 @@ export default function AdminLayout() {
     if (!password.trim()) return setPwError('Enter your admin password.');
     setVerifying(true);
     try {
-      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_verify_password', {
-        method: 'POST', body: JSON.stringify({ args: { p_password: password } }),
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; error?: string } }>('/api/v1/admin/security/password/verify', {
+        method: 'POST', body: JSON.stringify({ password }),
       });
       if (!result.data?.ok) throw new Error(result.data?.error || 'Wrong password.');
       setAuthorized(true);
