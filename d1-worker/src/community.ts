@@ -221,13 +221,17 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     await env.DB.prepare("UPDATE notifications SET is_read=1,read_at="+NOW+" WHERE id=? AND recipient_id=?").bind(mark[1],user.id).run();
     return json({success:true});
   }
-  const staffAllowed = user && ["support_agent","staff_member","staff","super_admin","owner"].includes(user.role);
-  const supportAuthority = !!user && ["support_agent","super_admin","owner"].includes(user.role);
+  const staffWorkspace = user
+    ? await env.DB.prepare("SELECT workspace_role FROM staff_workspace_members WHERE user_id=? AND is_active=1").bind(user.id).first<{workspace_role:string}>().catch(() => null)
+    : null;
+  const effectiveRole = staffWorkspace?.workspace_role || user?.role || "";
+  const staffAllowed = !!user && ["support_agent","staff_member","staff","super_admin","owner"].includes(effectiveRole);
+  const supportAuthority = !!user && ["support_agent","super_admin","owner"].includes(effectiveRole);
   const platformAdmin = !!user && ["super_admin","owner"].includes(user.role);
   if (path === "/api/staff/profile" && method === "GET") {
     if (!staffAllowed) return fail("Staff access required",403);
     const row=await env.DB.prepare("SELECT COUNT(*) AS assigned_total FROM support_tickets WHERE assigned_to_user_id=?").bind(user!.id).first<{assigned_total:number}>();
-    return json({success:true,data:{id:user!.id,role:user!.role,assigned_total:Number(row?.assigned_total||0)}});
+    return json({success:true,data:{id:user!.id,role:effectiveRole,assigned_total:Number(row?.assigned_total||0)}});
   }
   if (path === "/api/staff/tickets" && method === "GET") {
     if (!supportAuthority) return fail("Support Agent access required",403);
