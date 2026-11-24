@@ -11,6 +11,7 @@ Canonical migrations 52–55 reconcile the Worker with the 2026-11-21 export and
 - **63** adds per-support-agent ticket read cursors so unread counts and read state are private to each agent.
 - **64** adds individual staff task assignments, status tracking, due dates, and creator/assignee ownership.
 - **65** adds a separate staff-workspace identity projection so Staff Members do not need elevated customer or support-agent roles in the D1 user table.
+- **66** adds an auditable report-review history for Owner/Super Admin report moderation decisions.
 - Registration stores gender, date of birth, preferred language, and terms acceptance in existing `users` columns; no separate onboarding table is required.
 
 The export's views (`public_profiles`, `public_marketplace_search`, `stale_unverified_otps`) are present in the snapshot and used by the Worker. Backup tables are archival copies, not live application tables.
