@@ -101,7 +101,7 @@ export async function processVideoQueue(env:Env):Promise<void>{
   WHERE (j.status='queued' OR (j.status='processing' AND j.updated_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 minutes')))
     AND v.status='processing' ORDER BY j.created_at LIMIT 2`).all<Record<string,unknown>>();
  for(const job of jobs.results){
-  const claimed=await env.DB.prepare("UPDATE video_processing_jobs SET status='processing',attempts=attempts+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') undefined").bind(job.job_id).run();
+  const claimed=await env.DB.prepare("UPDATE video_processing_jobs SET status='processing',attempts=attempts+1,undefined").bind(job.job_id).run();
   if(!claimed.meta.changes)continue;
   try{
    const response=await processor(env,"/v1/process",{video_id:job.video_id,source_key:job.source_key,source_bytes:job.source_bytes,mime_type:job.mime_type});
