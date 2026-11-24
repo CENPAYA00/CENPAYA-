@@ -6,7 +6,7 @@ import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Shield, Upload, Check, AlertTriangle, Wallet, Clock } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
-import { compressImage } from '../utils/compressImage';
+import OrderWorkflowPanel from '../components/OrderWorkflowPanel';
 
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
 const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
@@ -290,6 +290,8 @@ export default function ServiceOrder() {
           </p>
         )}
       </div>
+
+      <OrderWorkflowPanel orderId={order.id} userId={me?.id || ''} buyerId={order.buyer_id} sellerId={order.seller_id} />
 
       {order.requirements && (
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
