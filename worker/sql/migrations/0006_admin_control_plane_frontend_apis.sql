@@ -4,6 +4,63 @@
 
 begin;
 
+-- Owner and Super Admin have equal platform-administration authority.
+-- The Owner identity itself remains protected from role changes.
+create or replace function public.admin_assign_role(p_target_user_id uuid, p_new_role text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $function$
+declare
+  v_actor_id uuid := auth.uid();
+  v_actor_role text;
+  v_target_role text;
+begin
+  if v_actor_id is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
+  if p_new_role not in ('user','support_agent','staff_member','super_admin') then
+    return jsonb_build_object('ok',false,'error','invalid role');
+  end if;
+  select role into v_actor_role from public.users where id=v_actor_id;
+  select role into v_target_role from public.users where id=p_target_user_id;
+  if v_target_role is null then return jsonb_build_object('ok',false,'error','target not found'); end if;
+  if v_actor_role not in ('owner','super_admin') or not (public.is_owner() or public.is_super_admin()) then
+    return jsonb_build_object('ok',false,'error','admin access required');
+  end if;
+  if v_target_role='owner' or p_new_role='owner' then
+    return jsonb_build_object('ok',false,'error','owner identity is protected');
+  end if;
+  if v_target_role='super_admin' and p_new_role<>'super_admin'
+     and (select count(*) from public.users where role='super_admin' and banned=false)<=1 then
+    return jsonb_build_object('ok',false,'error','cannot demote the last Super Admin');
+  end if;
+
+  perform set_config('app.role_change_authorized','true',true);
+  update public.users set role=p_new_role where id=p_target_user_id;
+  perform set_config('app.role_change_authorized','false',true);
+
+  update public.admin_permissions
+     set revoked_at=now()
+   where user_id=p_target_user_id and permission_key<>'owner' and revoked_at is null;
+
+  if p_new_role in ('super_admin','support_agent','staff_member') then
+    insert into public.admin_permissions(user_id,permission_key,granted_by)
+    values(p_target_user_id,p_new_role,v_actor_id)
+    on conflict(user_id,permission_key) do update
+      set granted_by=excluded.granted_by,granted_at=now(),revoked_at=null;
+  end if;
+
+  insert into public.admin_audit_log(actor_id,action,target_table,target_id,old_value,new_value)
+  values(v_actor_id,'assign_role','users',p_target_user_id,
+    jsonb_build_object('role',v_target_role),jsonb_build_object('role',p_new_role));
+  insert into public.outbound_notification_spool(user_id,notification_channel,destination_address,message_payload)
+  select p_target_user_id,'EMAIL_RESEND',email,'Your account role has been changed to: '||p_new_role
+  from public.users where id=p_target_user_id;
+
+  return jsonb_build_object('ok',true,'old_role',v_target_role,'new_role',p_new_role);
+end;
+$function$;
+
 create or replace function public.admin_grant_permission(p_target_user_id uuid, p_permission_key text)
 returns jsonb
 language plpgsql
