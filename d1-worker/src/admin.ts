@@ -124,7 +124,7 @@ export async function handleAdminRoutes(
         description: feature.description,
         ready: feature.ready,
         blocked_reason: feature.blocked_reason,
-        is_enabled_globally: enabledByKey.get(feature.key) === true && feature.ready,
+        is_enabled_globally: enabledByKey.get(feature.key) === true,
       }));
       return json({ success: true, data });
     } catch {
