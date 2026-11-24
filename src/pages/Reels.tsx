@@ -1,8 +1,8 @@
-export default function Reels() {
-  return (
-    <div className="px-3 py-3 pb-24">
-      <h1 className="text-base font-bold text-navy">Reels</h1>
-      <p className="text-[10px] text-gray-500 mt-2">Coming soon.</p>
-    </div>
-  );
-}
+import { useEffect, useRef, useState } from 'react';
+import { d1Request } from '../lib/d1Api';
+import { Play, RefreshCw } from 'lucide-react';
+declare global { interface Window { Hls?: any } }
+type Reel={video_id:string;post_id:string;content:string;username:string;display_name:string;playlist_url:string;duration_seconds:number|null};
+let loader:Promise<void>|null=null;
+function loadHls(){if(window.Hls)return Promise.resolve();if(!loader)loader=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';s.onload=()=>resolve();s.onerror=()=>reject(new Error('HLS player unavailable'));document.head.appendChild(s);});return loader;}
+export default function Reels(){const [items,setItems]=useState<Reel[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');const refs=useRef<Record<string,HTMLVideoElement|null>>({});const load=async()=>{setLoading(true);setError('');try{const r=await d1Request<{data:Reel[]}>('/api/reels?limit=20');setItems(r.data||[]);}catch(e:any){setError(e.message||'Could not load Reels');}finally{setLoading(false);}};useEffect(()=>{void load();},[]);useEffect(()=>{let alive=true;const instances:any[]=[];for(const item of items){const el=refs.current[item.video_id];if(!el)continue;if(el.canPlayType('application/vnd.apple.mpegurl')){el.src=item.playlist_url;continue;}loadHls().then(()=>{if(!alive||!window.Hls?.isSupported())return;const h=new window.Hls({enableWorker:true});h.loadSource(item.playlist_url);h.attachMedia(el);instances.push(h);}).catch(e=>setError(e.message));}return()=>{alive=false;instances.forEach(x=>x.destroy());};},[items]);if(loading)return <div className="p-6 text-center text-xs text-gray-500">Loading Reels…</div>;return <div className="px-3 py-3 pb-24"><div className="flex justify-between items-center mb-3"><h1 className="text-base font-bold text-navy dark:text-white">Reels</h1><button onClick={()=>void load()} className="text-accent"><RefreshCw size={16}/></button></div>{error&&<p className="text-xs text-red-500 mb-3">{error}</p>}{!items.length&&!error&&<div className="text-center py-16 text-xs text-gray-500"><Play size={28} className="mx-auto mb-2"/>No published videos yet.</div>}<div className="space-y-4">{items.map(x=><article key={x.video_id} className="rounded-2xl overflow-hidden bg-black text-white"><video ref={el=>{refs.current[x.video_id]=el;}} controls playsInline preload="metadata" className="w-full max-h-[72vh] aspect-[9/16] object-contain bg-black"/><div className="p-3"><p className="text-xs font-bold">@{x.username||x.display_name||'Cenpaya user'}</p>{x.content&&<p className="text-xs mt-1 whitespace-pre-wrap">{x.content}</p>}</div></article>)}</div></div>;}
