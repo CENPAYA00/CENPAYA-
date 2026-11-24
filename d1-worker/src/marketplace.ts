@@ -110,7 +110,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     if(!content&&!mediaUrls.length&&!documentUrls.length)return fail("Write something or add an attachment");
     if(!["public","followers","friends","private"].includes(visibility))return fail("Invalid post visibility");
     if(mediaInput.length>10||documentInput.length>5)return fail("A post can contain up to 10 images and 5 documents");
-    if(mediaUrls.length&&(!env.MEDIA_BUCKET||(env.MEDIA_URL_SIGNING_SECRET||"").length<32))return fail("R2 media storage is not configured",503);
+    if((mediaUrls.length||documentUrls.length)&&(!env.MEDIA_BUCKET||(env.MEDIA_URL_SIGNING_SECRET||"").length<32))return fail("R2 media storage is not configured",503);
     const id=uuid();
     const backgroundId=str(b.background_id,40)||null;
     if(backgroundId&&!/^[a-z0-9_-]{1,40}$/i.test(backgroundId))return fail("Invalid post background");

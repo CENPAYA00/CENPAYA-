@@ -135,7 +135,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     }
     const data=await Promise.all(ordered.map(async(row:any)=>{
       const {media_key,...message}=row;
-      return {...message,media_url:media_key?await signMediaUrl(env,url.origin,String(media_key)):message.media_url,attachments:attachmentsByMessage.get(String(row.id))||[]};
+      const attachments=attachmentsByMessage.get(String(row.id))||[];
+      return {...message,message_type:attachments.length?"file":message.message_type,media_url:media_key?await signMediaUrl(env,url.origin,String(media_key)):message.media_url,attachments};
     }));
     return json({success:true,data});
   }
