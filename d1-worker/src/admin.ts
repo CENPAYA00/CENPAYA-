@@ -23,8 +23,8 @@ function definitions(env: Env): FeatureDefinition[] {
       key: "voice_calls",
       display_name: "Voice calls",
       description: "In-app voice calling.",
-      ready: false,
-      blocked_reason: "Voice calling has not been implemented yet.",
+      ready: true,
+      blocked_reason: null,
     },
     {
       key: "video_posts",
