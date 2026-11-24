@@ -221,53 +221,59 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     await env.DB.prepare("UPDATE notifications SET is_read=1,read_at="+NOW+" WHERE id=? AND recipient_id=?").bind(mark[1],user.id).run();
     return json({success:true});
   }
-  const staffAllowed = user && ["support_agent","staff_member","staff"].includes(user.role);
+  const staffAllowed = user && ["support_agent","staff_member","staff","super_admin","owner"].includes(user.role);
+  const supportAuthority = !!user && ["support_agent","super_admin","owner"].includes(user.role);
+  const platformAdmin = !!user && ["super_admin","owner"].includes(user.role);
   if (path === "/api/staff/profile" && method === "GET") {
     if (!staffAllowed) return fail("Staff access required",403);
     const row=await env.DB.prepare("SELECT COUNT(*) AS assigned_total FROM support_tickets WHERE assigned_to_user_id=?").bind(user!.id).first<{assigned_total:number}>();
     return json({success:true,data:{id:user!.id,role:user!.role,assigned_total:Number(row?.assigned_total||0)}});
   }
   if (path === "/api/staff/tickets" && method === "GET") {
-    if (!staffAllowed) return fail("Staff access required",403);
-    const all=url.searchParams.get("scope")==="all" && user!.role==="support_agent";
-    const sql=all ? "SELECT t.id,t.ticket_number,t.subject,t.category,t.priority,t.status,t.assigned_to_user_id,t.created_at,u.username FROM support_tickets t JOIN users u ON u.id=t.user_id WHERE t.status NOT IN ('resolved','closed') ORDER BY t.updated_at DESC LIMIT 200" : "SELECT t.id,t.ticket_number,t.subject,t.category,t.priority,t.status,t.assigned_to_user_id,t.created_at,u.username FROM support_tickets t JOIN users u ON u.id=t.user_id WHERE t.assigned_to_user_id=? AND t.status NOT IN ('resolved','closed') ORDER BY t.updated_at DESC LIMIT 200";
-    const rows=all ? await env.DB.prepare(sql).all() : await env.DB.prepare(sql).bind(user!.id).all();
+    if (!supportAuthority) return fail("Support Agent access required",403);
+    const all=url.searchParams.get("scope")==="all";
+    const unreadSql="(SELECT COUNT(*) FROM support_ticket_messages m WHERE m.ticket_id=t.id AND m.sender_type='user' AND m.status<>'deleted' AND m.created_at>COALESCE((SELECT r.last_read_at FROM support_ticket_staff_reads r WHERE r.ticket_id=t.id AND r.user_id=?),'1970-01-01T00:00:00.000Z')) AS unread";
+    const base="SELECT t.id,t.ticket_number,t.subject,t.category,t.priority,t.status,t.assigned_to_user_id,t.created_at,t.updated_at,u.username,"+unreadSql+" FROM support_tickets t JOIN users u ON u.id=t.user_id ";
+    const sql=all
+      ? base+(platformAdmin ? "WHERE t.status NOT IN ('resolved','closed') ORDER BY t.updated_at DESC LIMIT 200" : "WHERE t.status NOT IN ('resolved','closed') AND (t.assigned_to_user_id IS NULL OR t.assigned_to_user_id=?) ORDER BY t.updated_at DESC LIMIT 200")
+      : base+"WHERE t.assigned_to_user_id=? AND t.status NOT IN ('resolved','closed') ORDER BY t.updated_at DESC LIMIT 200";
+    const binds=all ? (platformAdmin ? [user!.id] : [user!.id,user!.id]) : [user!.id,user!.id];
+    const rows=await env.DB.prepare(sql).bind(...binds).all();
     return json({success:true,data:rows.results.map((t:any)=>({...t,assigned_to_me:t.assigned_to_user_id===user!.id}))});
   }
   const staffClaim=path.match(/^\/api\/staff\/tickets\/([^/]+)\/claim$/);
   if(staffClaim && method==="POST"){
-    if(!staffAllowed)return fail("Staff access required",403);
+    if(!supportAuthority)return fail("Support Agent access required",403);
     const row=await env.DB.prepare("SELECT id,assigned_to_user_id FROM support_tickets WHERE id=?").bind(staffClaim[1]).first<{id:string;assigned_to_user_id:string|null}>();
     if(!row)return fail("Ticket not found",404);
-    if(row.assigned_to_user_id && row.assigned_to_user_id!==user!.id && user!.role!=="support_agent")return fail("Ticket already assigned",409);
-    await env.DB.prepare("UPDATE support_tickets SET assigned_to_user_id=?,assigned_agent_ref=?,updated_at="+NOW+" WHERE id=?").bind(user!.id,user!.id,row.id).run();
-    return json({success:true});
+    if(row.assigned_to_user_id && row.assigned_to_user_id!==user!.id && !platformAdmin)return fail("Ticket is assigned to another agent",409);
+    const update=await env.DB.prepare("UPDATE support_tickets SET assigned_to_user_id=?,assigned_by_user_id=?,assigned_agent_ref=?,updated_at="+NOW+" WHERE id=? AND (assigned_to_user_id IS NULL OR assigned_to_user_id=? OR ?)").bind(user!.id,user!.id,user!.id,row.id,user!.id,platformAdmin?1:0).run();
+    return update.meta.changes?json({success:true}):fail("Ticket was claimed by another agent",409);
   }
   const staffTicket=path.match(/^\/api\/staff\/tickets\/([^/]+)$/);
   if(staffTicket && method==="GET"){
-    if(!staffAllowed)return fail("Staff access required",403);
-    const row=await env.DB.prepare("SELECT t.*,u.username AS user_username FROM support_tickets t JOIN users u ON u.id=t.user_id WHERE t.id=? AND (t.assigned_to_user_id=? OR ?)").bind(staffTicket[1],user!.id,user!.role==="support_agent"?1:0).first<Record<string,unknown>>();
+    if(!supportAuthority)return fail("Support Agent access required",403);
+    const row=await env.DB.prepare("SELECT t.*,u.username AS user_username FROM support_tickets t JOIN users u ON u.id=t.user_id WHERE t.id=? AND (t.assigned_to_user_id=? OR ?)").bind(staffTicket[1],user!.id,platformAdmin?1:0).first<Record<string,unknown>>();
     if(!row)return fail("Ticket not found or not assigned to you",404);
     const messages=await env.DB.prepare("SELECT m.id,m.sender_type,m.sender_user_id,m.message_text AS body,m.created_at,u.username AS sender_username FROM support_ticket_messages m LEFT JOIN users u ON u.id=m.sender_user_id WHERE m.ticket_id=? AND m.status<>'deleted' ORDER BY m.created_at ASC LIMIT 300").bind(staffTicket[1]).all();
-    await env.DB.prepare("UPDATE support_tickets SET support_last_read_at="+NOW+" WHERE id=?").bind(staffTicket[1]).run();
+    await env.DB.prepare("INSERT INTO support_ticket_staff_reads(ticket_id,user_id,last_read_at) VALUES(?,?, "+NOW+") ON CONFLICT(ticket_id,user_id) DO UPDATE SET last_read_at=excluded.last_read_at").bind(staffTicket[1],user!.id).run();
     return json({success:true,data:{ticket:{...row,current_role:user!.role},messages:messages.results}});
   }
   const staffMessages=path.match(/^\/api\/staff\/tickets\/([^/]+)\/messages$/);
   if(staffMessages && method==="POST"){
-    if(!staffAllowed)return fail("Staff access required",403);
+    if(!supportAuthority)return fail("Support Agent access required",403);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const message=str(b.body,5000);if(!message)return fail("Message cannot be empty");
-    const row=await env.DB.prepare("SELECT id FROM support_tickets WHERE id=? AND (assigned_to_user_id=? OR ?)").bind(staffMessages[1],user!.id,user!.role==="support_agent"?1:0).first<{id:string}>();
+    const row=await env.DB.prepare("SELECT id FROM support_tickets WHERE id=? AND (assigned_to_user_id=? OR ?)").bind(staffMessages[1],user!.id,platformAdmin?1:0).first<{id:string}>();
     if(!row)return fail("Ticket not found or not assigned to you",404);
     await env.DB.batch([env.DB.prepare("INSERT INTO support_ticket_messages(id,ticket_id,sender_type,sender_user_id,message_text) VALUES(?,? ,'support',?,?)").bind(uuid(),row.id,user!.id,message),env.DB.prepare("UPDATE support_tickets SET updated_at="+NOW+",last_message_at="+NOW+",status=CASE WHEN status='open' THEN 'in_progress' ELSE status END WHERE id=?").bind(row.id)]);
     return json({success:true},201);
   }
   if(staffTicket && method==="PATCH"){
-    if(!staffAllowed)return fail("Staff access required",403);
+    if(!supportAuthority)return fail("Support Agent access required",403);
     const b=await body(request);if(!b)return fail("Valid JSON body required");
     const status=str(b.status,20);if(!["open","in_progress","waiting","resolved","closed"].includes(status))return fail("Invalid status");
-    if(user!.role!=="support_agent" && ["resolved","closed"].includes(status))return fail("Only Support Agents can make final support decisions",403);
-    const result=await env.DB.prepare("UPDATE support_tickets SET status=?,updated_at="+NOW+" WHERE id=? AND (assigned_to_user_id=? OR ?)").bind(status,staffTicket[1],user!.id,user!.role==="support_agent"?1:0).run();
+    const result=await env.DB.prepare("UPDATE support_tickets SET status=?,updated_at="+NOW+" WHERE id=? AND (assigned_to_user_id=? OR ?)").bind(status,staffTicket[1],user!.id,platformAdmin?1:0).run();
     return result.meta.changes?json({success:true}):fail("Ticket not found or not assigned to you",404);
   }
   if(path==="/api/support/tickets"&&method==="POST"){
