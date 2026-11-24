@@ -250,7 +250,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if(!row)return fail("Ticket not found or not assigned to you",404);
     const messages=await env.DB.prepare("SELECT m.id,m.sender_type,m.sender_user_id,m.message_text AS body,m.created_at,u.username AS sender_username FROM support_ticket_messages m LEFT JOIN users u ON u.id=m.sender_user_id WHERE m.ticket_id=? AND m.status<>'deleted' ORDER BY m.created_at ASC LIMIT 300").bind(staffTicket[1]).all();
     await env.DB.prepare("UPDATE support_tickets SET support_last_read_at="+NOW+" WHERE id=?").bind(staffTicket[1]).run();
-    return json({success:true,data:{ticket:row,messages:messages.results}});
+    return json({success:true,data:{ticket:{...row,current_role:user!.role},messages:messages.results}});
   }
   const staffMessages=path.match(/^\/api\/staff\/tickets\/([^/]+)\/messages$/);
   if(staffMessages && method==="POST"){
