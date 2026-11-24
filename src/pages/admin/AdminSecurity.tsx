@@ -15,9 +15,7 @@ export default function AdminSecurity() {
   useEffect(() => {
     (async () => {
       try {
-        const result = await supabaseWorkerRequest<{ data: { ok?: boolean; has_password?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_has_password', {
-          method: 'POST', body: JSON.stringify({ args: {} }),
-        });
+        const result = await supabaseWorkerRequest<{ data: { ok?: boolean; has_password?: boolean; error?: string } }>('/api/v1/admin/security/password/status');
         if (!result.data?.ok) throw new Error(result.data?.error || 'Could not load admin security status.');
         setHasPassword(!!result.data.has_password);
       } catch (error: any) {
@@ -33,12 +31,9 @@ export default function AdminSecurity() {
 
     setBusy(true);
     try {
-      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_set_password', {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; error?: string } }>('/api/v1/admin/security/password', {
         method: 'POST',
-        body: JSON.stringify({ args: {
-          p_new_password: newPass,
-          p_current_password: hasPassword ? current : null,
-        } }),
+        body: JSON.stringify({ new_password: newPass, current_password: hasPassword ? current : null }),
       });
       if (!result.data?.ok) throw new Error(result.data?.error || 'Could not save password.');
     } catch (error: any) {
