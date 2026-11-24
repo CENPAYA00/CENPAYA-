@@ -22,7 +22,7 @@ export default function StaffLayout() {
       if (!user) { navigate('/'); return; }
 
       const role = user.role;
-      const allowed = ['support_agent', 'super_admin', 'owner'].includes(role);
+      const allowed = ['support_agent', 'staff_member', 'staff', 'super_admin', 'owner'].includes(role);
       if (!allowed) {
         alert(`Access denied. Your role is: ${role || 'unknown'}`);
         navigate('/home');
@@ -60,7 +60,7 @@ export default function StaffLayout() {
       <header className="bg-gradient-to-r from-brand to-brand-dark text-white px-3.5 py-2.5 flex justify-between items-center sticky top-0 z-50 shadow-md">
         <div>
           <h1 className="text-[14px] font-black tracking-tight">CenPaya</h1>
-          <p className="text-[9px] text-accent-light font-bold tracking-widest">STAFF</p>
+          <p className="text-[9px] text-accent-light font-bold tracking-widest">{role === 'support_agent' ? 'SUPPORT AGENT' : 'STAFF MEMBER'}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
