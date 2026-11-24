@@ -100,6 +100,7 @@ export default function AdminFeatures() {
       await load();
     } catch (err: any) {
       setError(err.message || 'Could not update assistance provider.');
+    } finally {
       setSaving(null);
     }
   };
@@ -124,6 +125,7 @@ export default function AdminFeatures() {
       await load();
     } catch (err: any) {
       setError(err.message || 'Could not update assistance availability.');
+    } finally {
       setSaving(null);
     }
   };
