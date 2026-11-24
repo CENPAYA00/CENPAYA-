@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
-import { Plus, X, Globe, Pencil, RefreshCw } from 'lucide-react';
+import { Plus, X, Globe, Pencil } from 'lucide-react';
 
 type Region = {
   country_iso: string;
