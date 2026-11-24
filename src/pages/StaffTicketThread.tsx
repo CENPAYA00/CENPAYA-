@@ -19,7 +19,6 @@ export default function StaffTicketThread() {
       const result = await d1Request<{ data: { ticket: any; messages: any[] } }>(`/api/staff/tickets/${encodeURIComponent(id)}`);
       setTicket(result.data?.ticket || null);
       setMessages(result.data?.messages || []);
-      await d1Request(`/api/staff/tickets/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
     } catch (error) { console.warn('Could not load support ticket', error); }
     finally { setLoading(false); }
   };
@@ -96,7 +95,7 @@ export default function StaffTicketThread() {
 
       <main className="flex-1 overflow-y-auto p-3 pb-24">
         {messages.map(m => {
-          const isStaff = m.sender_role === 'staff';
+          const isStaff = m.sender_type === 'support';
           return (
             <div key={m.id} className={`mb-2 flex ${isStaff ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-[12px] ${
