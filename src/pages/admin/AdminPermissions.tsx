@@ -79,6 +79,21 @@ export default function AdminPermissions() {
     }
   };
 
+  const demoteToUser = async (userId: string) => {
+    if (!window.confirm('Remove this staff role and return the account to a regular user?')) return;
+    setPromoting(userId);
+    try {
+      await supabaseWorkerRequest('/api/v1/admin/users/' + encodeURIComponent(userId) + '/role', {
+        method: 'POST', body: JSON.stringify({ role: 'user' }),
+      });
+      await load();
+    } catch (error: any) {
+      alert(error?.message || 'Could not remove staff role.');
+    } finally {
+      setPromoting(null);
+    }
+  };
+
   const hasPermission = (userId: string, key: string) =>
     permissions.some(p => p.user_id === userId && p.permission_key === key);
 
