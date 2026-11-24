@@ -134,6 +134,30 @@ begin
 end;
 $function$;
 
+create or replace function public.admin_revoke_membership(p_target_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $function$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
+  if not (public.is_owner() or public.is_super_admin()) then
+    return jsonb_build_object('ok',false,'error','admin access required');
+  end if;
+  if exists(select 1 from public.users where id=p_target_id and is_subscribed=true and is_membership_exempt=false) then
+    return jsonb_build_object('ok',false,'error','paid membership cannot be revoked by an administrator');
+  end if;
+  update public.user_memberships set status='cancelled',updated_at=now()
+   where user_id=p_target_id and status='active';
+  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table)
+  values(v_uid,'revoke_membership',p_target_id,'user_memberships');
+  return jsonb_build_object('ok',true);
+end;
+$function$;
+
 create or replace function public.admin_list_users(
   p_search text default null,
   p_role_filter text default null,
@@ -198,6 +222,8 @@ revoke all on function public.admin_list_staff_permissions() from public,anon;
 grant execute on function public.admin_list_staff_permissions() to authenticated;
 revoke all on function public.admin_grant_membership(uuid,text) from public,anon;
 grant execute on function public.admin_grant_membership(uuid,text) to authenticated;
+revoke all on function public.admin_revoke_membership(uuid) from public,anon;
+grant execute on function public.admin_revoke_membership(uuid) to authenticated;
 revoke all on function public.admin_list_users(text,text,boolean,integer,integer) from public,anon;
 grant execute on function public.admin_list_users(text,text,boolean,integer,integer) to authenticated;
 
