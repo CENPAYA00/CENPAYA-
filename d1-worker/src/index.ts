@@ -9,7 +9,7 @@ import { handleCommunityRoutes } from "./community.js";
 import { handleSocialRoutes } from "./social.js";
 import { handleMediaRoutes } from "./media.js";
 import { handleSearchRoute } from "./search.js";
-import { handleVideoRoutes } from "./video.js";
+import { handleVideoRoutes, processVideoQueue } from "./video.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -66,7 +66,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(marketplaceResponse)return marketplaceResponse;
   return fail("Route not found",404);
 }
-export default { async fetch(request:Request,env:Env):Promise<Response>{
+export default { async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{ ctx.waitUntil(processVideoQueue(env)); }, async fetch(request:Request,env:Env):Promise<Response>{
   try{return withCors(await handle(request,env),request,env);}
   catch(error){console.error("D1 Worker request failed",error instanceof Error?error.message:"unknown");return withCors(fail("Internal server error",500),request,env);}
 }};

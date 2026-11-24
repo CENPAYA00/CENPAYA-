@@ -39,3 +39,6 @@ database_id = "68b307af-935e-45ca-933f-2e4cf6db8ee2"
 
 # Bind VIDEO_PROCESSOR to the separately deployed FFmpeg container service.
 # Set VIDEO_PROCESSOR_TOKEN as a Worker secret; B2/Tigris credentials stay in processor secrets.
+
+[triggers]
+crons = ["* * * * *"]

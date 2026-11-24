@@ -116,6 +116,14 @@ export default function CreatePost() {
         if (!put.ok) throw new Error('Video upload failed');
         uploadedVideoId = intent.data.video_id;
         await d1Request('/api/videos/' + encodeURIComponent(uploadedVideoId) + '/complete', { method: 'POST' });
+        let ready = false;
+        for (let attempt = 0; attempt < 180; attempt++) {
+          await new Promise(resolve => window.setTimeout(resolve, 5000));
+          const status = await d1Request<{ data: { status: string } }>('/api/videos/' + encodeURIComponent(uploadedVideoId) + '/status');
+          if (status.data.status === 'ready') { ready = true; break; }
+          if (status.data.status === 'failed') throw new Error('Video processing failed. Your original upload is retained.');
+        }
+        if (!ready) throw new Error('Video is still processing. Return to Reels later; do not upload it again.');
         await d1Request('/api/videos/publish', { method: 'POST', body: JSON.stringify({ video_id: uploadedVideoId, content: content.trim() }) });
         setCached('home_posts', null);
         navigate('/reels');
