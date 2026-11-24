@@ -60,7 +60,7 @@ export async function handleAdminRoutes(
     } catch { return fail("Staff tasks are unavailable. Apply D1 migration 0064 first.", 503); }
   }
 
-  const staffTask = path.match(/^\\/api\\/staff\\/tasks\\/([0-9a-f-]{36})$/i);
+  const staffTask = path.match(/^\/api\/staff\/tasks\/([0-9a-f-]{36})$/i);
   if (staffTask && method === "PATCH") {
     if (!user) return fail("Staff Member access required", 403);
     const workspace = await env.DB.prepare("SELECT 1 AS active FROM staff_workspace_members WHERE user_id=? AND is_active=1 AND workspace_role='staff_member'").bind(user.id).first();
