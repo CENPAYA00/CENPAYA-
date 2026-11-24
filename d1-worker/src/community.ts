@@ -25,12 +25,30 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if (!user) return fail("Unauthorized", 401);
     if (!["owner", "super_admin"].includes(user.role)) return fail("Forbidden", 403);
     const rows = await env.DB.prepare("SELECT key,enabled FROM feature_flags WHERE key IN ('voice_calls','video_posts','ai_assistant') ORDER BY key").all<{ key: string; enabled: number }>();
-    return json({ success: true, data: rows.results.map(row => ({
-      id: row.key, feature_key: row.key,
-      display_name: featureLabels[row.key]?.display_name || row.key,
-      description: featureLabels[row.key]?.description || "",
-      is_enabled_globally: !!row.enabled,
-    })) });
+    const readiness: Record<string, { ready: boolean; reason: string | null }> = {
+      voice_calls: { ready: true, reason: null },
+      video_posts: {
+        ready: !!env.MEDIA_BUCKET && typeof env.MEDIA_URL_SIGNING_SECRET === "string" && env.MEDIA_URL_SIGNING_SECRET.length >= 32,
+        reason: !env.MEDIA_BUCKET ? "Video storage is not connected yet." :
+          !(typeof env.MEDIA_URL_SIGNING_SECRET === "string" && env.MEDIA_URL_SIGNING_SECRET.length >= 32)
+            ? "The media URL signing secret is not configured." : null,
+      },
+      ai_assistant: {
+        ready: !!env.CENPAYA_API,
+        reason: env.CENPAYA_API ? null : "The Cenpaya API service binding is not configured yet.",
+      },
+    };
+    return json({ success: true, data: rows.results.map(row => {
+      const status = readiness[row.key] || { ready: false, reason: "Feature readiness is unknown." };
+      return {
+        id: row.key, feature_key: row.key,
+        display_name: featureLabels[row.key]?.display_name || row.key,
+        description: featureLabels[row.key]?.description || "",
+        ready: status.ready,
+        blocked_reason: status.reason,
+        is_enabled_globally: !!row.enabled && status.ready,
+      };
+    }) });
   }
   const featureToggle = path.match(/^\/api\/admin\/features\/([a-z_]+)$/);
   if (featureToggle && method === "PATCH") {
@@ -40,9 +58,13 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if (!Object.prototype.hasOwnProperty.call(featureLabels, key)) return fail("Unknown feature flag", 404);
     const b = await body(request);
     if (!b || Object.keys(b).length !== 1 || typeof b.is_enabled_globally !== "boolean") return fail("Invalid feature flag value");
-    // Video publishing/playback and the AI assistant are not implemented end-to-end yet.
-    // Keep them disabled server-side even if an admin client attempts to enable them.
-    if (b.is_enabled_globally && key !== "voice_calls") return fail("This feature is not ready to enable yet", 409);
+    if (b.is_enabled_globally && key === "video_posts" &&
+      (!env.MEDIA_BUCKET || typeof env.MEDIA_URL_SIGNING_SECRET !== "string" || env.MEDIA_URL_SIGNING_SECRET.length < 32)) {
+      return fail("Video storage is not configured. Connect the private media bucket and signing secret first.", 409);
+    }
+    if (b.is_enabled_globally && key === "ai_assistant" && !env.CENPAYA_API) {
+      return fail("The Cenpaya API service binding is not configured yet.", 409);
+    }
     const result = await env.DB.prepare("UPDATE feature_flags SET enabled=? WHERE key=?").bind(b.is_enabled_globally ? 1 : 0, key).run();
     if (!result.meta.changes) return fail("Feature flag is not configured", 404);
     return json({ success: true, data: { id: key, is_enabled_globally: b.is_enabled_globally } });

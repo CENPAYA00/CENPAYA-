@@ -15,6 +15,7 @@ export interface Env {
   GOOGLE_REDIRECT_URI?: string;
   FRONTEND_URL?: string;
   AI_SEARCH_NAME?: string;
+  CENPAYA_API?: Fetcher;
   AI?: { autorag: (name: string) => { search: (options: Record<string, unknown>) => Promise<unknown> } };
   CACHE?: KVNamespace;
   UPSTASH_REDIS_REST_URL?: string;
