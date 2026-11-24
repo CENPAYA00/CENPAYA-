@@ -1,8 +1,8 @@
 import React from "react";
 
 const CSS = `
-:root{--cp-bg:#eef2f0;--cp-card:#fff;--cp-ink:#12261c;--cp-mute:#6f8077;--cp-line:#e6ece8;--cp-g:#12935a;--cp-gd:#0a3d2b;--cp-red:#e5484d;
---cp-r:18px;--cp-shadow:0 1px 4px rgba(10,61,43,.08);--cp-nav-h:96px;--cp-nav-z:900;color-scheme:light}
+:root{--cp-bg:#f3f6fc;--cp-card:#fff;--cp-ink:#101c32;--cp-mute:#6c7890;--cp-line:#e3eaf5;--cp-g:#2864f0;--cp-gd:#1748c7;--cp-red:#e5484d;
+--cp-r:18px;--cp-shadow:0 1px 4px rgba(16,28,50,.08);--cp-nav-h:96px;--cp-nav-z:900;color-scheme:light}
 :where(html){-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 :where(body){margin:0;background:var(--cp-bg);color:var(--cp-ink);font:15px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
 
@@ -34,7 +34,7 @@ button:disabled { opacity: .5 !important; cursor: not-allowed !important; }
 /* FORCE ALL INPUTS & TEXTAREAS (Fixes the invisible text bug everywhere) */
 input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), select, textarea {
   width: 100% !important;
-  background: #f8faf9 !important;
+  background: #f7f9fe !important;
   color: var(--cp-ink) !important;
   border: 1.5px solid var(--cp-line) !important;
   border-radius: 14px !important;
@@ -44,15 +44,15 @@ input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),
   -webkit-text-fill-color: var(--cp-ink) !important;
   box-sizing: border-box !important;
 }
-input::placeholder, textarea::placeholder { color: #93a29b !important; -webkit-text-fill-color: #93a29b !important; }
+input::placeholder, textarea::placeholder { color: #8491a8 !important; -webkit-text-fill-color: #8491a8 !important; }\nhtml.dark input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), html.dark select, html.dark textarea { background:#0b1830 !important; color:#edf3ff !important; border-color:#263955 !important; -webkit-text-fill-color:#edf3ff !important; }\nhtml.dark input::placeholder, html.dark textarea::placeholder { color:#9aa9c1 !important; -webkit-text-fill-color:#9aa9c1 !important; }\nhtml.dark label { color:#c3cee0 !important; }
 input:focus, select:focus, textarea:focus {
   border-color: var(--cp-g) !important;
   background: #fff !important;
-  box-shadow: 0 0 0 3px rgba(18,147,90,.15) !important;
+  box-shadow: 0 0 0 3px rgba(40,100,240,.15) !important;
 }
 
 /* FORCE LABELS */
-label { display: block !important; font-weight: 600 !important; color: #3e4f47 !important; margin: 10px 0 6px !important; font-size: 14px !important; }
+label { display: block !important; font-weight: 600 !important; color: #43516a !important; margin: 10px 0 6px !important; font-size: 14px !important; }
 input[type=checkbox], input[type=radio] { accent-color: var(--cp-g) !important; width: 20px !important; height: 20px !important; }
 
 /* FORCE CARDS (Targets ANY div with 'card' or 'rounded' in the class name) */
@@ -60,18 +60,18 @@ div[class*="card" i], div[class*="rounded-xl"], div[class*="rounded-2xl"] {
   background: var(--cp-card) !important; 
   border-radius: var(--cp-r) !important; 
   box-shadow: var(--cp-shadow) !important;
-  border: 1px solid rgba(10,61,43,0.04) !important;
+  border: 1px solid rgba(16,28,50,0.04) !important;
 }
 html.dark div[class*="card" i], html.dark div[class*="rounded-xl"], html.dark div[class*="rounded-2xl"] {
-  background: #17211c !important;
+  background: #111d32 !important;
   border: 1px solid rgba(255,255,255,0.05) !important;
 }
 
 /* FORCE TABLES */
 table { width: 100% !important; border-collapse: collapse !important; background: var(--cp-card) !important; border-radius: var(--cp-r) !important; overflow: hidden !important; }
-th { font-size: 11px !important; letter-spacing: .1em !important; text-transform: uppercase !important; color: var(--cp-mute) !important; text-align: left !important; padding: 10px 14px !important; background: #f8faf9 !important; }
+th { font-size: 11px !important; letter-spacing: .1em !important; text-transform: uppercase !important; color: var(--cp-mute) !important; text-align: left !important; padding: 10px 14px !important; background: #f7f9fe !important; }
 td { padding: 12px 14px !important; border-top: 1px solid var(--cp-line) !important; }
-html.dark th { background: #0d1511 !important; }
+html.dark th { background: #081426 !important; }
 
 /* FORCE DIALOGS & SHEETS */
 [role=dialog] { background: var(--cp-card) !important; color: var(--cp-ink) !important; border-radius: 24px !important; }
@@ -84,7 +84,7 @@ nav[class*="bottom" i], [class*="tabbar" i], [class*="bottom-nav" i], [class*="f
   box-shadow: 0 8px 30px rgba(0,0,0,.12) !important;
   border: 1px solid var(--cp-line) !important;
 }
-html.dark nav[class*="bottom" i] { background: #17211c !important; border-color: #26332c !important; }
+html.dark nav[class*="bottom" i] { background: #111d32 !important; border-color: #263955 !important; }
 
 main, #root>div { scroll-padding-bottom: var(--cp-nav-h) !important; }
 
@@ -98,20 +98,20 @@ main, #root>div { scroll-padding-bottom: var(--cp-nav-h) !important; }
 .cp-btn { display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:8px !important; border:0 !important; border-radius:14px !important; padding:12px 18px !important; font-weight:700 !important; background:var(--cp-g) !important; color:#fff !important; }
 .cp-btn.dark { background:var(--cp-gd) !important; }
 .cp-btn.ghost { background:transparent !important; color:var(--cp-g) !important; border:1.5px solid var(--cp-g) !important; }
-.cp-btn.soft { background:#eaf6ef !important; color:var(--cp-g) !important; }
+.cp-btn.soft { background:#eaf0ff !important; color:var(--cp-g) !important; }
 .cp-btn.danger { background:#fdecec !important; color:#d92d33 !important; }
 .cp-btn.block { width:100% !important; }
 .cp-row { display:flex !important; align-items:center !important; gap:12px !important; padding:13px 14px !important; background:#fff !important; border:0 !important; width:100% !important; text-align:left !important; color:var(--cp-ink) !important; font-weight:600 !important; }
 .cp-row+.cp-row { border-top:1px solid var(--cp-line) !important; }
-html.dark .cp-row { background: #17211c !important; }
-.cp-ico { width:38px !important; height:38px !important; border-radius:12px !important; background:#eaf6ef !important; color:var(--cp-g) !important; display:grid !important; place-items:center !important; flex:none !important; }
+html.dark .cp-row { background: #111d32 !important; }
+.cp-ico { width:38px !important; height:38px !important; border-radius:12px !important; background:#eaf0ff !important; color:var(--cp-g) !important; display:grid !important; place-items:center !important; flex:none !important; }
 .cp-tabs { display:flex !important; gap:8px !important; overflow-x:auto !important; padding:2px 0 10px !important; scrollbar-width:none !important; }
 .cp-tabs::-webkit-scrollbar { display:none !important; }
 .cp-tab { flex:none !important; padding:9px 16px !important; border-radius:20px !important; border:1px solid var(--cp-line) !important; background:#fff !important; color:#44544c !important; font-weight:600 !important; }
 .cp-tab.on { background:var(--cp-gd) !important; color:#fff !important; border-color:var(--cp-gd) !important; }
 .cp-empty { text-align:center !important; color:var(--cp-mute) !important; padding:36px 20px !important; }
 .cp-empty b { display:block !important; color:var(--cp-ink) !important; font-size:16px !important; margin-bottom:4px !important; }
-.cp-badge { display:inline-block !important; background:#eaf6ef !important; color:var(--cp-g) !important; border-radius:12px !important; padding:3px 10px !important; font-size:12px !important; font-weight:700 !important; }
+.cp-badge { display:inline-block !important; background:#eaf0ff !important; color:var(--cp-g) !important; border-radius:12px !important; padding:3px 10px !important; font-size:12px !important; font-weight:700 !important; }
 `;
 
 export const DesignSystem: React.FC<{ children: React.ReactNode }> = ({ children }) => (<><style>{CSS}</style>{children}</>);
@@ -137,7 +137,7 @@ export const Btn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { ton
 export const Field: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { label: string }> = ({ label, ...p }) => (<><label>{label}</label><input {...p} /></>);
 
 export const Row: React.FC<{ icon?: React.ReactNode; label: string; right?: React.ReactNode; onClick?: () => void }> = ({ icon, label, right, onClick }) => (
-  <button className="cp-row" onClick={onClick}>{icon && <span className="cp-ico">{icon}</span>}<span style={{ flex: 1 }}>{label}</span>{right ?? <span style={{ color: "#b4c0ba" }}>›</span>}</button>
+  <button className="cp-row" onClick={onClick}>{icon && <span className="cp-ico">{icon}</span>}<span style={{ flex: 1 }}>{label}</span>{right ?? <span style={{ color: "#aab6ca" }}>›</span>}</button>
 );
 
 export const Tabs: React.FC<{ items: string[]; value: string; onChange: (v: string) => void }> = ({ items, value, onChange }) => (
