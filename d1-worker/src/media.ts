@@ -185,9 +185,10 @@ export async function hydratePosts(env: Env, origin: string, rows: Array<Record<
   const ids = rows.map(row => String(row.id || "")).filter(Boolean);
   if (!ids.length) return rows;
   const placeholders = ids.map(() => "?").join(",");
-  const [mediaResult, tagResult] = await Promise.all([
+  const [mediaResult, tagResult, documentResult] = await Promise.all([
     env.DB.prepare("SELECT id,post_id,media_type,r2_object_key,mime_type,file_size_bytes,width,height,duration_seconds,alt_text,position FROM post_media WHERE post_id IN (" + placeholders + ") ORDER BY post_id,position").bind(...ids).all<Record<string, unknown>>(),
-    env.DB.prepare("SELECT t.post_id,u.id,u.username,u.display_name,u.avatar_url FROM post_tagged_users t JOIN users u ON u.id=t.tagged_user_id WHERE t.post_id IN (" + placeholders + ") AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY t.created_at").bind(...ids).all<Record<string, unknown>>()
+    env.DB.prepare("SELECT t.post_id,u.id,u.username,u.display_name,u.avatar_url FROM post_tagged_users t JOIN users u ON u.id=t.tagged_user_id WHERE t.post_id IN (" + placeholders + ") AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY t.created_at").bind(...ids).all<Record<string, unknown>>(),
+    env.DB.prepare("SELECT id,post_id,original_name,mime_type,file_size_bytes,r2_object_key,created_at FROM post_attachments WHERE post_id IN (" + placeholders + ") ORDER BY post_id,created_at").bind(...ids).all<Record<string, unknown>>()
   ]);
   const mediaByPost = new Map<string, Array<Record<string, unknown>>>();
   for (const item of mediaResult.results) {
@@ -197,6 +198,13 @@ export async function hydratePosts(env: Env, origin: string, rows: Array<Record<
     const values = mediaByPost.get(postId) || [];
     values.push({ ...metadata, url: signedUrl });
     mediaByPost.set(postId, values);
+  }
+  const documentsByPost = new Map<string, Array<Record<string, unknown>>>();
+  for(const item of documentResult.results){
+    const postId=String(item.post_id),key=String(item.r2_object_key),signedUrl=await signMediaUrl(env,origin,key);
+    const values=documentsByPost.get(postId)||[];
+    values.push({id:item.id,name:item.original_name,mime_type:item.mime_type,size:item.file_size_bytes,url:signedUrl});
+    documentsByPost.set(postId,values);
   }
   const tagsByPost = new Map<string, Array<Record<string, unknown>>>();
   for (const tag of tagResult.results) {
@@ -217,6 +225,7 @@ export async function hydratePosts(env: Env, origin: string, rows: Array<Record<
       bg_color: backgroundId,
       media,
       media_urls: urls,
+      documents: documentsByPost.get(String(row.id)) || [],
       image_url: urls.length ? urls.join(",") : (typeof row.image_url === "string" ? row.image_url : ""),
       tagged_users: tagsByPost.get(String(row.id)) || []
     };

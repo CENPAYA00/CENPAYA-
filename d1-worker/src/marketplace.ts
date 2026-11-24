@@ -105,9 +105,11 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const content=str(b.content,10000),visibility=str(b.visibility,20)||"public";
     const mediaInput=Array.isArray(b.media_urls)?b.media_urls:(typeof b.image_url==="string"?b.image_url.split(","):[]);
     const mediaUrls=[...new Set(mediaInput.filter((value):value is string=>typeof value==="string"&&value.length<=2048))].slice(0,10);
-    if(!content&&!mediaUrls.length)return fail("Write something or add a photo");
+    const documentInput=Array.isArray(b.document_urls)?b.document_urls:[];
+    const documentUrls=[...new Set(documentInput.filter((value):value is string=>typeof value==="string"&&value.length<=2048))].slice(0,5);
+    if(!content&&!mediaUrls.length&&!documentUrls.length)return fail("Write something or add an attachment");
     if(!["public","followers","friends","private"].includes(visibility))return fail("Invalid post visibility");
-    if(mediaInput.length>10)return fail("A post can contain up to 10 images");
+    if(mediaInput.length>10||documentInput.length>5)return fail("A post can contain up to 10 images and 5 documents");
     if(mediaUrls.length&&(!env.MEDIA_BUCKET||(env.MEDIA_URL_SIGNING_SECRET||"").length<32))return fail("R2 media storage is not configured",503);
     const id=uuid();
     const backgroundId=str(b.background_id,40)||null;
@@ -126,6 +128,17 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
       if(alreadyUsed)return fail("This post image upload has already been used; upload it again",409);
       mediaStatements.push(env.DB.prepare("INSERT INTO post_media(id,post_id,media_type,r2_object_key,mime_type,file_size_bytes,position) VALUES(?,?,'image',?,?,?,?)")
         .bind(uuid(),id,key,mime,object.size,index));
+    }
+    const documentStatements:D1PreparedStatement[]=[];
+    for(const documentUrl of documentUrls){
+      const key=await extractMediaKey(documentUrl,env,url);
+      if(!key||!key.startsWith(["posts",user.id,""].join("/")))return fail("A social document upload is invalid or expired");
+      const object=await env.MEDIA_BUCKET!.head(key),mime=object?.httpMetadata?.contentType||"application/octet-stream";
+      if(!object||object.customMetadata?.ownerId!==user.id||object.customMetadata?.purpose!=="post_file"||mime.startsWith("image/"))return fail("Uploaded social document not found or not owned by this account",404);
+      const used=await env.DB.prepare("SELECT 1 FROM post_attachments WHERE r2_object_key=?").bind(key).first();
+      if(used)return fail("This document upload has already been used; upload it again",409);
+      documentStatements.push(env.DB.prepare("INSERT INTO post_attachments(id,post_id,owner_id,r2_object_key,original_name,mime_type,file_size_bytes) VALUES(?,?,?,?,?,?,?)")
+        .bind(uuid(),id,user.id,key,object.customMetadata?.originalName||"Document",mime,object.size));
     }
     const rawTagged=Array.isArray(b.tagged_user_ids)?b.tagged_user_ids:[];
     if(rawTagged.length>20)return fail("You can tag up to 20 people in one post");
@@ -156,7 +169,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const postType=mediaUrls.length?"image":"text";
     const postStatement=env.DB.prepare("INSERT INTO posts(id,author_id,content,post_type,visibility,status,published_at,background_id,feeling,feeling_emoji,feeling_kind) VALUES(?,?,?,?,?,'published',"+NOW+",?,?,?,?)")
       .bind(id,user.id,content||null,postType,visibility,backgroundId,feeling,feelingEmoji,feelingKind);
-    await env.DB.batch([postStatement,...mediaStatements,...tagStatements]);
+    await env.DB.batch([postStatement,...mediaStatements,...documentStatements,...tagStatements]);
     return json({success:true,id},201);
   }
   if(path==="/api/market/categories"&&method==="GET"){

@@ -121,9 +121,21 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       WHERE m.thread_id=? ${before?"AND m.created_at < ?":""}
       ORDER BY m.created_at DESC LIMIT ?`).bind(threadId,...(before?[before]:[]),limit).all();
     const ordered=rows.results.reverse();
+    const messageIds=ordered.map((row:any)=>String(row.id));
+    const attachmentsByMessage=new Map<string,Array<Record<string,unknown>>>();
+    if(messageIds.length){
+      const marks=messageIds.map(()=>"?").join(",");
+      const attached=await env.DB.prepare("SELECT id,message_id,original_name,mime_type,file_size_bytes,r2_object_key,created_at FROM chat_message_attachments WHERE message_id IN ("+marks+") ORDER BY created_at").bind(...messageIds).all<Record<string,unknown>>();
+      for(const item of attached.results){
+        const messageId=String(item.message_id),key=String(item.r2_object_key),signedUrl=await signMediaUrl(env,url.origin,key);
+        const list=attachmentsByMessage.get(messageId)||[];
+        list.push({id:item.id,name:item.original_name,mime_type:item.mime_type,size:item.file_size_bytes,url:signedUrl,created_at:item.created_at});
+        attachmentsByMessage.set(messageId,list);
+      }
+    }
     const data=await Promise.all(ordered.map(async(row:any)=>{
       const {media_key,...message}=row;
-      return {...message,media_url:media_key?await signMediaUrl(env,url.origin,String(media_key)):message.media_url};
+      return {...message,media_url:media_key?await signMediaUrl(env,url.origin,String(media_key)):message.media_url,attachments:attachmentsByMessage.get(String(row.id))||[]};
     }));
     return json({success:true,data});
   }
@@ -135,8 +147,18 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const mediaUrl=str(b.media_url,2048);
     const sharedPostId=str(b.shared_post_id,64);
     const duration=b.media_duration_seconds;
-    if(!["text","image","voice_note","shared_post"].includes(messageType))return fail("Invalid message type");
+    const attachmentUrl=str(b.attachment_url,2048),attachmentName=str(b.attachment_name,160);
+    if(!["text","image","voice_note","shared_post","file"].includes(messageType))return fail("Invalid message type");
     if(messageType==="text"&&!message)return fail("Message text is required");
+    if(messageType==="file"&&(!attachmentUrl||!attachmentName))return fail("A file attachment is required");
+    let attachmentKey:string|null=null;
+    if(messageType==="file"){
+      attachmentKey=await extractMediaKey(attachmentUrl,env,url);
+      if(!attachmentKey||!attachmentKey.startsWith(["chat",threadId,user.id,""].join("/")))return fail("A valid, unexpired chat file upload is required");
+      const object=await env.MEDIA_BUCKET?.head(attachmentKey);
+      if(!object||object.customMetadata?.ownerId!==user.id||object.customMetadata?.threadId!==threadId||object.customMetadata?.purpose!=="file")return fail("Uploaded chat file not found or not owned by this account",404);
+      if(object.size>100*1024*1024)return fail("Chat file exceeds the 100 MB limit",413);
+    }
     let mediaKey: string | null = null;
     if(messageType==="image"||messageType==="voice_note"){
       mediaKey = await extractMediaKey(mediaUrl,env,url);
@@ -154,7 +176,12 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     }
     const id=uuid();
     await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,media_key,message_type,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(id,threadId,user.id,message || (messageType==="image" ? "Photo" : messageType==="voice_note" ? "Voice message" : "Shared a post"),mediaKey,messageType,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null).run();
+      .bind(id,threadId,user.id,message || (messageType==="image" ? "Photo" : messageType==="voice_note" ? "Voice message" : messageType==="file" ? attachmentName : "Shared a post"),mediaKey,messageType==="file"?"text":messageType,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null).run();
+    if(messageType==="file"&&attachmentKey){
+      const object=await env.MEDIA_BUCKET!.head(attachmentKey);
+      await env.DB.prepare("INSERT INTO chat_message_attachments(id,message_id,thread_id,sender_id,r2_object_key,original_name,mime_type,file_size_bytes) VALUES(?,?,?,?,?,?,?,?)")
+        .bind(uuid(),id,threadId,user.id,attachmentKey,object?.customMetadata?.originalName||attachmentName,object?.httpMetadata?.contentType||"application/octet-stream",object?.size||0).run();
+    }
     await env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=?").bind(threadId,user.id).run();
     return json({success:true,id},201);
   }
