@@ -9,6 +9,24 @@ const str=(v:unknown,max=500)=>typeof v==="string"?v.trim().slice(0,max):"";
 async function body(request:Request):Promise<Record<string,unknown>|null>{const type=request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();if(type!=="application/json")return null;const length=Number(request.headers.get("Content-Length")||0);if(length>64_000)return null;try{const raw=await request.text();if(new TextEncoder().encode(raw).byteLength>64_000)return null;const value:unknown=JSON.parse(raw);return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:null;}catch{return null;}}
 
 export async function handleInternalRoutes(request:Request,env:Env,url:URL,path:string,method:string):Promise<Response|null>{
+  if(path==="/internal/v1/staff/workspace/sync"&&method==="POST"){
+    const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
+    const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
+    if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
+    const b=await body(request);
+    const userId=str(b?.user_id,64),role=str(b?.role,32);
+    if(!UUID.test(userId)||!["staff_member","user"].includes(role))return fail("Invalid staff workspace sync request",400);
+    try{
+      const exists=await env.DB.prepare("SELECT id FROM users WHERE id=? AND deleted_at IS NULL").bind(userId).first<{id:string}>();
+      if(!exists)return fail("User not found",404);
+      if(role==="staff_member"){
+        await env.DB.prepare("INSERT INTO staff_workspace_members(user_id,workspace_role,is_active,updated_at) VALUES(?,'staff_member',1,"+NOW+") ON CONFLICT(user_id) DO UPDATE SET workspace_role='staff_member',is_active=1,updated_at="+NOW).bind(userId).run();
+      }else{
+        await env.DB.prepare("DELETE FROM staff_workspace_members WHERE user_id=?").bind(userId).run();
+      }
+      return json({success:true});
+    }catch{return fail("Staff workspace projection unavailable. Apply D1 migration 0065 first.",503);}
+  }
   if(path==="/internal/v1/identity/assert"&&method==="POST"){
     const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
     const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
