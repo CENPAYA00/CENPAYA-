@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
+import { d1Request } from '../../lib/d1Api';
 import { MessageSquare, Clock, Search, Filter } from 'lucide-react';
 
 export default function AdminInbox() {
@@ -13,7 +13,7 @@ export default function AdminInbox() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await supabaseWorkerRequest<{ data: any[] }>(`/api/admin/support/tickets?status=${filter}&limit=200`);
+      const result = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=all&status=${filter}`);
       setTickets(result.data || []);
     } catch (error) { console.error('Could not load support inbox', error); setTickets([]); }
     setLoading(false);
