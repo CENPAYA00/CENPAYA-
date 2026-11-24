@@ -4,6 +4,26 @@
 
 begin;
 
+create or replace function public.admin_call_status()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $function$
+begin
+  if not (public.is_owner() or public.is_super_admin()) then
+    return jsonb_build_object('ok',false,'error','admin access required');
+  end if;
+  return jsonb_build_object(
+    'enabled',(select value from public.app_settings where key='calls_enabled'),
+    'host',(select value from public.app_settings where key='call_host_provider'),
+    'max_minutes',(select value from public.app_settings where key='call_max_duration_minutes'),
+    'available_hosts',(select coalesce(jsonb_agg(jsonb_build_object('name',provider_name,'display_name',display_name,'active',is_active) order by display_name),'[]'::jsonb) from public.system_providers where provider_type='VOICE_CALL')
+  );
+end;
+$function$;
+
 -- Owner and Super Admin have equal platform-administration authority.
 -- The Owner identity itself remains protected from role changes.
 create or replace function public.admin_assign_role(p_target_user_id uuid, p_new_role text)
@@ -305,6 +325,18 @@ begin
 end;
 $migration$;
 
+revoke all on function public.admin_call_status() from public,anon;
+grant execute on function public.admin_call_status() to authenticated;
+revoke all on function public.admin_video_status() from public,anon;
+grant execute on function public.admin_video_status() to authenticated;
+revoke all on function public.admin_set_call_host(text) from public,anon;
+grant execute on function public.admin_set_call_host(text) to authenticated;
+revoke all on function public.admin_set_video_host(text) from public,anon;
+grant execute on function public.admin_set_video_host(text) to authenticated;
+revoke all on function public.admin_toggle_calls(boolean,integer) from public,anon;
+grant execute on function public.admin_toggle_calls(boolean,integer) to authenticated;
+revoke all on function public.admin_toggle_video(boolean,integer) from public,anon;
+grant execute on function public.admin_toggle_video(boolean,integer) to authenticated;
 revoke all on function public.admin_has_password() from public,anon;
 grant execute on function public.admin_has_password() to authenticated;
 revoke all on function public.admin_verify_password(text) from public,anon;
