@@ -112,6 +112,81 @@ export async function handleAdminRoutes(
     } catch { return fail("Could not create staff task", 503); }
   }
 
+  if (path === "/api/admin/reports" && method === "GET") {
+    if (!user || !["owner","super_admin"].includes(user.role)) return fail("Admin access required",403);
+    const url = new URL(request.url);
+    const requested = url.searchParams.get("status") || "open";
+    const status = requested === "open" ? "pending" : requested;
+    if (!["all","pending","under_review","resolved","dismissed"].includes(status)) return fail("Invalid report status");
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 100),1),200);
+    const sources = [
+      { table: "post_reports", target_type: "post" },
+      { table: "comment_reports", target_type: "comment" },
+      { table: "marketplace_listing_reports", target_type: "listing" },
+      { table: "user_reports", target_type: "user" },
+      { table: "chat_message_reports", target_type: "message" },
+      { table: "community_reports", target_type: "group" },
+    ];
+    try {
+      const batches = await Promise.all(sources.map(async source => {
+        const where = status === "all" ? "" : "WHERE r.status=?";
+        const query = "SELECT r.id,r.reason,r.details,r.status,r.created_at,u.username AS reporter_username FROM " +
+          source.table + " r LEFT JOIN users u ON u.id=r.reporter_id " + where + " ORDER BY r.created_at DESC LIMIT ?";
+        const result = status === "all"
+          ? await env.DB.prepare(query).bind(limit).all()
+          : await env.DB.prepare(query).bind(status,limit).all();
+        return (result.results || []).map((row: any) => ({
+          ...row,
+          target_type: source.target_type,
+          reason_label: String(row.reason || "other").replace(/_/g," ").replace(/\b\w/g,(c:string)=>c.toUpperCase()),
+          notes: row.details || null,
+          target_preview: null,
+          status: row.status === "pending" ? "open" : row.status,
+          resolution_note: null,
+        }));
+      }));
+      const data = batches.flat().sort((a:any,b:any) => String(b.created_at).localeCompare(String(a.created_at))).slice(0,limit);
+      return json({ success: true, data });
+    } catch {
+      return fail("Reports are unavailable. Check the D1 report schema and apply migrations 0055 and 0066.",503);
+    }
+  }
+
+  const reportAction = path.match(/^\/api\/admin\/reports\/([0-9a-f-]{36})$/i);
+  if (reportAction && method === "PATCH") {
+    if (!user || !["owner","super_admin"].includes(user.role)) return fail("Admin access required",403);
+    const contentType = request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+    if (contentType !== "application/json") return fail("JSON body required",415);
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    const allowed = ["under_review","resolved","dismissed"];
+    const decision = typeof body?.decision === "string" ? body.decision : "";
+    const note = typeof body?.note === "string" ? body.note.trim() : null;
+    if (!body || Object.keys(body).some(key => !["decision","note"].includes(key)) ||
+        !allowed.includes(decision) || (body.note !== undefined && body.note !== null && (typeof body.note !== "string" || body.note.length > 2000))) {
+      return fail("Invalid report decision");
+    }
+    const targets = [
+      { table: "post_reports", type: "post" },
+      { table: "comment_reports", type: "comment" },
+      { table: "marketplace_listing_reports", type: "listing" },
+      { table: "user_reports", type: "user" },
+      { table: "chat_message_reports", type: "message" },
+      { table: "community_reports", type: "group" },
+    ];
+    try {
+      const results = await env.DB.batch(targets.map(target =>
+        env.DB.prepare("UPDATE " + target.table + " SET status=? WHERE id=?").bind(decision,reportAction[1])
+      ));
+      const changedIndex = results.findIndex(result => Number(result.meta.changes || 0) > 0);
+      if (changedIndex < 0) return fail("Report not found",404);
+      await env.DB.prepare("INSERT INTO admin_report_reviews(id,report_id,target_type,reviewer_user_id,decision,note) VALUES(?,?,?,?,?,?)")
+        .bind(uuid(),reportAction[1],targets[changedIndex].type,user.id,decision,note).run();
+      return json({ success: true });
+    } catch {
+      return fail("Could not save report decision. Apply D1 migration 0066 first.",503);
+    }
+  }
+
   if (path === "/api/admin/features" && method === "GET") {
     if (!user || !["owner", "super_admin"].includes(user.role)) return fail("Admin access required", 403);
     try {
