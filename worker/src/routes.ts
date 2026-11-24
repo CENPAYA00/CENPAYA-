@@ -51,6 +51,22 @@ const ADMIN_RPC_SCHEMAS: Record<string, AdminRpcSchema> = {
     (a) => isUuid(a.p_target_user_id) && isText(a.p_reason,1000,5), false),
   admin_grant_permission: defineRpc(["p_target_user_id","p_permission_key"], [],
     (a) => isUuid(a.p_target_user_id) && isText(a.p_permission_key,100), false),
+  admin_invite_staff: defineRpc(["p_email","p_role","p_permissions"], [],
+    (a) => isText(a.p_email,254) && /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(String(a.p_email)) &&
+      ["support_agent","staff_member"].includes(String(a.p_role)) &&
+      Array.isArray(a.p_permissions) && a.p_permissions.length <= 10 &&
+      a.p_permissions.every((p) => typeof p === "string" &&
+        (a.p_role === "support_agent"
+          ? ["can_resolve_disputes","can_manage_tickets","can_review_reports"].includes(p)
+          : ["can_manage_listings","can_review_reports","can_review_kyc"].includes(p)))),
+  admin_has_password: defineRpc([], [], noArgs),
+  admin_verify_password: defineRpc(["p_password"], [], (a) => isText(a.p_password,256,1), false),
+  admin_set_password: defineRpc(["p_new_password"], ["p_current_password"],
+    (a) => isText(a.p_new_password,256,8) &&
+      (a.p_current_password === undefined || a.p_current_password === null || isText(a.p_current_password,256,1)), false),
+  admin_list_staff_permissions: defineRpc([], [], noArgs),
+  admin_revoke_permission: defineRpc(["p_target_user_id","p_permission_key"], [],
+    (a) => isUuid(a.p_target_user_id) && isText(a.p_permission_key,100), false),
   admin_list_invitations: defineRpc([], [], noArgs),
   admin_list_ledger: defineRpc(["p_limit","p_offset","p_flow"], [],
     (a) => integerIn(a.p_limit,1,MAX_PAGE_SIZE) && integerIn(a.p_offset,0,100_000) &&
