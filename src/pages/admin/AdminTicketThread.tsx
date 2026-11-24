@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
+import { d1Request } from '../../lib/d1Api';
 import { ArrowLeft, Send, Check, XCircle, RotateCcw } from 'lucide-react';
 
 export default function AdminTicketThread() {
@@ -16,10 +16,9 @@ export default function AdminTicketThread() {
   const load = async () => {
     if (!id) return;
     try {
-      const result = await supabaseWorkerRequest<{ data: { ticket: any; messages: any[] } }>(`/api/admin/support/tickets/${encodeURIComponent(id)}`);
+      const result = await d1Request<{ data: { ticket: any; messages: any[] } }>(`/api/staff/tickets/${encodeURIComponent(id)}`);
       setTicket(result.data?.ticket || null);
       setMessages(result.data?.messages || []);
-      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
     } catch (error) { console.warn('Could not load support ticket', error); }
     finally { setLoading(false); }
   };
@@ -36,7 +35,7 @@ export default function AdminTicketThread() {
     if (!input.trim() || !id) return;
     setSending(true);
     try {
-      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id)}/messages`, {
+      await d1Request(`/api/staff/tickets/${encodeURIComponent(id)}/messages`, {
         method: 'POST', body: JSON.stringify({ body: input.trim() }),
       });
       setInput('');
@@ -47,7 +46,7 @@ export default function AdminTicketThread() {
 
   const setStatus = async (status: 'open' | 'in_progress' | 'resolved' | 'closed') => {
     try {
-      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id || '')}`, {
+      await d1Request(`/api/staff/tickets/${encodeURIComponent(id || '')}`, {
         method: 'PATCH', body: JSON.stringify({ status }),
       });
       load();
@@ -95,7 +94,7 @@ export default function AdminTicketThread() {
 
       <main className="flex-1 overflow-y-auto p-3 pb-24">
         {messages.map(m => {
-          const isStaff = m.sender_role === 'staff';
+          const isStaff = m.sender_type === 'support';
           return (
             <div key={m.id} className={`mb-2 flex ${isStaff ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-[12px] ${
