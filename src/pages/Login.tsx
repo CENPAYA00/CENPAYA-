@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { d1Login } from '../lib/d1Api';
+import { d1Login, d1Request } from '../lib/d1Api';
 import { useNavigate, Link } from 'react-router-dom';
 
 export default function Login() {
@@ -18,8 +18,16 @@ export default function Login() {
       const { user } = await d1Login(email.trim(), password);
       if (user.role === 'owner' || user.role === 'super_admin') navigate('/admin');
       else if (user.role === 'support_agent' || user.role === 'staff_member') navigate('/staff');
-      else if (!user.onboarding_completed) navigate('/onboarding');
-      else navigate('/home');
+      else {
+        let staffWorkspace = false;
+        try {
+          const workspace = await d1Request<{ data: { role: string } }>('/api/staff/profile');
+          staffWorkspace = workspace.data?.role === 'staff_member';
+        } catch { /* Ordinary members do not have a staff workspace. */ }
+        if (staffWorkspace) navigate('/staff');
+        else if (!user.onboarding_completed) navigate('/onboarding');
+        else navigate('/home');
+      }
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : 'Unable to log in.');
     } finally { setLoading(false); }
