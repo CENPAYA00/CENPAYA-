@@ -102,13 +102,13 @@ Marketplace product checkout is wallet-only. Mobile Money marketplace checkout r
 - adds user-scoped top-up intent/status functions;
 - adds protected provider-reference, settlement, and withdrawal-finalization functions. They use the existing `authenticated` role plus the signed private `app_metadata.cenpaya_payment_worker` claim; no custom Postgres role is created.
 
-Migrations 0001, 0002, 0003, and 0004 are committed. Migration 0004 (`staff_member_role_and_invitation_sync`) has been applied to the connected live Supabase database. It adds the distinct Staff Member role, validates role-scoped invitation permissions, synchronizes role changes to the D1 identity service, and makes invitation acceptance idempotent. It does not create users or move existing wallet balances.
+Migrations 0001–0005 are committed. Migration 0004 (`staff_member_role_and_invitation_sync`) and migration 0005 (`reconcile_staff_admin_permissions`) have been applied to the connected live Supabase database. Migration 0005 removes stale role-specific grants during role changes and prevents an already-used invitation from restoring a role after it has been revoked. It adds the distinct Staff Member role, validates role-scoped invitation permissions, synchronizes role changes to the D1 identity service, and makes invitation acceptance idempotent. It does not create users or move existing wallet balances.
 
 ## Features intentionally not hosted here
 
 The current Supabase database does not contain the support-ticket, social-report, social-post/chat, app-settings, or service-order tables referenced by some old Supabase RPCs/Edge Functions. Those are D1/non-financial responsibilities under the agreed architecture, so this Worker does not expose stale `admin_list_tickets`, `admin_list_reports`, `admin_resolve_report`, feature-toggle, or service-order RPCs.
 
-Support tickets, staff tasks, reports, and feature flags remain D1 responsibilities and are handled by the D1 Worker branch. This Worker only handles staff invitation acceptance and role changes that must be synchronized to D1. It does not expose stale support-ticket, report, or feature-toggle RPCs. Service-order and subscription settlement are also intentionally fail-closed: the live financial database export does not contain the required service-order tables or a verified atomic subscription debit/settlement function.
+Support tickets, staff tasks, reports, and feature flags remain D1 responsibilities and are handled by the D1 Worker branch. This Worker only handles staff invitation acceptance and role changes that must be synchronized to D1. It does not expose stale support-ticket, report, or feature-toggle RPCs. The authenticated routes `/api/v1/staff/invitations/accept` and `/api/v1/admin/users/:id/role` call the private D1 role-sync endpoint after the Supabase permission change succeeds. Service-order and subscription settlement are also intentionally fail-closed: the live financial database export does not contain the required service-order tables or a verified atomic subscription debit/settlement function.
 
 ## Local verification
 
