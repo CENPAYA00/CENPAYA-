@@ -1,12 +1,13 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Home, Inbox, Flag, LogOut } from 'lucide-react';
-import { d1Me, d1Logout } from '../lib/d1Api';
+import { d1Me, d1Request, d1Logout } from '../lib/d1Api';
 
 export default function StaffLayout() {
   const navigate = useNavigate();
   const [checking, setChecking] = useState(true);
   const [authorized, setAuthorized] = useState(false);
+  const [workspaceRole, setWorkspaceRole] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -21,13 +22,21 @@ export default function StaffLayout() {
       if (cancelled) return;
       if (!user) { navigate('/'); return; }
 
-      const role = user.role;
-      const allowed = ['support_agent', 'staff_member', 'staff', 'super_admin', 'owner'].includes(role);
+      let role = user.role;
+      let allowed = ['support_agent', 'super_admin', 'owner'].includes(role);
+      if (!allowed) {
+        try {
+          const workspace = await d1Request<{ data: { role: string } }>('/api/staff/profile');
+          role = workspace.data?.role || role;
+          allowed = role === 'staff_member' || role === 'staff';
+        } catch { allowed = false; }
+      }
       if (!allowed) {
         alert(`Access denied. Your role is: ${role || 'unknown'}`);
         navigate('/home');
         return;
       }
+      setWorkspaceRole(role);
       setAuthorized(true);
       setChecking(false);
     };
@@ -40,10 +49,12 @@ export default function StaffLayout() {
     navigate('/');
   };
 
-  const tabs = [
-    { path: '/staff',         icon: <Inbox size={15} />, label: 'Tickets' },
-    { path: '/staff/reports', icon: <Flag size={15} />,  label: 'Reports' },
-  ];
+  const tabs = workspaceRole === 'staff_member'
+    ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'Tasks' }]
+    : [
+        { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
+        { path: '/staff/reports', icon: <Flag size={15} />, label: 'Reports' },
+      ];
 
   if (checking) {
     return (
