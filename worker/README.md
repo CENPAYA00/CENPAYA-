@@ -64,6 +64,8 @@ All routes below, except liveness and DB health, require a valid D1 session and 
 | POST | `/api/v1/admin/escrows/:id/action` | Existing escrow action RPC with typed action/reason validation |
 | POST | `/api/v1/admin/users/:id/ban` or `/unban` | Typed user ban controls |
 | POST | `/api/v1/admin/users/:id/role`, `/permissions`, `/membership`, `/membership/revoke`, or `/moderation` | Typed role, permission, membership and moderation actions |
+| GET | `/api/v1/admin/security/password/status` | Check whether the signed-in Owner/Super Admin has configured a second admin password |
+| POST | `/api/v1/admin/security/password/verify` or `/api/v1/admin/security/password` | Verify or update the second admin password through dedicated typed endpoints; password RPCs are not exposed through the generic RPC gateway |
 | POST | `/api/v1/admin/disputes/:id/resolve` or `/api/v1/admin/kyc/:id/review` | Typed dispute and KYC decisions |
 | POST | `/api/v1/admin/support-agents/:id/remove` | Typed support-agent removal |
 | POST | `/api/v1/admin/platform-gains/withdraw` | Typed platform-gains withdrawal request |
