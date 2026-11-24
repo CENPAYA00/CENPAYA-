@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Lock, DollarSign, ToggleLeft, Users,
   LogOut, FileText, Key, Globe, MessageSquare, CreditCard, Shield, Flag, UserPlus, Home
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Me, d1Logout } from '../lib/d1Api';
 
 export default function AdminLayout() {
@@ -15,6 +15,8 @@ export default function AdminLayout() {
   const [password, setPassword] = useState('');
   const [pwError, setPwError] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [accessError, setAccessError] = useState('');
+  const [adminRole, setAdminRole] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -31,20 +33,25 @@ export default function AdminLayout() {
       if (!user) { navigate('/'); return; }
 
       const role = user.role;
+      setAdminRole(role);
       if (role !== 'owner' && role !== 'super_admin') {
         alert(`Access denied. Your role is: ${role || 'unknown'}`);
         navigate('/home');
         return;
       }
 
-      const { data: pwData } = await supabase.rpc('admin_has_password');
-      if (cancelled) return;
-
-      if (pwData?.has_password) {
-        setNeedsPassword(true);
+      try {
+        const passwordStatus = await supabaseWorkerRequest<{ data: { ok?: boolean; has_password?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_has_password', {
+          method: 'POST', body: JSON.stringify({ args: {} }),
+        });
+        if (cancelled) return;
+        if (passwordStatus.data?.ok === false) throw new Error(passwordStatus.data.error || 'Could not verify admin password status.');
+        if (passwordStatus.data?.has_password) setNeedsPassword(true);
+        else setAuthorized(true);
         setChecking(false);
-      } else {
-        setAuthorized(true);
+      } catch (error: any) {
+        if (cancelled) return;
+        setAccessError(error?.message || 'Could not verify admin security.');
         setChecking(false);
       }
     };
@@ -56,15 +63,18 @@ export default function AdminLayout() {
     setPwError('');
     if (!password.trim()) return setPwError('Enter your admin password.');
     setVerifying(true);
-    const { data, error } = await supabase.rpc('admin_verify_password', { p_password: password.trim() });
-    if (error || !data?.ok) {
-      setPwError(error?.message || data?.error || 'Wrong password.');
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_verify_password', {
+        method: 'POST', body: JSON.stringify({ args: { p_password: password } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Wrong password.');
+      setAuthorized(true);
+      setNeedsPassword(false);
+    } catch (error: any) {
+      setPwError(error?.message || 'Wrong password.');
+    } finally {
       setVerifying(false);
-      return;
     }
-    setAuthorized(true);
-    setNeedsPassword(false);
-    setVerifying(false);
   };
 
   const handleLogout = async () => {
@@ -78,6 +88,18 @@ export default function AdminLayout() {
         <div className="text-center">
           <div className="w-10 h-10 border-2 border-[#12935a] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-[13px] text-[#6f8077]">Verifying access...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (accessError) {
+    return (
+      <div className="min-h-screen bg-[#eef2f0] dark:bg-darkbg flex items-center justify-center px-6">
+        <div className="w-full max-w-sm bg-white dark:bg-darkcard rounded-[16px] p-5 text-center">
+          <p className="text-[14px] font-bold text-navy dark:text-white">Admin security check unavailable</p>
+          <p className="text-[11px] text-red-600 mt-2">{accessError}</p>
+          <button onClick={() => navigate('/home')} className="mt-4 text-[12px] font-bold text-accent">Back to app</button>
         </div>
       </div>
     );
@@ -152,7 +174,7 @@ export default function AdminLayout() {
       <header className="bg-gradient-to-br from-[#12935a] to-[#0a3d2b] text-white px-4 py-3 flex justify-between items-center sticky top-0 z-50 shadow-md">
         <div>
           <h1 className="text-[20px] font-bold tracking-tight">CenPaya</h1>
-          <p className="text-[11px] text-[#6bf0b2] font-bold tracking-[0.14em]">SUPER ADMIN</p>
+          <p className="text-[11px] text-[#6bf0b2] font-bold tracking-[0.14em]">{adminRole === "owner" ? "OWNER CONTROL CENTRE" : "SUPER ADMIN"}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
