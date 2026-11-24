@@ -743,13 +743,53 @@ export async function handleAuthenticatedApi(
     });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
+  if (method === "POST" && path === "/api/v1/staff/invitations/accept") {
+    const body = await readJsonObject(request, 4096);
+    const token = typeof body?.token === "string" ? body.token.trim() : "";
+    if (!body || !onlyKeys(body, ["token"]) || token.length < 16 || token.length > 256) {
+      return failure("invalid_staff_invitation", 400, headers);
+    }
+    const accepted = await rpc(supabase, "accept_staff_invitation", { p_token: token });
+    if (accepted.error) return failure(accepted.error, accepted.status, headers);
+    const payload = accepted.data && typeof accepted.data === "object"
+      ? accepted.data as Record<string, unknown> : {};
+    const role = typeof payload.role === "string" ? payload.role : "";
+    if (!["support_agent","staff_member"].includes(role)) return failure("invalid_staff_role", 409, headers);
+    if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) return failure("staff_workspace_sync_unavailable", 503, headers);
+    try {
+      const sync = await env.D1_IDENTITY.fetch("https://d1-identity.internal/internal/v1/staff/workspace/sync", {
+        method: "POST",
+        headers: { "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET, "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, role }),
+        signal: AbortSignal.timeout(4_000),
+      });
+      if (!sync.ok) return failure("staff_workspace_sync_unavailable", 503, headers);
+    } catch {
+      return failure("staff_workspace_sync_unavailable", 503, headers);
+    }
+    return success({ ok: true, role }, headers);
+  }
+
   const adminRole = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/role$/i);
   if (method === "POST" && adminRole) {
     const body = await readJsonObject(request);
     const role = typeof body?.role === "string" ? body.role : "";
-    if (!body || !onlyKeys(body, ["role"]) || !["user", "support_agent", "super_admin"].includes(role)) return failure("invalid_role_assignment", 400, headers);
+    if (!body || !onlyKeys(body, ["role"]) || !["user", "support_agent", "staff_member", "super_admin"].includes(role)) return failure("invalid_role_assignment", 400, headers);
     const result = await rpc(supabase, "admin_assign_role", { p_target_user_id: adminRole[1], p_new_role: role });
-    return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+    if (result.error) return failure(result.error, result.status, headers);
+    if (["user","support_agent","staff_member"].includes(role)) {
+      if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) return failure("staff_workspace_sync_unavailable", 503, headers);
+      try {
+        const sync = await env.D1_IDENTITY.fetch("https://d1-identity.internal/internal/v1/staff/workspace/sync", {
+          method: "POST",
+          headers: { "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET, "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: adminRole[1], role }),
+          signal: AbortSignal.timeout(4_000),
+        });
+        if (!sync.ok) return failure("staff_workspace_sync_unavailable", 503, headers);
+      } catch { return failure("staff_workspace_sync_unavailable", 503, headers); }
+    }
+    return success(result.data, headers);
   }
   const adminPermission = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/permissions$/i);
   if (method === "POST" && adminPermission) {
