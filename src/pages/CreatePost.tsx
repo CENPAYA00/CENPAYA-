@@ -17,11 +17,13 @@ export default function CreatePost() {
   const navigate = useNavigate();
   const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
   const [user, setUser] = useState<any>(null);
   const [content, setContent] = useState('');
   const [images, setImages] = useState<File[]>([]);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [previews, setPreviews] = useState<string[]>([]);
   const [swatchId, setSwatchId] = useState<string>('default');
   const [taggedUsers, setTaggedUsers] = useState<any[]>([]);
@@ -81,9 +83,9 @@ export default function CreatePost() {
 
   const handlePost = async () => {
     setErrorMsg('');
-    if (!content.trim() && images.length === 0) {
+    if (!content.trim() && images.length === 0 && !videoFile) {
       setSwatchId('default');
-      return setErrorMsg('Write something or add a photo.');
+      return setErrorMsg('Write something or add media.');
     }
     const me = user || await getCachedUser();
     if (!me) return setErrorMsg('You must be logged in.');
@@ -91,6 +93,7 @@ export default function CreatePost() {
     setLoading(true);
     try {
       const urls: string[] = [];
+      let uploadedVideoId: string | null = null;
       for (const img of images) {
         const compressed = await compressImage(img);
         const form = new FormData();
@@ -105,6 +108,19 @@ export default function CreatePost() {
         urls.push(uploaded.url as string);
       }
 
+      if (videoFile) {
+        const intent = await d1Request<{ data: { video_id: string; upload_url: string; headers: Record<string, string> } }>('/api/videos/upload-intent', {
+          method: 'POST', body: JSON.stringify({ filename: videoFile.name, mime_type: videoFile.type, size_bytes: videoFile.size }),
+        });
+        const put = await fetch(intent.data.upload_url, { method: 'PUT', headers: intent.data.headers, body: videoFile });
+        if (!put.ok) throw new Error('Video upload failed');
+        uploadedVideoId = intent.data.video_id;
+        await d1Request('/api/videos/' + encodeURIComponent(uploadedVideoId) + '/complete', { method: 'POST' });
+        await d1Request('/api/videos/publish', { method: 'POST', body: JSON.stringify({ video_id: uploadedVideoId, content: content.trim() }) });
+        setCached('home_posts', null);
+        navigate('/reels');
+        return;
+      }
       const postType = urls.length > 0 ? 'image' : 'text';
       const result = await d1Request<{ id: string }>('/api/posts', {
         method: 'POST',
@@ -235,7 +251,7 @@ export default function CreatePost() {
           </button>
           
           {videoEnabled && (
-            <button onClick={() => alert('Video upload coming soon')} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold text-gray-600 dark:text-gray-300 rounded-lg shrink-0 cursor-pointer">
+            <button onClick={() => videoRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold text-gray-600 dark:text-gray-300 rounded-lg shrink-0 cursor-pointer">
               <Video size={16} /> Video
             </button>
           )}
@@ -257,10 +273,12 @@ export default function CreatePost() {
       </div>
 
       <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e: React.ChangeEvent<HTMLInputElement>) => e.target.files && handleFilePick(e.target.files)} />
+      <input ref={videoRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" className="hidden" onChange={e => { const f=e.target.files?.[0] || null; if (f && f.size > 500*1024*1024) { setErrorMsg('Video must not exceed 500 MB'); return; } setVideoFile(f); setImages([]); setPreviews([]); setSwatchId('default'); }} />
+      {videoFile && <div className="mt-3 rounded-lg bg-gray-100 dark:bg-darkbg p-3 text-xs flex items-center justify-between"><span className="truncate">{videoFile.name} · {(videoFile.size/1048576).toFixed(1)} MB</span><button onClick={() => setVideoFile(null)} className="text-red-500"><X size={14}/></button></div>}
 
       {errorMsg && <div className="bg-red-50 border border-red-200 text-red-600 text-[11px] p-3 rounded-lg mt-3">{errorMsg}</div>}
 
-      <button onClick={handlePost} disabled={loading || (!content.trim() && images.length === 0)} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-xl text-[14px] mt-4 disabled:opacity-50 uppercase tracking-wide cursor-pointer">
+      <button onClick={handlePost} disabled={loading || (!content.trim() && images.length === 0 && !videoFile)} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-xl text-[14px] mt-4 disabled:opacity-50 uppercase tracking-wide cursor-pointer">
         {loading ? t('posting') : t('post')}
       </button>
 
