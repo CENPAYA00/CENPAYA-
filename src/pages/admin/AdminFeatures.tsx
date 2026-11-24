@@ -1,89 +1,107 @@
 import { useEffect, useState } from 'react';
-import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
-import { Phone, Zap } from 'lucide-react';
+import { Bot, Phone, RefreshCw, Video } from 'lucide-react';
+import { d1Request } from '../../lib/d1Api';
+
+type FeatureFlag = {
+  id: string;
+  feature_key: string;
+  display_name: string;
+  description: string;
+  is_enabled_globally: boolean;
+};
+
+const icons: Record<string, typeof Phone> = {
+  voice_calls: Phone,
+  video_posts: Video,
+  ai_assistant: Bot,
+};
 
 export default function AdminFeatures() {
-  const [flags, setFlags] = useState<any[]>([]);
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingVoice, setSavingVoice] = useState(false);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setError('');
     try {
-      const result = await supabaseWorkerRequest<{ data: any[]; voice_calls_enabled: boolean }>('/api/admin/features');
+      const result = await d1Request<{ data: FeatureFlag[] }>('/api/admin/features');
       setFlags(result.data || []);
-      setVoiceEnabled(!!result.voice_calls_enabled);
-    } catch (error) { console.warn('Could not load feature flags', error); setFlags([]); }
-    setLoading(false);
+    } catch (err: any) {
+      setError(err.message || 'Could not load feature controls.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
 
-  const toggleFlag = async (flag: any) => {
+  const toggleFlag = async (flag: FeatureFlag) => {
+    if (saving) return;
+    const next = !flag.is_enabled_globally;
+    setSaving(flag.id);
+    setError('');
     try {
-      await supabaseWorkerRequest(`/api/admin/features/${encodeURIComponent(flag.id)}`, {
-        method: 'PATCH', body: JSON.stringify({ is_enabled_globally: !flag.is_enabled_globally }),
+      await d1Request('/api/admin/features/' + encodeURIComponent(flag.feature_key), {
+        method: 'PATCH',
+        body: JSON.stringify({ is_enabled_globally: next }),
       });
-      setFlags(flags.map(f => f.id === flag.id ? { ...f, is_enabled_globally: !f.is_enabled_globally } : f));
-    } catch (error: any) { alert(error.message || 'Could not update feature'); }
+      setFlags(current => current.map(item => item.id === flag.id
+        ? { ...item, is_enabled_globally: next }
+        : item));
+    } catch (err: any) {
+      setError(err.message || 'Could not update feature.');
+    } finally {
+      setSaving(null);
+    }
   };
 
-  const toggleVoice = async () => {
-    setSavingVoice(true);
-    const next = !voiceEnabled;
-    try {
-      await supabaseWorkerRequest('/api/admin/settings/voice_calls_enabled', {
-        method: 'PATCH', body: JSON.stringify({ value: next ? 'true' : 'false' }),
-      });
-      setVoiceEnabled(next);
-    } catch (error: any) { alert(error.message || 'Could not update voice call setting'); }
-    setSavingVoice(false);
-  };
-
-  if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
+  if (loading) return <div className="p-4 text-center text-xs text-gray-500">Loading feature controls...</div>;
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold text-navy dark:text-white mb-4">⚙️ Feature Flags</h2>
-
-      {/* Voice call toggle */}
-      <div className="bg-white dark:bg-darkcard p-4 rounded-xl shadow-sm mb-4 flex justify-between items-center">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-9 h-9 bg-accent/15 rounded-lg flex items-center justify-center text-accent shrink-0">
-            <Phone size={16} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[12px] font-bold text-navy dark:text-white">Voice calls</p>
-            <p className="text-[10px] text-gray-500">
-              {voiceEnabled ? 'Enabled for all users' : 'Disabled — hidden from all users'}
-            </p>
-          </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-2xl font-bold text-navy dark:text-white">Feature controls</h2>
+          <p className="text-xs text-gray-500 mt-1">Manage availability across the Cenpaya app.</p>
         </div>
-        <button
-          onClick={toggleVoice}
-          disabled={savingVoice}
-          className={`w-12 h-6 rounded-full transition-colors shrink-0 ${voiceEnabled ? 'bg-accent' : 'bg-gray-300 dark:bg-darkline'} disabled:opacity-50`}
-        >
-          <div className={`w-5 h-5 bg-white rounded-full transition-transform ${voiceEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+        <button onClick={() => void load()} disabled={!!saving} aria-label="Refresh feature controls" className="p-2 rounded-xl border border-gray-200 dark:border-darkline text-gray-600 dark:text-gray-300">
+          <RefreshCw size={17} />
         </button>
       </div>
 
-      {/* Existing flags */}
-      {flags.map(f => (
-        <div key={f.id} className="bg-white dark:bg-darkcard p-4 rounded-xl shadow-sm mb-2 flex justify-between items-center">
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-navy dark:text-white text-[12px]">{f.display_name}</p>
-            <p className="text-[10px] text-gray-500">{f.description}</p>
-          </div>
-          <button
-            onClick={() => toggleFlag(f)}
-            className={`w-12 h-6 rounded-full transition-colors shrink-0 ${f.is_enabled_globally ? 'bg-accent' : 'bg-gray-300 dark:bg-darkline'}`}
-          >
-            <div className={`w-5 h-5 bg-white rounded-full transition-transform ${f.is_enabled_globally ? 'translate-x-6' : 'translate-x-0.5'}`} />
-          </button>
-        </div>
-      ))}
+      {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 text-red-700 p-3 text-xs">{error}</div>}
+
+      {flags.map(flag => {
+        const Icon = icons[flag.feature_key] || Phone;
+        const isSaving = saving === flag.id;
+        return (
+          <section key={flag.id} className="bg-white dark:bg-darkcard border border-gray-100 dark:border-darkline p-4 rounded-2xl shadow-sm flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-brand flex items-center justify-center shrink-0">
+              <Icon size={19} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-sm text-navy dark:text-white">{flag.display_name}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5">{flag.description}</p>
+              <p className="text-[10px] mt-1 font-semibold text-gray-500">{flag.is_enabled_globally ? 'Enabled for users' : 'Disabled for users'}</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={flag.is_enabled_globally}
+              aria-label={'Toggle ' + flag.display_name}
+              onClick={() => void toggleFlag(flag)}
+              disabled={!!saving}
+              className={'relative w-12 h-7 rounded-full shrink-0 transition-colors ' + (flag.is_enabled_globally ? 'bg-brand' : 'bg-gray-300 dark:bg-darkline') + (isSaving ? ' opacity-50' : '')}
+            >
+              <span className={'absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ' + (flag.is_enabled_globally ? 'translate-x-6' : 'translate-x-1')} />
+            </button>
+          </section>
+        );
+      })}
+
+      <p className="text-[10px] text-gray-500 px-1">Video and AI controls are initially off. Enabling a switch only activates a feature after its complete user-facing implementation is deployed.</p>
     </div>
   );
-      }
+}
