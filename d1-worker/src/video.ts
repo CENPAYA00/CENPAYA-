@@ -47,7 +47,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
    const requestedKey=url.searchParams.get("key")||String(row.hls_key);
    const prefix=String(row.hls_key).slice(0,String(row.hls_key).lastIndexOf("/")+1);
    if(!requestedKey.startsWith(prefix)||!requestedKey.endsWith(".m3u8"))return fail("Invalid playlist",400);
-   const r=await processor(env,"/v1/playback?key="+encodeURIComponent(requestedKey),undefined,"GET");
+   const r=await processor(env,"/v1/playback?key="+encodeURIComponent(requestedKey)undefined,"GET");
    if(!r||!r.ok)return fail("Video playback is temporarily unavailable",503);
    const playlist=await r.text();
    const rewritten=playlist.replace(/__CENPAYA_PLAYLIST__\/([^\s]+)/g,(_match,encoded)=>url.origin+"/api/videos/"+row.id+"/playlist?key="+encoded);
@@ -101,7 +101,7 @@ export async function processVideoQueue(env:Env):Promise<void>{
   WHERE (j.status='queued' OR (j.status='processing' AND j.updated_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 minutes')))
     AND v.status='processing' ORDER BY j.created_at LIMIT 2`).all<Record<string,unknown>>();
  for(const job of jobs.results){
-  const claimed=await env.DB.prepare("UPDATE video_processing_jobs SET status='processing',attempts=attempts+1,undefined").bind(job.job_id).run();
+  const claimed=await env.DB.prepare("UPDATE video_processing_jobs SET status='processing',attempts=attempts+1 ,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND (status='queued' OR (status='processing' AND updated_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 minutes')))").bind(job.job_id).run();
   if(!claimed.meta.changes)continue;
   try{
    const response=await processor(env,"/v1/process",{video_id:job.video_id,source_key:job.source_key,source_bytes:job.source_bytes,mime_type:job.mime_type});
