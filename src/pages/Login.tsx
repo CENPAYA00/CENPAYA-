@@ -17,7 +17,7 @@ export default function Login() {
     try {
       const { user } = await d1Login(email.trim(), password);
       if (user.role === 'owner' || user.role === 'super_admin') navigate('/admin');
-      else if (user.role === 'support_agent') navigate('/staff');
+      else if (user.role === 'support_agent' || user.role === 'staff_member') navigate('/staff');
       else if (!user.onboarding_completed) navigate('/onboarding');
       else navigate('/home');
     } catch (error) {
