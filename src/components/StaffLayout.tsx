@@ -51,10 +51,12 @@ export default function StaffLayout() {
 
   const tabs = workspaceRole === 'staff_member'
     ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'Tasks' }]
-    : [
-        { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
-        { path: '/staff/reports', icon: <Flag size={15} />, label: 'Reports' },
-      ];
+    : workspaceRole === 'support_agent'
+      ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' }]
+      : [
+          { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
+          { path: '/staff/reports', icon: <Flag size={15} />, label: 'Reports' },
+        ];
 
   if (checking) {
     return (
@@ -71,7 +73,7 @@ export default function StaffLayout() {
       <header className="bg-gradient-to-r from-brand to-brand-dark text-white px-3.5 py-2.5 flex justify-between items-center sticky top-0 z-50 shadow-md">
         <div>
           <h1 className="text-[14px] font-black tracking-tight">CenPaya</h1>
-          <p className="text-[9px] text-accent-light font-bold tracking-widest">STAFF</p>
+          <p className="text-[9px] text-accent-light font-bold tracking-widest">{workspaceRole === 'support_agent' ? 'SUPPORT AGENT' : workspaceRole === 'owner' || workspaceRole === 'super_admin' ? 'ADMIN SUPPORT' : 'STAFF MEMBER'}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
