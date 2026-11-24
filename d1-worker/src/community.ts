@@ -40,6 +40,9 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if (!Object.prototype.hasOwnProperty.call(featureLabels, key)) return fail("Unknown feature flag", 404);
     const b = await body(request);
     if (!b || Object.keys(b).length !== 1 || typeof b.is_enabled_globally !== "boolean") return fail("Invalid feature flag value");
+    // Video publishing/playback and the AI assistant are not implemented end-to-end yet.
+    // Keep them disabled server-side even if an admin client attempts to enable them.
+    if (b.is_enabled_globally && key !== "voice_calls") return fail("This feature is not ready to enable yet", 409);
     const result = await env.DB.prepare("UPDATE feature_flags SET enabled=? WHERE key=?").bind(b.is_enabled_globally ? 1 : 0, key).run();
     if (!result.meta.changes) return fail("Feature flag is not configured", 404);
     return json({ success: true, data: { id: key, is_enabled_globally: b.is_enabled_globally } });
