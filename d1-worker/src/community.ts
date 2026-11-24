@@ -32,7 +32,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       is_enabled_globally: !!row.enabled,
     })) });
   }
-  const featureToggle = path.match(/^\\/api\\/admin\\/features\\/([a-z_]+)$/);
+  const featureToggle = path.match(/^\/api\/admin\/features\/([a-z_]+)$/);
   if (featureToggle && method === "PATCH") {
     if (!user) return fail("Unauthorized", 401);
     if (!["owner", "super_admin"].includes(user.role)) return fail("Forbidden", 403);
