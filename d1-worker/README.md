@@ -8,6 +8,9 @@ Canonical migrations 52–55 reconcile the Worker with the 2026-11-21 export and
 - **54** adds per-member chat themes and disappearing-message settings, typed chat media/shared-post fields and read receipts, support read timestamps, and per-post feed preferences.
 - **55** adds per-field profile-detail visibility and dedicated user, chat-message, and community report tables.
 - **56** adds post background/feeling metadata, tagged-user relationships, and safe notification links; post images use the export's existing `post_media` table.
+- **63** adds per-support-agent ticket read cursors so unread counts and read state are private to each agent.
+- **64** adds individual staff task assignments, status tracking, due dates, and creator/assignee ownership.
+- **65** adds a separate staff-workspace identity projection so Staff Members do not need elevated customer or support-agent roles in the D1 user table.
 - Registration stores gender, date of birth, preferred language, and terms acceptance in existing `users` columns; no separate onboarding table is required.
 
 The export's views (`public_profiles`, `public_marketplace_search`, `stale_unverified_otps`) are present in the snapshot and used by the Worker. Backup tables are archival copies, not live application tables.
