@@ -7,25 +7,39 @@ export default function StaffPanel() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<any>(null);
   const [tickets, setTickets] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [tab, setTab] = useState<'all' | 'mine'>('all');
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [profileRes, ticketsRes] = await Promise.all([
-        d1Request<{ data: any }>('/api/staff/profile'),
-        d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`),
-      ]);
+      const profileRes = await d1Request<{ data: any }>('/api/staff/profile');
       if (!profileRes.data) { navigate('/home'); return; }
       setProfile(profileRes.data);
-      setTickets(ticketsRes.data || []);
+      if (profileRes.data.role === 'staff_member') {
+        const taskRes = await d1Request<{ data: any[] }>('/api/staff/tasks');
+        setTasks(taskRes.data || []);
+        setTickets([]);
+      } else {
+        const ticketsRes = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`);
+        setTickets(ticketsRes.data || []);
+        setTasks([]);
+      }
     } catch (error: any) {
-      console.warn('Could not load staff panel', error);
+      console.warn('Could not load staff workspace', error);
       navigate('/home');
       return;
-    }
-    setLoading(false);
+    } finally { setLoading(false); }
+  };
+
+  const updateTask = async (taskId: string, status: string) => {
+    try {
+      await d1Request(`/api/staff/tasks/${encodeURIComponent(taskId)}`, {
+        method: 'PATCH', body: JSON.stringify({ status }),
+      });
+      await load();
+    } catch (error: any) { alert(error.message || 'Could not update task'); }
   };
 
   useEffect(() => { load(); }, [tab]);
@@ -38,6 +52,44 @@ export default function StaffPanel() {
   };
 
   if (loading) return <div className="p-8 text-center text-[13px] text-[#6f8077]">Loading...</div>;
+
+  if (profile?.role === 'staff_member') {
+    return (
+      <div className="pb-24 max-w-4xl mx-auto pt-4">
+        <div className="bg-white dark:bg-darkcard rounded-[16px] shadow-sm p-4 mb-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6f8077]">Your workspace</p>
+          <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize">Staff Member</p>
+          <p className="text-[11px] text-gray-500 mt-1">Only tasks assigned to your account appear here.</p>
+        </div>
+        {tasks.length === 0 && (
+          <div className="bg-white dark:bg-darkcard p-8 rounded-[16px] text-center shadow-sm">
+            <Check size={30} className="mx-auto text-[#b4c0ba] mb-2" />
+            <p className="text-[14px] font-bold text-[#0a3d2b] dark:text-white">No tasks assigned</p>
+            <p className="text-[11px] text-gray-500 mt-1">Your manager will add work here when it is ready.</p>
+          </div>
+        )}
+        <div className="space-y-3">
+          {tasks.map(task => (
+            <section key={task.id} className="bg-white dark:bg-darkcard rounded-[16px] shadow-sm p-4">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[14px] font-bold text-[#0a3d2b] dark:text-white">{task.title}</p>
+                <span className="text-[9px] font-bold rounded-full px-2 py-1 bg-gray-100 dark:bg-darkline text-gray-600 dark:text-gray-300">{String(task.status).replace('_',' ')}</span>
+              </div>
+              {task.description && <p className="text-[12px] text-gray-600 dark:text-gray-300 mt-2 whitespace-pre-wrap">{task.description}</p>}
+              {task.due_at && <p className="text-[10px] text-gray-500 mt-2">Due {new Date(task.due_at).toLocaleString()}</p>}
+              <div className="flex flex-wrap gap-2 mt-3">
+                {(['todo','in_progress','blocked','completed'] as const).filter(status => status !== task.status).map(status => (
+                  <button key={status} onClick={() => void updateTask(task.id,status)} className="text-[10px] font-bold px-3 py-2 rounded-lg bg-[#e3f7ec] text-[#12935a]">
+                    {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : 'Complete'}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pb-24 max-w-4xl mx-auto pt-4">
