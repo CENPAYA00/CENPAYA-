@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { Check, AlertCircle, Loader, Shield } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 
@@ -25,15 +25,20 @@ export default function StaffAccept() {
   const accept = async () => {
     setStatus('accepting');
     setError('');
-    const { data, error: err } = await supabase.rpc('accept_staff_invitation', { p_token: token });
-    if (err || !data?.ok) {
-      setError(err?.message || data?.error || 'Could not accept invitation.');
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok: boolean; role: string } }>('/api/v1/staff/invitations/accept', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      });
+      const acceptedRole = result.data?.role;
+      if (!acceptedRole) throw new Error('Invitation acceptance returned no role.');
+      setRole(acceptedRole);
+      setStatus('accepted');
+      setTimeout(() => navigate('/staff'), 1600);
+    } catch (err: any) {
+      setError(err?.message || 'Could not accept invitation.');
       setStatus('error');
-      return;
     }
-    setRole(data.role);
-    setStatus('accepted');
-    setTimeout(() => navigate(data.role === 'support_agent' || data.role === 'staff_member' ? '/staff' : '/home'), 1600);
   };
 
   return (
