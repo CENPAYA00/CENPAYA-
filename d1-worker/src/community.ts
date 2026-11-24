@@ -28,10 +28,10 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const readiness: Record<string, { ready: boolean; reason: string | null }> = {
       voice_calls: { ready: true, reason: null },
       video_posts: {
-        ready: !!env.MEDIA_BUCKET && typeof env.MEDIA_URL_SIGNING_SECRET === "string" && env.MEDIA_URL_SIGNING_SECRET.length >= 32,
-        reason: !env.MEDIA_BUCKET ? "Video storage is not connected yet." :
-          !(typeof env.MEDIA_URL_SIGNING_SECRET === "string" && env.MEDIA_URL_SIGNING_SECRET.length >= 32)
-            ? "The media URL signing secret is not configured." : null,
+        ready: !!env.VIDEO_PROCESSOR && typeof env.VIDEO_PROCESSOR_TOKEN === "string" && env.VIDEO_PROCESSOR_TOKEN.length >= 32,
+        reason: !env.VIDEO_PROCESSOR ? "The FFmpeg video processor service binding is not configured." :
+          !(typeof env.VIDEO_PROCESSOR_TOKEN === "string" && env.VIDEO_PROCESSOR_TOKEN.length >= 32)
+            ? "The video processor authentication secret is not configured." : null,
       },
       ai_assistant: {
         ready: !!env.CENPAYA_API,
@@ -59,8 +59,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const b = await body(request);
     if (!b || Object.keys(b).length !== 1 || typeof b.is_enabled_globally !== "boolean") return fail("Invalid feature flag value");
     if (b.is_enabled_globally && key === "video_posts" &&
-      (!env.MEDIA_BUCKET || typeof env.MEDIA_URL_SIGNING_SECRET !== "string" || env.MEDIA_URL_SIGNING_SECRET.length < 32)) {
-      return fail("Video storage is not configured. Connect the private media bucket and signing secret first.", 409);
+      (!env.VIDEO_PROCESSOR || typeof env.VIDEO_PROCESSOR_TOKEN !== "string" || env.VIDEO_PROCESSOR_TOKEN.length < 32)) {
+      return fail("Video processing is not configured. Connect the FFmpeg processor service and authentication secret first.", 409);
     }
     if (b.is_enabled_globally && key === "ai_assistant" && !env.CENPAYA_API) {
       return fail("The Cenpaya API service binding is not configured yet.", 409);
