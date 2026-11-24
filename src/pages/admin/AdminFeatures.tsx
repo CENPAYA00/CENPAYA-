@@ -8,6 +8,8 @@ type FeatureFlag = {
   feature_key: string;
   display_name: string;
   description: string;
+  ready: boolean;
+  blocked_reason: string | null;
   is_enabled_globally: boolean;
 };
 
@@ -203,7 +205,8 @@ export default function AdminFeatures() {
       {flags.map(flag => {
         const Icon = icons[flag.feature_key] || Phone;
         const isSaving = saving === flag.id;
-        const isImplemented = flag.feature_key === "voice_calls";
+        const canEnable = flag.feature_key === "voice_calls" || (flag.feature_key === "video_posts" && flag.ready);
+        const canToggle = canEnable || flag.is_enabled_globally;
         return (
           <section key={flag.id} className="bg-white dark:bg-darkcard border border-gray-100 dark:border-darkline p-4 rounded-2xl shadow-sm flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-brand flex items-center justify-center shrink-0">
@@ -212,7 +215,7 @@ export default function AdminFeatures() {
             <div className="flex-1 min-w-0">
               <p className="font-bold text-sm text-navy dark:text-white">{flag.display_name}</p>
               <p className="text-[11px] text-gray-500 mt-0.5">{flag.description}</p>
-              <p className="text-[10px] mt-1 font-semibold text-gray-500">{!isImplemented ? 'Not implemented — locked off' : flag.is_enabled_globally ? 'Enabled for users' : 'Disabled for users'}</p>
+              <p className="text-[10px] mt-1 font-semibold text-gray-500">{!canEnable && !flag.is_enabled_globally ? (flag.blocked_reason || 'Not implemented — locked off') : flag.is_enabled_globally ? 'Enabled for users' : 'Disabled for users'}</p>
             </div>
             <button
               type="button"
@@ -220,8 +223,8 @@ export default function AdminFeatures() {
               aria-checked={flag.is_enabled_globally}
               aria-label={'Toggle ' + flag.display_name}
               onClick={() => void toggleFlag(flag)}
-              disabled={!!saving || !isImplemented}
-              title={!isImplemented ? 'Not available until implementation is complete' : undefined}
+              disabled={!!saving || !canToggle}
+              title={!canToggle ? (flag.blocked_reason || 'Not available until implementation is complete') : undefined}
               className={'relative w-12 h-7 rounded-full shrink-0 transition-colors ' + (flag.is_enabled_globally ? 'bg-brand' : 'bg-gray-300 dark:bg-darkline') + (isSaving ? ' opacity-50' : '')}
             >
               <span className={'absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-transform ' + (flag.is_enabled_globally ? 'translate-x-6' : 'translate-x-1')} />
@@ -234,7 +237,7 @@ export default function AdminFeatures() {
       {renderAssistance('call')}
       {renderAssistance('video')}
 
-      <p className="text-[10px] text-gray-500 px-1">Video publishing and the AI assistant remain locked until their complete user-facing implementations are deployed. Live voice and video assistance require an active provider and credentials.</p>
+      <p className="text-[10px] text-gray-500 px-1">Video publishing can be enabled once its processor is configured. AI assistance remains locked until the member-facing assistant is implemented. Live voice and video assistance require an active provider and credentials.</p>
     </div>
   );
 }
