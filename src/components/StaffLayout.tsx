@@ -51,10 +51,12 @@ export default function StaffLayout() {
 
   const tabs = workspaceRole === 'staff_member'
     ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'Tasks' }]
-    : [
-        { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
-        { path: '/staff/reports', icon: <Flag size={15} />, label: 'Reports' },
-      ];
+    : workspaceRole === 'support_agent'
+      ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' }]
+      : [
+          { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
+          { path: '/staff/reports', icon: <Flag size={15} />, label: 'Reports' },
+        ];
 
   if (checking) {
     return (
