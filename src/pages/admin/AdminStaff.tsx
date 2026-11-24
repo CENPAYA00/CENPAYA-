@@ -4,12 +4,9 @@ import { UserPlus, X, Mail, Shield, Copy, Check, Ban, Clock } from 'lucide-react
 
 const PERMISSIONS = [
   { key: 'can_resolve_disputes',  label: 'Resolve Disputes' },
-  { key: 'can_ban_users',         label: 'Ban Users' },
   { key: 'can_review_kyc',        label: 'Review KYC' },
-  { key: 'can_view_finances',     label: 'View Platform Finances' },
   { key: 'can_manage_listings',   label: 'Manage Listings' },
   { key: 'can_manage_tickets',    label: 'Manage Support Tickets' },
-  { key: 'can_review_reports',    label: 'Review Reports' },
   { key: 'can_review_reports',    label: 'Review Reports' },
 ];
 
@@ -209,13 +206,13 @@ function InviteSheet({ onClose, onCreated }: any) {
             </div>
           </div>
 
-          {role === 'support_agent' && (
+          {(role === 'support_agent' || role === 'staff_member') && (
             <div>
               <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 block">
                 Permissions (optional)
               </label>
               <div className="space-y-1.5">
-                {PERMISSIONS.map(p => (
+                {PERMISSIONS.filter(p => role === 'support_agent' ? ['can_resolve_disputes','can_manage_tickets','can_review_reports'].includes(p.key) : ['can_manage_listings','can_review_reports','can_review_kyc'].includes(p.key)).map(p => (
                   <button
                     key={p.key}
                     onClick={() => togglePerm(p.key)}
