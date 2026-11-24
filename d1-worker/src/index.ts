@@ -5,6 +5,7 @@ import { handleAuthRoutes } from "./auth-routes.js";
 import { handleInternalRoutes } from "./internal.js";
 import { handleProfileRoutes } from "./profiles.js";
 import { handleMarketplaceRoutes } from "./marketplace.js";
+import { handleOrderWorkflowRoutes } from "./order-workflows.js";
 import { handleCommunityRoutes } from "./community.js";
 import { handleSocialRoutes } from "./social.js";
 import { handleMediaRoutes } from "./media.js";
@@ -62,6 +63,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(socialResponse)return socialResponse;
   const communityResponse=await handleCommunityRoutes(request,env,{url,path,method,user});
   if(communityResponse)return communityResponse;
+  const orderWorkflowResponse=await handleOrderWorkflowRoutes(request,env,{url,path,method,user});
+  if(orderWorkflowResponse)return orderWorkflowResponse;
   const marketplaceResponse=await handleMarketplaceRoutes(request,env,{url,path,method,user});
   if(marketplaceResponse)return marketplaceResponse;
   return fail("Route not found",404);
