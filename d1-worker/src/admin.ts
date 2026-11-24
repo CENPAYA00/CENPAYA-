@@ -1,4 +1,5 @@
 import type { Env, User } from "./types.js";
+import { uuid } from "./security.js";
 
 type Context = { path: string; method: string; user: User | null };
 type FeatureDefinition = {
@@ -47,6 +48,66 @@ export async function handleAdminRoutes(
   env: Env,
   { path, method, user }: Context,
 ): Promise<Response | null> {
+  if (path === "/api/staff/tasks" && method === "GET") {
+    if (!user || user.role !== "staff_member") return fail("Staff Member access required", 403);
+    try {
+      const rows = await env.DB.prepare(
+        "SELECT id,title,description,status,due_at,created_at,updated_at,completed_at FROM staff_tasks WHERE assigned_to_user_id=? ORDER BY CASE status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'blocked' THEN 2 ELSE 3 END,COALESCE(due_at,'9999-12-31'),updated_at DESC LIMIT 200"
+      ).bind(user.id).all();
+      return json({ success: true, data: rows.results });
+    } catch { return fail("Staff tasks are unavailable. Apply D1 migration 0064 first.", 503); }
+  }
+
+  const staffTask = path.match(/^\\/api\\/staff\\/tasks\\/([0-9a-f-]{36})$/i);
+  if (staffTask && method === "PATCH") {
+    if (!user || user.role !== "staff_member") return fail("Staff Member access required", 403);
+    const contentType = request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+    if (contentType !== "application/json") return fail("JSON body required", 415);
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body || Object.keys(body).length !== 1 || !["todo","in_progress","blocked","completed"].includes(String(body.status))) {
+      return fail("A valid task status is required");
+    }
+    const status = String(body.status);
+    try {
+      const result = await env.DB.prepare(
+        "UPDATE staff_tasks SET status=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),completed_at=CASE WHEN ?='completed' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END WHERE id=? AND assigned_to_user_id=?"
+      ).bind(status,status,staffTask[1],user.id).run();
+      return result.meta.changes ? json({ success: true }) : fail("Task not found in your workspace", 404);
+    } catch { return fail("Could not update task", 503); }
+  }
+
+  if (path === "/api/admin/staff/tasks" && method === "GET") {
+    if (!user || !["owner","super_admin"].includes(user.role)) return fail("Admin access required", 403);
+    try {
+      const rows = await env.DB.prepare(
+        "SELECT t.id,t.title,t.description,t.status,t.due_at,t.created_at,t.updated_at,t.completed_at,t.assigned_to_user_id,u.username AS assignee_username FROM staff_tasks t JOIN users u ON u.id=t.assigned_to_user_id ORDER BY t.updated_at DESC LIMIT 300"
+      ).all();
+      return json({ success: true, data: rows.results });
+    } catch { return fail("Staff tasks are unavailable. Apply D1 migration 0064 first.", 503); }
+  }
+
+  if (path === "/api/admin/staff/tasks" && method === "POST") {
+    if (!user || !["owner","super_admin"].includes(user.role)) return fail("Admin access required", 403);
+    const contentType = request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+    if (contentType !== "application/json") return fail("JSON body required", 415);
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body || Object.keys(body).some(key => !["title","description","assigned_to_user_id","due_at"].includes(key))) return fail("Invalid task payload");
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const description = typeof body.description === "string" ? body.description.trim() : "";
+    const assignee = typeof body.assigned_to_user_id === "string" ? body.assigned_to_user_id : "";
+    const dueAt = body.due_at === null || body.due_at === undefined || body.due_at === "" ? null : body.due_at;
+    if (title.length < 2 || title.length > 160 || description.length > 5000 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assignee)) return fail("Valid title, description and staff member are required");
+    if (dueAt !== null && (typeof dueAt !== "string" || !Number.isFinite(Date.parse(dueAt)))) return fail("Invalid due date");
+    try {
+      const target = await env.DB.prepare("SELECT id FROM users WHERE id=? AND role='staff_member' AND banned=0 AND deleted_at IS NULL").bind(assignee).first<{id:string}>();
+      if (!target) return fail("Assigned account is not an active Staff Member", 404);
+      const id = uuid();
+      await env.DB.prepare("INSERT INTO staff_tasks(id,title,description,assigned_to_user_id,created_by_user_id,due_at) VALUES(?,?,?,?,?,?)")
+        .bind(id,title,description,assignee,user.id,dueAt ? new Date(String(dueAt)).toISOString() : null).run();
+      return json({ success: true, data: { id } }, 201);
+    } catch { return fail("Could not create staff task", 503); }
+  }
+
   if (path === "/api/admin/features" && method === "GET") {
     if (!user || !["owner", "super_admin"].includes(user.role)) return fail("Admin access required", 403);
     try {
