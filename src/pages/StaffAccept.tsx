@@ -33,7 +33,7 @@ export default function StaffAccept() {
     }
     setRole(data.role);
     setStatus('accepted');
-    setTimeout(() => navigate('/admin'), 1600);
+    setTimeout(() => navigate(data.role === 'support_agent' || data.role === 'staff_member' ? '/staff' : '/home'), 1600);
   };
 
   return (
@@ -79,7 +79,7 @@ export default function StaffAccept() {
           <p className="text-[11px] text-gray-500 mt-1 capitalize">
             Your role: {role.replace('_', ' ')}
           </p>
-          <p className="text-[10px] text-gray-400 mt-1">Redirecting to admin...</p>
+          <p className="text-[10px] text-gray-400 mt-1">Redirecting to your workspace...</p>
         </>
       )}
 
