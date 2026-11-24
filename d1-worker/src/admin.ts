@@ -174,13 +174,17 @@ export async function handleAdminRoutes(
       { table: "community_reports", type: "group" },
     ];
     try {
-      const results = await env.DB.batch(targets.map(target =>
-        env.DB.prepare("UPDATE " + target.table + " SET status=? WHERE id=?").bind(decision,reportAction[1])
-      ));
-      const changedIndex = results.findIndex(result => Number(result.meta.changes || 0) > 0);
-      if (changedIndex < 0) return fail("Report not found",404);
-      await env.DB.prepare("INSERT INTO admin_report_reviews(id,report_id,target_type,reviewer_user_id,decision,note) VALUES(?,?,?,?,?,?)")
-        .bind(uuid(),reportAction[1],targets[changedIndex].type,user.id,decision,note).run();
+      let matched: { table: string; type: string } | null = null;
+      for (const target of targets) {
+        const found = await env.DB.prepare("SELECT id FROM " + target.table + " WHERE id=?").bind(reportAction[1]).first();
+        if (found) { matched = target; break; }
+      }
+      if (!matched) return fail("Report not found",404);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE " + matched.table + " SET status=? WHERE id=?").bind(decision,reportAction[1]),
+        env.DB.prepare("INSERT INTO admin_report_reviews(id,report_id,target_type,reviewer_user_id,decision,note) VALUES(?,?,?,?,?,?)")
+          .bind(uuid(),reportAction[1],matched.type,user.id,decision,note),
+      ]);
       return json({ success: true });
     } catch {
       return fail("Could not save report decision. Apply D1 migration 0066 first.",503);
