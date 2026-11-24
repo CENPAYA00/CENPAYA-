@@ -63,6 +63,7 @@ export default function ChatThread() {
   const [disappearing, setDisappearing] = useState<number | null>(null);
   
   const parentRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const theme = resolveTheme(themeKey);
 
@@ -138,6 +139,22 @@ export default function ChatThread() {
         setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
       }
     }
+  };
+
+  const handleSendFiles = async (files: FileList | null) => {
+    if(!files||!userId||!id)return;
+    for(const file of Array.from(files).slice(0,5)){
+      if(file.size<1||file.size>100*1024*1024){alert("Each chat file must be between 1 byte and 100 MB.");continue;}
+      const tempId=`temp-file-${crypto.randomUUID()}`;
+      setMessages(prev=>[...prev,{id:tempId,thread_id:id,sender_id:userId,body:file.name,message_type:"file",attachments:[{name:file.name,mime_type:file.type,size:file.size}],created_at:new Date().toISOString(),status:"sending"}]);
+      setIsAway(false);
+      try{
+        const url=await upload(file,`chat/${id}/files`,file.name.split(".").pop()||"bin");
+        const result=await d1Request<{id:string}>(`/api/chat/threads/${encodeURIComponent(id)}/messages`,{method:"POST",body:JSON.stringify({message_text:"",message_type:"file",attachment_url:url,attachment_name:file.name})});
+        setMessages(prev=>prev.map(m=>m.id===tempId?{id:result.id,thread_id:id,sender_id:userId,body:file.name,message_type:"file",attachments:[{name:file.name,mime_type:file.type,size:file.size,url}],created_at:new Date().toISOString(),status:"sent"}:m));
+      }catch(error:any){setMessages(prev=>prev.map(m=>m.id===tempId?{...m,status:"failed",error:error?.message||"Upload failed"}:m));}
+    }
+    if(fileInputRef.current)fileInputRef.current.value="";
   };
 
   const handleSendVoice = async (blob: Blob, durationMs: number) => {
@@ -278,7 +295,16 @@ export default function ChatThread() {
                       mine ? `${theme.bubbleMine} rounded-br-sm` : `${theme.bubbleTheirs} ${theme.bubbleTheirsDark} rounded-bl-sm shadow-sm`
                     } ${m.message_type === 'shared_post' || m.message_type === 'image' ? 'p-1.5' : 'px-4 py-2.5'}`}
                   >
-                    {m.message_type === 'voice_note' && m.media_url ? (
+                    {m.message_type === 'file' ? (
+                      <div className="min-w-[210px] max-w-[260px] rounded-xl bg-black/5 dark:bg-white/5 p-3">
+                        {(m.attachments||[]).map((file:any,i:number)=><a key={file.id||i} href={file.url||undefined} download={file.name} className="flex items-center gap-2 text-inherit no-underline">
+                          <span className="w-9 h-9 rounded-lg bg-brand/15 text-brand flex items-center justify-center text-[10px] font-bold shrink-0">FILE</span>
+                          <span className="min-w-0 flex-1"><span className="block text-xs font-semibold truncate">{file.name}</span><span className="block text-[10px] opacity-70">{file.size?(Number(file.size)/1048576).toFixed(2)+" MB":"Attachment"}</span></span>
+                          <span className="text-xs underline">Download</span>
+                        </a>)}
+                        {m.status==="failed"&&<span className="text-[10px] text-red-500">{m.error||"Upload failed"}</span>}
+                      </div>
+                    ) : m.message_type === 'voice_note' && m.media_url ? (
                       <VoiceBubble src={m.media_url} duration={m.media_duration_seconds || 0} />
                     ) : m.message_type === 'image' && m.media_url ? (
                       <img src={m.media_url} className="w-48 h-48 object-cover rounded-xl" />
@@ -307,6 +333,11 @@ export default function ChatThread() {
         </button>
       )}
 
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-100 dark:border-darkline bg-white dark:bg-darkcard">
+        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e=>void handleSendFiles(e.target.files)} />
+        <button type="button" onClick={()=>fileInputRef.current?.click()} className="rounded-full px-3 py-2 text-xs font-semibold text-brand border border-brand/30">Attach file</button>
+        <span className="text-[10px] text-gray-500">Documents and supported files · max 100 MB each</span>
+      </div>
       <RichComposer onSendText={handleSendText} onPickImages={handleSendImages} onVoice={handleSendVoice} />
 
       <ChatMenus 

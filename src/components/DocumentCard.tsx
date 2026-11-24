@@ -3,6 +3,8 @@ import { FileText, ExternalLink, File } from 'lucide-react';
 type Props = {
   url: string;
   name?: string;
+  size?: number;
+  mime_type?: string;
 };
 
 function kind(url: string): { label: string; color: string; Icon: typeof FileText } {
@@ -21,6 +23,7 @@ export default function DocumentCard({ url, name }: Props) {
   return (
     <a
       href={url}
+      download={filename}
       target="_blank"
       rel="noreferrer"
       className="flex items-center gap-3 bg-gray-50 dark:bg-darkbg rounded-xl p-3 mb-2 border border-gray-100 dark:border-darkline active:bg-gray-100"
@@ -32,7 +35,7 @@ export default function DocumentCard({ url, name }: Props) {
         <p className="text-[11px] font-bold text-navy dark:text-white truncate">{filename}</p>
         <p className="text-[9px] text-gray-500">{label} document</p>
       </div>
-      <ExternalLink size={14} className="text-gray-400 shrink-0" />
+      <span className="text-[10px] text-brand font-semibold shrink-0">Download</span>
     </a>
   );
 }

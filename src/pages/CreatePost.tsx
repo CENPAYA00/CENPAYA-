@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { getD1ApiUrl, getD1Token, d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { getCachedUser, setCached } from '../lib/cache';
-import { ArrowLeft, Image as ImageIcon, X, Palette, Smile, Video } from 'lucide-react';
+import { ArrowLeft, Image as ImageIcon, X, Palette, Smile, Video, FileText } from 'lucide-react';
 import { compressImage } from '../utils/compressImage';
 import { BACKGROUNDS, getBackground } from '../lib/postBackgrounds';
 import { useI18n } from '../contexts/i18n';
@@ -18,11 +18,13 @@ export default function CreatePost() {
   const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
+  const documentRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
   const [user, setUser] = useState<any>(null);
   const [content, setContent] = useState('');
   const [images, setImages] = useState<File[]>([]);
+  const [documents,setDocuments]=useState<File[]>([]);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [previews, setPreviews] = useState<string[]>([]);
   const [swatchId, setSwatchId] = useState<string>('default');
@@ -83,7 +85,7 @@ export default function CreatePost() {
 
   const handlePost = async () => {
     setErrorMsg('');
-    if (!content.trim() && images.length === 0 && !videoFile) {
+    if (!content.trim() && images.length === 0 && documents.length===0 && !videoFile) {
       setSwatchId('default');
       return setErrorMsg('Write something or add media.');
     }
@@ -106,6 +108,16 @@ export default function CreatePost() {
         const uploaded = await response.json().catch(() => ({}));
         if (!response.ok || !uploaded.url) throw new Error(uploaded.error || 'Image upload failed');
         urls.push(uploaded.url as string);
+      }
+
+      const documentUrls:string[]=[];
+      for(const file of documents){
+        const form=new FormData();form.append("file",file,file.name);form.append("folder","posts");
+        const token=getD1Token();
+        const response=await fetch(getD1ApiUrl("/api/posts/media"),{method:"POST",headers:token?{Authorization:`Bearer ${token}`}:{},body:form});
+        const uploaded=await response.json().catch(()=>({}));
+        if(!response.ok||!uploaded.url)throw new Error(uploaded.error||"Document upload failed");
+        documentUrls.push(uploaded.url as string);
       }
 
       if (videoFile) {
@@ -137,6 +149,7 @@ export default function CreatePost() {
           post_type: postType,
           visibility: 'public',
           media_urls: urls,
+          document_urls: documentUrls,
           image_url: urls.join(','),
           background_id: isColorActive ? bg.id : null,
           feeling: feeling?.option.label || null,
@@ -254,6 +267,7 @@ export default function CreatePost() {
         </div>
 
         <div className="border-t border-gray-100 dark:border-darkline px-3 py-3 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+          <button onClick={() => documentRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold text-gray-600 dark:text-gray-300 rounded-lg shrink-0 cursor-pointer"><FileText size={16}/> Documents</button>
           <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold text-gray-600 dark:text-gray-300 rounded-lg shrink-0 cursor-pointer">
             <ImageIcon size={16} /> {t('add_photos')}
           </button>
@@ -280,13 +294,15 @@ export default function CreatePost() {
         </div>
       </div>
 
+      <input ref={documentRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.rtf,.json,.xml,.zip,.7z,.rar,.gz,.odt,.ods,.odp" multiple className="hidden" onChange={e=>{const selected=Array.from(e.target.files||[]);const valid=selected.filter(f=>f.size>0&&f.size<=100*1024*1024);if(valid.length!==selected.length)setErrorMsg("Each document must be no larger than 100 MB.");setDocuments(prev=>[...prev,...valid].slice(0,5));e.target.value="";}} />
+      {documents.length>0&&<div className="px-3 pb-3 space-y-2">{documents.map((file,index)=><div key={index} className="flex items-center gap-2 text-xs bg-gray-50 dark:bg-darkbg rounded-lg p-2"><FileText size={16}/><span className="flex-1 truncate">{file.name} · {(file.size/1048576).toFixed(1)} MB</span><button type="button" onClick={()=>setDocuments(prev=>prev.filter((_,i)=>i!==index))}><X size={14}/></button></div>)}</div>}
       <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e: React.ChangeEvent<HTMLInputElement>) => e.target.files && handleFilePick(e.target.files)} />
       <input ref={videoRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" className="hidden" onChange={e => { const f=e.target.files?.[0] || null; if (f && f.size > 500*1024*1024) { setErrorMsg('Video must not exceed 500 MB'); return; } setVideoFile(f); setImages([]); setPreviews([]); setSwatchId('default'); }} />
       {videoFile && <div className="mt-3 rounded-lg bg-gray-100 dark:bg-darkbg p-3 text-xs flex items-center justify-between"><span className="truncate">{videoFile.name} · {(videoFile.size/1048576).toFixed(1)} MB</span><button onClick={() => setVideoFile(null)} className="text-red-500"><X size={14}/></button></div>}
 
       {errorMsg && <div className="bg-red-50 border border-red-200 text-red-600 text-[11px] p-3 rounded-lg mt-3">{errorMsg}</div>}
 
-      <button onClick={handlePost} disabled={loading || (!content.trim() && images.length === 0 && !videoFile)} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-xl text-[14px] mt-4 disabled:opacity-50 uppercase tracking-wide cursor-pointer">
+      <button onClick={handlePost} disabled={loading || (!content.trim() && images.length === 0 && documents.length===0 && !videoFile)} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-xl text-[14px] mt-4 disabled:opacity-50 uppercase tracking-wide cursor-pointer">
         {loading ? t('posting') : t('post')}
       </button>
 

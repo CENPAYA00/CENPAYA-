@@ -62,7 +62,7 @@ export default function FeedPostCard({
       ? post.image_url.split(',').map((s: string) => s.trim()).filter(Boolean)
       : [];
 
-  const docs: string[] = Array.isArray(post.documents) ? post.documents : [];
+  const docs: any[] = Array.isArray(post.documents) ? post.documents : [];
   const tags: any[] = Array.isArray(post.tags) ? post.tags : [];
   const authorIsPremium = !!post.author_is_premium;
   const isFollowingAuthor = !!post.is_following_author;
@@ -275,7 +275,7 @@ export default function FeedPostCard({
         {images.length > 0 && <ImageGrid images={images} onOpenImage={() => navigate(`/post/${post.id}`)} />}
         {docs.length > 0 && (
           <div className="px-3.5 pb-2">
-            {docs.map((url, i) => <DocumentCard key={i} url={url} />)}
+            {docs.map((file, i) => <DocumentCard key={file.id||i} url={typeof file==="string"?file:file.url} name={file.name} size={file.size} mime_type={file.mime_type} />)}
           </div>
         )}
         {TagsRow}
