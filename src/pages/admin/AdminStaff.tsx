@@ -10,6 +10,7 @@ const PERMISSIONS = [
   { key: 'can_manage_listings',   label: 'Manage Listings' },
   { key: 'can_manage_tickets',    label: 'Manage Support Tickets' },
   { key: 'can_review_reports',    label: 'Review Reports' },
+  { key: 'can_review_reports',    label: 'Review Reports' },
 ];
 
 export default function AdminStaff() {
@@ -51,7 +52,7 @@ export default function AdminStaff() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-2xl font-bold text-navy dark:text-white">👤 Staff</h2>
-          <p className="text-[11px] text-gray-500">Invite staff by email. They accept and get the assigned role.</p>
+          <p className="text-[11px] text-gray-500">Invite a Support Agent or Staff Member by email. Each gets a separate workspace.</p>
         </div>
         <button
           onClick={() => setShowInvite(true)}
@@ -75,7 +76,7 @@ export default function AdminStaff() {
               <p className="text-[12px] font-bold text-navy dark:text-white truncate">{inv.email}</p>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                  inv.role === 'super_admin' ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-darkline text-gray-600 dark:text-gray-300'
+                  inv.role === 'support_agent' ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-darkline text-gray-600 dark:text-gray-300'
                 }`}>
                   {inv.role}
                 </span>
@@ -137,7 +138,7 @@ export default function AdminStaff() {
 
 function InviteSheet({ onClose, onCreated }: any) {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'support_agent' | 'super_admin'>('support_agent');
+  const [role, setRole] = useState<'support_agent' | 'staff_member'>('support_agent');
   const [permissions, setPermissions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -194,7 +195,7 @@ function InviteSheet({ onClose, onCreated }: any) {
               <Shield size={11} /> Role
             </label>
             <div className="grid grid-cols-2 gap-2">
-              {(['support_agent', 'super_admin'] as const).map(r => (
+              {(['support_agent', 'staff_member'] as const).map(r => (
                 <button
                   key={r}
                   onClick={() => setRole(r)}
@@ -202,7 +203,7 @@ function InviteSheet({ onClose, onCreated }: any) {
                     role === r ? 'border-accent bg-accent/5 text-accent' : 'border-gray-200 dark:border-darkline text-navy dark:text-white'
                   }`}
                 >
-                  {r === 'support_agent' ? 'Support Agent' : 'Super Admin'}
+                  {r === 'support_agent' ? 'Support Agent' : 'Staff Member'}
                 </button>
               ))}
             </div>
