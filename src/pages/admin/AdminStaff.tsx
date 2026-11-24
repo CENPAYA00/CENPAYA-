@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { d1Request } from '../../lib/d1Api';
 import { UserPlus, X, Mail, Shield, Copy, Check, Ban, Clock } from 'lucide-react';
 
@@ -24,18 +24,31 @@ export default function AdminStaff() {
   const [taskDue, setTaskDue] = useState('');
   const [taskError, setTaskError] = useState('');
   const [taskSaving, setTaskSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const load = async () => {
     setLoading(true);
-    const [{ data: invitationData }, { data: memberData }, taskResult] = await Promise.all([
-      supabase.rpc('admin_list_invitations'),
-      supabase.from('users').select('id,username,email').eq('role', 'staff_member').eq('banned', false).order('username'),
-      d1Request<{ data: any[] }>('/api/admin/staff/tasks').catch(() => ({ data: [] })),
-    ]);
-    setInvitations(invitationData?.invitations || []);
-    setStaffMembers(memberData || []);
-    setTasks(taskResult.data || []);
-    setLoading(false);
+    setLoadError('');
+    try {
+      const [invitationResult, usersResult, taskResult] = await Promise.all([
+        supabaseWorkerRequest<{ data: { ok?: boolean; invitations?: any[]; error?: string } }>('/api/v1/admin/rpc/admin_list_invitations', {
+          method: 'POST', body: JSON.stringify({ args: {} }),
+        }),
+        supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/users?limit=200'),
+        d1Request<{ data: any[] }>('/api/admin/staff/tasks').catch(() => ({ data: [] })),
+      ]);
+      if (!invitationResult.data?.ok) throw new Error(invitationResult.data?.error || 'Could not load staff invitations.');
+      setInvitations(invitationResult.data.invitations || []);
+      setStaffMembers((usersResult.data || []).filter((user: any) => user.role === 'staff_member' && !user.banned));
+      setTasks(taskResult.data || []);
+    } catch (error: any) {
+      setLoadError(error?.message || 'Could not load staff administration.');
+      setInvitations([]);
+      setStaffMembers([]);
+      setTasks([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const createTask = async () => {
@@ -70,7 +83,7 @@ export default function AdminStaff() {
   useEffect(() => { load(); }, []);
 
   const copyLink = async (token: string, id: string) => {
-    const url = `https://cenpaya.pages.dev/staff/accept/${token}`;
+    const url = window.location.origin + `/staff/accept/${token}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(id);
@@ -82,8 +95,14 @@ export default function AdminStaff() {
 
   const revoke = async (id: string) => {
     if (!window.confirm('Revoke this invitation?')) return;
-    await supabase.rpc('admin_revoke_invitation', { p_id: id });
-    load();
+    try {
+      await supabaseWorkerRequest('/api/v1/admin/rpc/admin_revoke_invitation', {
+        method: 'POST', body: JSON.stringify({ args: { p_id: id } }),
+      });
+      await load();
+    } catch (error: any) {
+      alert(error?.message || 'Could not revoke invitation.');
+    }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
@@ -102,6 +121,8 @@ export default function AdminStaff() {
           <UserPlus size={12} /> Invite
         </button>
       </div>
+
+      {loadError && <p role="alert" className="text-[11px] text-red-600 bg-red-50 rounded-lg p-3 mb-3">{loadError}</p>}
 
       <section className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-3 mb-4">
         <h3 className="text-[13px] font-bold text-navy dark:text-white mb-2">Staff tasks</h3>
@@ -227,17 +248,23 @@ function InviteSheet({ onClose, onCreated }: any) {
     setErr('');
     if (!email.trim() || !email.includes('@')) return setErr('Enter a valid email.');
     setBusy(true);
-    const { data, error } = await supabase.rpc('admin_invite_staff', {
-      p_email: email.trim().toLowerCase(),
-      p_role: role,
-      p_permissions: permissions,
-    });
-    if (error || !data?.ok) {
-      setErr(error?.message || data?.error || 'Invite failed.');
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; token?: string; error?: string } }>('/api/v1/admin/rpc/admin_invite_staff', {
+        method: 'POST',
+        body: JSON.stringify({ args: {
+          p_email: email.trim().toLowerCase(),
+          p_role: role,
+          p_permissions: permissions,
+        } }),
+      });
+      if (!result.data?.ok || !result.data.token) throw new Error(result.data?.error || 'Invite failed.');
+      const link = window.location.origin + '/staff/accept/' + result.data.token;
+      alert('Invitation created. Share this link:\n' + link);
+    } catch (error: any) {
+      setErr(error?.message || 'Invite failed.');
       setBusy(false);
       return;
     }
-    alert(`Invitation created. Share this link:\nhttps://cenpaya.pages.dev/staff/accept/${data.token}`);
     onCreated();
   };
 
