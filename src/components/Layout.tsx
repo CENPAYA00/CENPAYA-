@@ -47,16 +47,24 @@ export default function Layout() {
       try { ({ user } = await d1Me()); } catch { return; }
       if (!user || !active) return;
       setUserId(user.id);
-      const role = user.role || '';
+      let role = user.role || '';
+      if (role === 'user') {
+        try {
+          const workspace = await d1Request<{ data: { role: string } }>('/api/staff/profile');
+          if (workspace.data?.role === 'staff_member') role = 'staff_member';
+        } catch { /* Not every user has a staff workspace. */ }
+      }
       if (['support_agent', 'staff_member', 'super_admin', 'owner'].includes(role)) {
         setStaffRole(role);
-        const [ticketsRes, reportsRes] = await Promise.all([
-          supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
-          supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
-        ]);
-        const ticketCount = (ticketsRes.data || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
-        const reportCount = (reportsRes.data || []).length;
-        if (active) setStaffBadge(ticketCount + reportCount);
+        if (role !== 'staff_member') {
+          const [ticketsRes, reportsRes] = await Promise.all([
+            supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
+            supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
+          ]);
+          const ticketCount = (ticketsRes.data || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
+          const reportCount = (reportsRes.data || []).length;
+          if (active) setStaffBadge(ticketCount + reportCount);
+        }
       }
       const refreshNotifications = async () => {
         try {
