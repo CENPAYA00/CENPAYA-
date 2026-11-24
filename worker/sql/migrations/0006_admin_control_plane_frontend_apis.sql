@@ -305,6 +305,16 @@ begin
 end;
 $migration$;
 
+revoke all on function public.admin_has_password() from public,anon;
+grant execute on function public.admin_has_password() to authenticated;
+revoke all on function public.admin_verify_password(text) from public,anon;
+grant execute on function public.admin_verify_password(text) to authenticated;
+revoke all on function public.admin_set_password(text,text) from public,anon;
+grant execute on function public.admin_set_password(text,text) to authenticated;
+revoke all on function public.admin_list_invitations() from public,anon;
+grant execute on function public.admin_list_invitations() to authenticated;
+revoke all on function public.admin_revoke_invitation(uuid) from public,anon;
+grant execute on function public.admin_revoke_invitation(uuid) to authenticated;
 revoke all on function public.admin_grant_permission(uuid,text) from public,anon;
 grant execute on function public.admin_grant_permission(uuid,text) to authenticated;
 revoke all on function public.admin_revoke_permission(uuid,text) from public,anon;
