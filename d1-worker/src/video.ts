@@ -42,7 +42,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
    const r=await processor(env,"/v1/playback?key="+encodeURIComponent(requestedKey),undefined,"GET");
    if(!r||!r.ok)return fail("Video playback is temporarily unavailable",503);
    const playlist=await r.text();
-   const rewritten=playlist.replace(/__CENPAYA_PLAYLIST__\/([^\\s]+)/g,(_match,encoded)=>url.origin+"/api/videos/"+row.id+"/playlist?key="+encoded);
+   const rewritten=playlist.replace(/__CENPAYA_PLAYLIST__\/([^\s]+)/g,(_match,encoded)=>url.origin+"/api/videos/"+row.id+"/playlist?key="+encoded);
    return new Response(rewritten,{status:200,headers:{"Content-Type":"application/vnd.apple.mpegurl","Cache-Control":"private, no-store","Access-Control-Allow-Origin":url.origin,"Access-Control-Allow-Headers":"Range"}});
   }
   if(m[2]==="complete"&&method==="POST"){
