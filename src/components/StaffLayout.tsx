@@ -22,7 +22,7 @@ export default function StaffLayout() {
       if (!user) { navigate('/'); return; }
 
       const role = user.role;
-      const allowed = ['support_agent', 'super_admin', 'owner'].includes(role);
+      const allowed = ['support_agent', 'staff_member', 'staff', 'super_admin', 'owner'].includes(role);
       if (!allowed) {
         alert(`Access denied. Your role is: ${role || 'unknown'}`);
         navigate('/home');
