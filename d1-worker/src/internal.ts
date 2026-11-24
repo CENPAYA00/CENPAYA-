@@ -15,14 +15,17 @@ export async function handleInternalRoutes(request:Request,env:Env,url:URL,path:
     if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
     const b=await body(request);
     const userId=str(b?.user_id,64),role=str(b?.role,32);
-    if(!UUID.test(userId)||!["staff_member","user"].includes(role))return fail("Invalid staff workspace sync request",400);
+    if(!UUID.test(userId)||!["staff_member","support_agent","user"].includes(role))return fail("Invalid staff workspace sync request",400);
     try{
       const exists=await env.DB.prepare("SELECT id FROM users WHERE id=? AND deleted_at IS NULL").bind(userId).first<{id:string}>();
       if(!exists)return fail("User not found",404);
       if(role==="staff_member"){
         await env.DB.prepare("INSERT INTO staff_workspace_members(user_id,workspace_role,is_active,updated_at) VALUES(?,'staff_member',1,"+NOW+") ON CONFLICT(user_id) DO UPDATE SET workspace_role='staff_member',is_active=1,updated_at="+NOW).bind(userId).run();
+        await env.DB.prepare("UPDATE users SET role='user',updated_at="+NOW+" WHERE id=? AND role='support_agent'").bind(userId).run();
       }else{
         await env.DB.prepare("DELETE FROM staff_workspace_members WHERE user_id=?").bind(userId).run();
+        if(role==="support_agent") await env.DB.prepare("UPDATE users SET role='support_agent',updated_at="+NOW+" WHERE id=?").bind(userId).run();
+        else await env.DB.prepare("UPDATE users SET role='user',updated_at="+NOW+" WHERE id=? AND role='support_agent'").bind(userId).run();
       }
       return json({success:true});
     }catch{return fail("Staff workspace projection unavailable. Apply D1 migration 0065 first.",503);}
