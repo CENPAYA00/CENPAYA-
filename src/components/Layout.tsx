@@ -88,42 +88,32 @@ export default function Layout() {
       {/* IN-APP TOAST NOTIFICATION */}
       <MessageToast toast={toast} onOpen={(cid) => navigate(`/chat/${cid}`)} onDismiss={dismiss} />
 
-      <header className="bg-transparent px-4 pt-4 pb-2 flex justify-between items-center shrink-0 z-50">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setSidebarOpen(true)} className="text-gray-800 dark:text-gray-200 cursor-pointer">
-            <Menu size={24} />
+      <header className="bg-[#081426] text-white px-4 pt-3 pb-3 flex justify-between items-center shrink-0 z-50 shadow-[0_8px_28px_rgba(8,20,38,0.18)]">
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={() => setSidebarOpen(true)} aria-label="Open navigation" className="text-white/90 hover:text-white p-1 rounded-xl">
+            <Menu size={23} />
           </button>
-          <h1 className="text-[22px] font-bold text-brand tracking-tight">CenPaya</h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-9 h-9 rounded-full flex items-center justify-center bg-gradient-to-br from-[#35d5c4] via-[#477cff] to-[#9c55ef] text-white text-[23px] font-black shadow-[0_4px_14px_rgba(71,124,255,0.35)]">C</span>
+            <div className="min-w-0 leading-tight">
+              <h1 className="text-[20px] font-extrabold tracking-tight text-white">CenPaya</h1>
+              <p className="text-[9px] tracking-[0.12em] uppercase text-blue-100/75">Buy · Sell · Connect · Grow</p>
+            </div>
+          </div>
         </div>
-        
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 shrink-0">
           {staffRole && (
-            <button onClick={goToPanel} className="text-gray-800 dark:text-gray-200 relative cursor-pointer">
-              <Shield size={22} />
-              {staffBadge > 0 && (
-                <span className="absolute -top-1 -right-1 bg-danger text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                  {staffBadge > 9 ? '9+' : staffBadge}
-                </span>
-              )}
+            <button onClick={goToPanel} aria-label="Admin or staff panel" className="text-white/90 relative p-2 rounded-xl hover:bg-white/10">
+              <Shield size={20} />
+              {staffBadge > 0 && <span className="absolute -top-0.5 -right-0.5 bg-rose-500 text-white text-[9px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">{staffBadge > 9 ? '9+' : staffBadge}</span>}
             </button>
           )}
-
-          <button onClick={() => navigate('/services')} className="text-gray-800 dark:text-gray-200 cursor-pointer">
-            <Briefcase size={22} />
+          <button onClick={() => navigate('/services')} aria-label="Services" className="text-white/90 p-2 rounded-xl hover:bg-white/10"><Briefcase size={20} /></button>
+          <button onClick={() => navigate('/notifications')} aria-label="Notifications" className="text-white/90 relative p-2 rounded-xl hover:bg-white/10">
+            <Bell size={20} />
+            {unreadNotifs > 0 && <span className="absolute -top-0.5 -right-0.5 bg-rose-500 text-white text-[9px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">{unreadNotifs > 99 ? '99+' : unreadNotifs}</span>}
           </button>
-          
-          <button onClick={() => navigate('/notifications')} className="text-gray-800 dark:text-gray-200 relative cursor-pointer">
-            <Bell size={22} />
-            {unreadNotifs > 0 && (
-              <span className="absolute -top-1 -right-1 bg-danger text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                {unreadNotifs}
-              </span>
-            )}
-          </button>
-
-          <button onClick={() => navigate('/profile')} className="text-gray-800 dark:text-gray-200 cursor-pointer">
-            <User size={22} />
-          </button>
+          <button onClick={() => navigate('/profile')} aria-label="Profile" className="text-white/90 p-2 rounded-xl hover:bg-white/10"><User size={20} /></button>
         </div>
       </header>
 
@@ -143,16 +133,14 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      <nav className="fixed bottom-4 left-4 right-4 bg-white dark:bg-darkcard border border-gray-100 dark:border-darkline rounded-pill flex justify-around items-center py-2 px-2 z-50 shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+      <nav aria-label="Main navigation" className="fixed bottom-3 left-3 right-3 bg-white/95 dark:bg-[#111d32]/95 backdrop-blur-xl border border-[#e3eaf5] dark:border-[#263955] rounded-[24px] flex justify-around items-center py-2 px-1 z-50 shadow-[0_12px_34px_rgba(8,20,38,0.16)]">
         <NavItem to="/home" icon={<Home size={20} />} label="Home" />
         <NavItem to="/market" icon={<Store size={20} />} label="Market" />
-        
-        <button onClick={() => navigate('/create-post')} className="flex items-center justify-center cursor-pointer">
-          <div className="w-11 h-11 bg-brand-deeper dark:bg-brand rounded-full flex items-center justify-center shadow-glow -mt-1">
-            <Plus size={24} className="text-white" strokeWidth={2.5} />
-          </div>
+        <button onClick={() => navigate('/create-post')} aria-label="Create a post" className="flex items-center justify-center rounded-full p-1 bg-transparent">
+          <span className="w-12 h-12 bg-gradient-to-br from-[#4d83ff] to-[#2459d6] rounded-2xl flex items-center justify-center shadow-[0_6px_16px_rgba(40,100,240,0.35)] -mt-4 ring-4 ring-white dark:ring-[#111d32]">
+            <Plus size={25} className="text-white" strokeWidth={2.5} />
+          </span>
         </button>
-
         <NavItem to="/chat" icon={<MessageCircle size={20} />} label="Chat" badge={unread} />
         <NavItem to="/profile" icon={<User size={20} />} label="Profile" />
       </nav>
@@ -166,7 +154,7 @@ function NavItem({ to, icon, label, badge = 0 }: { to: string; icon: React.React
       to={to}
       className={({ isActive }) =>
         `flex flex-col items-center justify-center w-14 h-12 rounded-lg transition-colors relative ${
-          isActive ? 'text-brand' : 'text-gray-600 dark:text-gray-400'
+          isActive ? 'text-[#2864f0] dark:text-[#79a2ff]' : 'text-[#6c7890] dark:text-[#9aa9c1]'
         }`
       }
     >
