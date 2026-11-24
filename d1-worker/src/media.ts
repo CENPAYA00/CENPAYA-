@@ -73,19 +73,20 @@ export async function resolveMediaUrl(value: unknown, env: Env, origin: string):
   return await signMediaUrl(env, origin, source);
 }
 
-function extensionFor(mime: string): string | null {
-  const extensions: Record<string, string> = {
-    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
-    "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/aac": "aac",
-    "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
-    "application/pdf": "pdf", "text/plain": "txt", "application/msword": "doc",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    "application/vnd.ms-excel": "xls",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-    "application/vnd.ms-powerpoint": "ppt",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx"
-  };
-  return extensions[mime.toLowerCase()] || null;
+const MIME_EXTENSIONS: Record<string, string> = {
+  "image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","image/avif":"avif",
+  "audio/webm":"webm","audio/ogg":"ogg","audio/mp4":"m4a","audio/aac":"aac","audio/mpeg":"mp3","audio/wav":"wav","audio/x-wav":"wav","audio/flac":"flac",
+  "application/pdf":"pdf","text/plain":"txt","text/csv":"csv","text/markdown":"md","text/rtf":"rtf","application/rtf":"rtf",
+  "application/json":"json","application/xml":"xml","text/xml":"xml","application/zip":"zip","application/x-zip-compressed":"zip",
+  "application/x-7z-compressed":"7z","application/vnd.rar":"rar","application/x-rar-compressed":"rar","application/gzip":"gz",
+  "application/msword":"doc","application/vnd.openxmlformats-officedocument.wordprocessingml.document":"docx",
+  "application/vnd.ms-excel":"xls","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":"xlsx",
+  "application/vnd.ms-powerpoint":"ppt","application/vnd.openxmlformats-officedocument.presentationml.presentation":"pptx",
+  "application/vnd.oasis.opendocument.text":"odt","application/vnd.oasis.opendocument.spreadsheet":"ods","application/vnd.oasis.opendocument.presentation":"odp"
+};
+function extensionFor(mime: string): string | null { return MIME_EXTENSIONS[mime.toLowerCase()] || null; }
+function safeFilename(value: string): string {
+  return value.replace(/[\r\n"]/g, "_").replace(/[^a-zA-Z0-9._ -]/g, "_").slice(0, 160) || "download";
 }
 
 async function upload(request: Request, env: Env, user: User, url: URL, kind: "chat" | "market" | "post" | "profile"): Promise<Response> {
@@ -95,7 +96,7 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
     return fail("R2 media storage is not configured for this Worker", 503);
   }
   const contentLength = Number(request.headers.get("Content-Length") || 0);
-  if (Number.isFinite(contentLength) && contentLength > 22 * 1024 * 1024) return fail("Upload exceeds the maximum request size", 413);
+  if (Number.isFinite(contentLength) && contentLength > 100 * 1024 * 1024) return fail("Upload exceeds the 100 MB per-file limit", 413);
   let form: FormData;
   try { form = await request.formData(); } catch { return fail("Valid multipart form data is required"); }
   const file = form.get("file");
@@ -123,34 +124,33 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
   if (typeof folderValue !== "string") return fail("An upload folder is required");
   const folder = folderValue.trim();
   if (kind === "chat") {
-    const match = folder.match(/^chat\/([0-9a-f-]{36})\/(images?|voice)$/i);
+    const match = folder.match(/^chat\/([0-9a-f-]{36})\/(images?|voice|files?|documents?)$/i);
     if (!match) return fail("Invalid chat media folder");
     const threadId = match[1];
-    const purpose = match[2].toLowerCase() === "voice" ? "voice_note" : "image";
+    const folderKind = match[2].toLowerCase();
+    const purpose = folderKind === "voice" ? "voice_note" : folderKind.startsWith("file") || folderKind.startsWith("document") ? "file" : "image";
     const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId, user.id).first();
     if (!member) return fail("Conversation not found", 404);
-    const allowed = purpose === "image"
-      ? mime.startsWith("image/")
-      : mime.startsWith("audio/");
-    if (!allowed) return fail("The file type does not match the chat media folder");
-    const maximum = purpose === "image" ? 10 * 1024 * 1024 : 15 * 1024 * 1024;
-    if (file.size < 1 || file.size > maximum) return fail("Chat media file is too large");
+    const allowed = purpose === "image" ? mime.startsWith("image/") : purpose === "voice_note" ? mime.startsWith("audio/") : !!extension;
+    if (!allowed) return fail("Unsupported chat attachment type");
+    const maximum = purpose === "image" ? 15 * 1024 * 1024 : purpose === "voice_note" ? 25 * 1024 * 1024 : 100 * 1024 * 1024;
+    if (file.size < 1 || file.size > maximum) return fail("Chat attachment exceeds its file-size limit");
     const key = ["chat", threadId, user.id, uuid() + "." + extension].join("/");
     await bucket.put(key, file.stream(), {
       httpMetadata: { contentType: mime },
-      customMetadata: { ownerId: user.id, threadId, purpose }
+      customMetadata: { ownerId: user.id, threadId, purpose, originalName: safeFilename(file.name), mimeType: mime, size: String(file.size) }
     });
     const signedUrl = await signMediaUrl(env, url.origin, key);
     return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
   }
 
   if (kind === "post") {
-    if (folder !== "posts" || !mime.startsWith("image/")) return fail("Only post images are supported by this upload route");
-    if (file.size < 1 || file.size > 10 * 1024 * 1024) return fail("Post image is too large");
+    if (folder !== "posts" || !extension) return fail("Unsupported social attachment type");
+    if (file.size < 1 || file.size > 100 * 1024 * 1024) return fail("Social attachment exceeds the 100 MB limit");
     const key = ["posts", user.id, uuid() + "." + extension].join("/");
     await bucket.put(key, file.stream(), {
       httpMetadata: { contentType: mime },
-      customMetadata: { ownerId: user.id, purpose: "post_image" }
+      customMetadata: { ownerId: user.id, purpose: mime.startsWith("image/") ? "post_image" : "post_file", originalName: safeFilename(file.name), mimeType: mime, size: String(file.size) }
     });
     const signedUrl = await signMediaUrl(env, url.origin, key);
     return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
@@ -159,21 +159,14 @@ async function upload(request: Request, env: Env, user: User, url: URL, kind: "c
   const allowedFolders = new Set(["listings/images", "listings/documents", "services/images", "services/documents"]);
   if (!allowedFolders.has(folder)) return fail("Invalid marketplace media folder");
   const isImage = folder.endsWith("/images");
-  const isAllowed = isImage
-    ? mime.startsWith("image/")
-    : ["application/pdf", "text/plain", "application/msword",
-       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-       "application/vnd.ms-excel",
-       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-       "application/vnd.ms-powerpoint",
-       "application/vnd.openxmlformats-officedocument.presentationml.presentation"].includes(mime);
+  const isAllowed = isImage ? mime.startsWith("image/") : !!extension;
   if (!isAllowed) return fail("The file type does not match the marketplace media folder");
-  const maximum = isImage ? 10 * 1024 * 1024 : 20 * 1024 * 1024;
+  const maximum = isImage ? 15 * 1024 * 1024 : 100 * 1024 * 1024;
   if (file.size < 1 || file.size > maximum) return fail("Marketplace media file is too large");
   const key = ["marketplace", user.id, folder.replace("/", "-"), uuid() + "." + extension].join("/");
   await bucket.put(key, file.stream(), {
     httpMetadata: { contentType: mime },
-    customMetadata: { ownerId: user.id, folder, purpose: isImage ? "listing_image" : "listing_document" }
+    customMetadata: { ownerId: user.id, folder, purpose: isImage ? "listing_image" : "listing_document", originalName: safeFilename(file.name), mimeType: mime, size: String(file.size) }
   });
   const signedUrl = await signMediaUrl(env, url.origin, key);
   return signedUrl ? json({ success: true, url: signedUrl }) : fail("Could not authorize media URL", 503);
@@ -268,7 +261,9 @@ export async function handleMediaRoutes(request: Request, env: Env, context: Rou
     object.writeHttpMetadata(headers);
     headers.set("Cache-Control", "private, max-age=3600");
     headers.set("X-Content-Type-Options", "nosniff");
-    if (key.includes("-documents/")) headers.set("Content-Disposition", "attachment");
+    const objectName = safeFilename(object.customMetadata?.originalName || key.split("/").pop() || "download");
+    headers.set("Content-Disposition", "attachment; filename=\"" + objectName + "\"");
+    headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
     return new Response(object.body, { status: 200, headers });
   }
   return null;
