@@ -214,6 +214,40 @@ begin
 end;
 $function$;
 
+-- Bring legacy platform-control RPCs under the same Owner/Super Admin authority.
+do $migration$
+declare
+  r record;
+  definition text;
+begin
+  for r in
+    select p.oid
+    from pg_proc p
+    where p.pronamespace='public'::regnamespace
+      and p.proname = any(array[
+        'admin_list_providers',
+        'admin_remove_gateway_credentials',
+        'admin_resolve_dispute',
+        'admin_review_kyc',
+        'admin_set_call_host',
+        'admin_set_gateway_credentials',
+        'admin_set_provider_active',
+        'admin_set_video_host',
+        'admin_set_video_posts',
+        'admin_toggle_calls',
+        'admin_toggle_video',
+        'admin_verify_order_delivery',
+        'admin_video_status',
+        'admin_withdraw_platform_gains'
+      ])
+  loop
+    definition := pg_get_functiondef(r.oid);
+    definition := replace(definition, 'public.is_super_admin()', '(public.is_super_admin() or public.is_owner())');
+    execute definition;
+  end loop;
+end;
+$migration$;
+
 revoke all on function public.admin_grant_permission(uuid,text) from public,anon;
 grant execute on function public.admin_grant_permission(uuid,text) to authenticated;
 revoke all on function public.admin_revoke_permission(uuid,text) from public,anon;
