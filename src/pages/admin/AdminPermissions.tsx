@@ -129,7 +129,7 @@ export default function AdminPermissions() {
               <p className="text-[10px] text-gray-500 uppercase tracking-wider">{s.role}</p>
             </div>
 
-            {s.role === 'support_agent' && (
+            {['support_agent','staff_member'].includes(s.role) && (
               <button
                 onClick={() => demoteToUser(s.id)}
                 disabled={promoting === s.id}
