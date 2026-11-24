@@ -33,7 +33,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
   if(m[2]==="playlist"&&method==="GET"){
    if(row.status!=="ready"||!row.hls_key)return fail("Video is still processing",409);
    if(!owner){
-    const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id,row.author_id,user.id,row.author_id).first();
+    const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id,row.author_id,row.author_id,user.id).first();
     if(blocked)return fail("Video not found",404);
    }
    const requestedKey=url.searchParams.get("key")||String(row.hls_key);
@@ -66,12 +66,10 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
   if(!asset||asset.owner_id!==user.id)return fail("Video not found",404);
   if(asset.status!=="ready"||asset.post_id)return fail(asset.status==="processing"?"Video is still processing":"Video is not ready to publish",409);
   const postId=uuid();
-  await env.DB.batch([
-   env.DB.prepare("INSERT INTO posts(id,author_id,content,post_type,visibility,status,published_at) VALUES(?,?,?,'video','public','published',strftime('%Y-%m-%dT%H:%M:%fZ','now'))").bind(postId,user.id,caption),
-   env.DB.prepare("UPDATE video_assets SET post_id=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND owner_id=? AND status='ready' AND post_id IS NULL").bind(postId,videoId,user.id)
-  ]);
-  const check=await env.DB.prepare("SELECT post_id FROM video_assets WHERE id=? AND owner_id=?").bind(videoId,user.id).first<{post_id:string|null}>();
-  if(check?.post_id!==postId)return fail("Could not publish video",409);
+  const created=await env.DB.prepare("INSERT INTO posts(id,author_id,content,post_type,visibility,status,published_at) SELECT ?,?,?, 'video','public','published',strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM video_assets WHERE id=? AND owner_id=? AND status='ready' AND post_id IS NULL").bind(postId,user.id,caption,videoId,user.id).run();
+  if(!created.meta.changes)return fail("Video is no longer available to publish",409);
+  const attached=await env.DB.prepare("UPDATE video_assets SET post_id=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND owner_id=? AND status='ready' AND post_id IS NULL").bind(postId,videoId,user.id).run();
+  if(!attached.meta.changes){await env.DB.prepare("DELETE FROM posts WHERE id=? AND author_id=?").bind(postId,user.id).run();return fail("Could not publish video",409);}
   return json({success:true,data:{post_id:postId,video_id:videoId}},201);
  }
  if(path==="/api/reels"&&method==="GET"){
