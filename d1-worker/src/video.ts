@@ -26,9 +26,14 @@ export async function handleVideoRoutes(request:Request,env:Env,{path,method,use
  if(m[2]==="complete"&&method==="POST"){
   if(row.status!=="awaiting_upload")return fail("Video is already queued",409);
   const r=await processor(env,"/v1/process",{video_id:row.id,source_key:row.source_key,source_bytes:row.source_bytes,mime_type:row.mime_type});
-  if(!r)return fail("Video processor service is not configured",503);if(!r.ok)return fail("Processing could not be queued",502);
-  await env.DB.prepare("UPDATE video_assets SET status='processing',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(row.id).run();
-  return json({success:true,data:{video_id:row.id,status:"processing"}},202);
+  if(!r)return fail("Video processor service is not configured",503);if(!r.ok)return fail("Processing failed; source remains in B2",502);
+  const result=await r.json() as {status?:string;hls_key?:string;duration_seconds?:number;sha256?:string;backup?:string};
+  if(result.status!=="ready"||!result.hls_key||result.backup!=="verified")return fail("Processor did not confirm HLS and verified backup",502);
+  await env.DB.batch([
+   env.DB.prepare("UPDATE video_assets SET status='ready',hls_key=?,duration_seconds=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(result.hls_key,result.duration_seconds||null,row.id),
+   env.DB.prepare("INSERT OR REPLACE INTO video_backup_jobs(id,video_id,object_key,checksum_sha256,status,attempts) VALUES(?,?,?,?,'verified',1)").bind(uuid(),row.id,row.source_key,result.sha256||"")
+  ]);
+  return json({success:true,data:{video_id:row.id,status:"ready",duration_seconds:result.duration_seconds}});
  }
  return fail("Method not allowed",405);
 }
