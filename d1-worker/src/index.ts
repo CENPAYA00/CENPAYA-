@@ -52,7 +52,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
   const user=await auth(request,env);
   const searchResponse=await handleSearchRoute(request,env,user?.id||null);
   if(searchResponse)return searchResponse;
-  const videoResponse=await handleVideoRoutes(request,env,{path,method,user});
+  const videoResponse=await handleVideoRoutes(request,env,{url,path,method,user});
   if(videoResponse)return videoResponse;
   const mediaResponse=await handleMediaRoutes(request,env,{url,path,method,user});
   if(mediaResponse)return mediaResponse;
