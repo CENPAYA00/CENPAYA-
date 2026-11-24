@@ -11,6 +11,11 @@ binding = "DB"
 database_name = "cenpaya-db"
 database_id = "68b307af-935e-45ca-933f-2e4cf6db8ee2"
 
+# Reuse the existing Cenpaya Cloudflare AI Search/AutoRAG capability.
+# Bind it to this Worker as well; Worker bindings are not inherited across Workers.
+[[ai]]
+binding = "AI"
+
 # Configure the following bindings in the D1 Worker's Cloudflare environment.
 # AI: existing Workers AI / AI Search binding used with AI_SEARCH_NAME.
 # CACHE: existing KV namespace; optional and only for rebuildable public cache.
