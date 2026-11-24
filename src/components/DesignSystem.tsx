@@ -3,6 +3,7 @@ import React from "react";
 const CSS = `
 :root{--cp-bg:#f3f6fc;--cp-card:#fff;--cp-ink:#101c32;--cp-mute:#6c7890;--cp-line:#e3eaf5;--cp-g:#2864f0;--cp-gd:#1748c7;--cp-red:#e5484d;
 --cp-r:18px;--cp-shadow:0 1px 4px rgba(16,28,50,.08);--cp-nav-h:96px;--cp-nav-z:900;color-scheme:light}
+html.dark{--cp-bg:#081426;--cp-card:#111d32;--cp-ink:#edf3ff;--cp-mute:#9aa9c1;--cp-line:#263955;--cp-g:#4d83ff;--cp-gd:#2459d6;--cp-red:#ff6672;color-scheme:dark}
 :where(html){-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 :where(body){margin:0;background:var(--cp-bg);color:var(--cp-ink);font:15px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
 
@@ -44,7 +45,10 @@ input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),
   -webkit-text-fill-color: var(--cp-ink) !important;
   box-sizing: border-box !important;
 }
-input::placeholder, textarea::placeholder { color: #8491a8 !important; -webkit-text-fill-color: #8491a8 !important; }\nhtml.dark input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), html.dark select, html.dark textarea { background:#0b1830 !important; color:#edf3ff !important; border-color:#263955 !important; -webkit-text-fill-color:#edf3ff !important; }\nhtml.dark input::placeholder, html.dark textarea::placeholder { color:#9aa9c1 !important; -webkit-text-fill-color:#9aa9c1 !important; }\nhtml.dark label { color:#c3cee0 !important; }
+input::placeholder, textarea::placeholder { color: #8491a8 !important; -webkit-text-fill-color: #8491a8 !important; }
+html.dark input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), html.dark select, html.dark textarea { background:#0b1830 !important; color:#edf3ff !important; border-color:#263955 !important; -webkit-text-fill-color:#edf3ff !important; }
+html.dark input::placeholder, html.dark textarea::placeholder { color:#9aa9c1 !important; -webkit-text-fill-color:#9aa9c1 !important; }
+html.dark label { color:#c3cee0 !important; }\nhtml.dark input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), html.dark select, html.dark textarea { background:#0b1830 !important; color:#edf3ff !important; border-color:#263955 !important; -webkit-text-fill-color:#edf3ff !important; }\nhtml.dark input::placeholder, html.dark textarea::placeholder { color:#9aa9c1 !important; -webkit-text-fill-color:#9aa9c1 !important; }\nhtml.dark label { color:#c3cee0 !important; }
 input:focus, select:focus, textarea:focus {
   border-color: var(--cp-g) !important;
   background: #fff !important;
