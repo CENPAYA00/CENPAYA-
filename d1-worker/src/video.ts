@@ -60,6 +60,24 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
   }
   return fail("Method not allowed",405);
  }
+ if(path==="/api/videos/publish"&&method==="POST"){
+  if(!user)return fail("Authentication required",401);
+  const b=await request.json().catch(()=>null) as Record<string,unknown>|null;
+  const videoId=typeof b?.video_id==="string"?b.video_id:"";
+  const caption=typeof b?.content==="string"?b.content.trim().slice(0,1000):"";
+  if(!videoId)return fail("Video id required");
+  const asset=await env.DB.prepare("SELECT id,status,owner_id,post_id FROM video_assets WHERE id=?").bind(videoId).first<{id:string;status:string;owner_id:string;post_id:string|null}>();
+  if(!asset||asset.owner_id!==user.id)return fail("Video not found",404);
+  if(asset.status!=="ready"||asset.post_id)return fail("Video is not ready to publish",409);
+  const postId=uuid();
+  await env.DB.batch([
+   env.DB.prepare("INSERT INTO posts(id,author_id,content,post_type,visibility,status,published_at) VALUES(?,?,?,'video','public','published',strftime('%Y-%m-%dT%H:%M:%fZ','now'))").bind(postId,user.id,caption),
+   env.DB.prepare("UPDATE video_assets SET post_id=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND owner_id=? AND status='ready' AND post_id IS NULL").bind(postId,videoId,user.id)
+  ]);
+  const check=await env.DB.prepare("SELECT post_id FROM video_assets WHERE id=? AND owner_id=?").bind(videoId,user.id).first<{post_id:string|null}>();
+  if(check?.post_id!==postId)return fail("Could not publish video",409);
+  return json({success:true,data:{post_id:postId,video_id:videoId}},201);
+ }
  if(path==="/api/reels"&&method==="GET"){
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||10),1),20),cursor=url.searchParams.get("cursor")||"";
   const rows=await env.DB.prepare(`SELECT v.id AS video_id,v.post_id,v.hls_key,v.thumbnail_key,v.duration_seconds,p.content,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url
