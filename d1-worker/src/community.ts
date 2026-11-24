@@ -16,6 +16,34 @@ async function body(request:Request):Promise<Record<string,unknown>|null>{
 
 export async function handleCommunityRoutes(request:Request,env:Env,context:RouteContext):Promise<Response|null>{
   const {url,path,method,user}=context;
+  const featureLabels: Record<string, { display_name: string; description: string }> = {
+    voice_calls: { display_name: "Voice calls", description: "Enable or disable voice calling in chat." },
+    video_posts: { display_name: "Short videos", description: "Allow users to publish and view video posts." },
+    ai_assistant: { display_name: "AI shopping assistant", description: "Enable the Cenpaya AI shopping assistant when it is ready." },
+  };
+  if (path === "/api/admin/features" && method === "GET") {
+    if (!user) return fail("Unauthorized", 401);
+    if (!["owner", "super_admin"].includes(user.role)) return fail("Forbidden", 403);
+    const rows = await env.DB.prepare("SELECT key,enabled FROM feature_flags WHERE key IN ('voice_calls','video_posts','ai_assistant') ORDER BY key").all<{ key: string; enabled: number }>();
+    return json({ success: true, data: rows.results.map(row => ({
+      id: row.key, feature_key: row.key,
+      display_name: featureLabels[row.key]?.display_name || row.key,
+      description: featureLabels[row.key]?.description || "",
+      is_enabled_globally: !!row.enabled,
+    })) });
+  }
+  const featureToggle = path.match(/^\\/api\\/admin\\/features\\/([a-z_]+)$/);
+  if (featureToggle && method === "PATCH") {
+    if (!user) return fail("Unauthorized", 401);
+    if (!["owner", "super_admin"].includes(user.role)) return fail("Forbidden", 403);
+    const key = featureToggle[1];
+    if (!Object.prototype.hasOwnProperty.call(featureLabels, key)) return fail("Unknown feature flag", 404);
+    const b = await body(request);
+    if (!b || Object.keys(b).length !== 1 || typeof b.is_enabled_globally !== "boolean") return fail("Invalid feature flag value");
+    const result = await env.DB.prepare("UPDATE feature_flags SET enabled=? WHERE key=?").bind(b.is_enabled_globally ? 1 : 0, key).run();
+    if (!result.meta.changes) return fail("Feature flag is not configured", 404);
+    return json({ success: true, data: { id: key, is_enabled_globally: b.is_enabled_globally } });
+  }
   if(path==="/api/chat/threads"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const rows=await env.DB.prepare(`SELECT t.id,t.thread_type,t.title,t.created_by,t.last_message_at,t.created_at,
@@ -291,9 +319,13 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   }
 
   if (path === "/api/config/features" && method === "GET") {
-    const flags = await env.DB.prepare("SELECT key,enabled FROM feature_flags").all<{ key: string; enabled: number }>();
+    const flags = await env.DB.prepare("SELECT key,enabled FROM feature_flags WHERE key IN ('voice_calls','video_posts','ai_assistant')").all<{ key: string; enabled: number }>();
     const enabled = new Map<string, boolean>(flags.results.map(flag => [flag.key, !!flag.enabled] as [string, boolean]));
-    return json({ success: true, data: { voice_calls_enabled: enabled.get("voice_calls") || false } });
+    return json({ success: true, data: {
+      voice_calls_enabled: enabled.get("voice_calls") || false,
+      video_posts_enabled: enabled.get("video_posts") || false,
+      ai_assistant_enabled: enabled.get("ai_assistant") || false,
+    } });
   }
 
   if (path === "/api/groups" && method === "GET") {

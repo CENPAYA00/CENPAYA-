@@ -50,13 +50,8 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
     const updated=await readUser(env.DB,user.id);const [profile]=updated?await hydrateUserMedia(env,url.origin,[safeUser(updated) as unknown as Record<string,unknown>]):[null];return json({success:true,user:profile});
   }
   if(path==="/api/app-settings/video_posts_enabled"&&method==="GET"){
-    const setting=await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='video_posts_enabled'").first<{value_json:string}>();
-    let value="false";
-    if(setting){
-      try{value=String(JSON.parse(setting.value_json));}
-      catch{value=String(setting.value_json);}
-    }
-    return json({value});
+    const setting=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_posts'").first<{enabled:number}>();
+    return json({value:setting?.enabled ? "true" : "false"});
   }
   if(path==="/api/profiles/search"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
