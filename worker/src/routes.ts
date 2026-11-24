@@ -59,11 +59,11 @@ const ADMIN_RPC_SCHEMAS: Record<string, AdminRpcSchema> = {
         (a.p_role === "support_agent"
           ? ["can_resolve_disputes","can_manage_tickets","can_review_reports"].includes(p)
           : ["can_manage_listings","can_review_reports","can_review_kyc"].includes(p)))),
-  admin_has_password: defineRpc([], [], noArgs),
-  admin_verify_password: defineRpc(["p_password"], [], (a) => isText(a.p_password,256,1)),
+  admin_has_password: defineRpc([], [], noArgs, false),
+  admin_verify_password: defineRpc(["p_password"], [], (a) => isText(a.p_password,256,1), false),
   admin_set_password: defineRpc(["p_new_password"], ["p_current_password"],
     (a) => isText(a.p_new_password,256,8) &&
-      (a.p_current_password === undefined || a.p_current_password === null || isText(a.p_current_password,256,1))),
+      (a.p_current_password === undefined || a.p_current_password === null || isText(a.p_current_password,256,1)), false),
   admin_list_staff_permissions: defineRpc([], [], noArgs),
   admin_revoke_permission: defineRpc(["p_target_user_id","p_permission_key"], [],
     (a) => isUuid(a.p_target_user_id) && isText(a.p_permission_key,100)),
@@ -884,6 +884,32 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && adminSupportAgent) {
     const result = await rpc(supabase, "admin_remove_support_agent", { p_user_id: adminSupportAgent[1] });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+  }
+  if (path === "/api/v1/admin/security/password/status" && method === "GET") {
+    const result = await rpc(supabase, "admin_has_password", {});
+    return result.error ? failure(result.error,result.status,headers) : success(result.data,headers);
+  }
+  if (path === "/api/v1/admin/security/password/verify" && method === "POST") {
+    const body = await readJsonObject(request);
+    const password = typeof body?.password === "string" ? body.password : "";
+    if (!body || !onlyKeys(body,["password"]) || !isText(password,256,1)) return failure("invalid_password_verification",400,headers);
+    const result = await rpc(supabase,"admin_verify_password",{p_password:password});
+    return result.error ? failure(result.error,result.status,headers) : success(result.data,headers);
+  }
+  if (path === "/api/v1/admin/security/password" && method === "POST") {
+    const body = await readJsonObject(request);
+    const nextPassword = typeof body?.new_password === "string" ? body.new_password : "";
+    const currentPassword = body?.current_password;
+    if (!body || !onlyKeys(body,["new_password","current_password"]) ||
+        !isText(nextPassword,256,8) ||
+        (currentPassword !== undefined && currentPassword !== null && !isText(currentPassword,256,1))) {
+      return failure("invalid_admin_password_update",400,headers);
+    }
+    const result = await rpc(supabase,"admin_set_password",{
+      p_new_password:nextPassword,
+      p_current_password:currentPassword ?? null,
+    });
+    return result.error ? failure(result.error,result.status,headers) : success(result.data,headers);
   }
   const adminRpc = path.match(/^\/api\/v1\/admin\/rpc\/([a-z_]+)$/);
   if (method === "POST" && adminRpc) {
