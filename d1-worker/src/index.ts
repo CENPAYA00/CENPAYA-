@@ -11,6 +11,7 @@ import { handleSocialRoutes } from "./social.js";
 import { handleMediaRoutes } from "./media.js";
 import { handleSearchRoute } from "./search.js";
 import { handleVideoRoutes, processVideoQueue } from "./video.js";
+import { handleAdminRoutes } from "./admin.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -51,6 +52,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   const authResponse=await handleAuthRoutes(request,env,url,path,method);
   if(authResponse)return authResponse;
   const user=await auth(request,env);
+  const adminResponse=await handleAdminRoutes(request,env,{path,method,user});
+  if(adminResponse)return adminResponse;
   const searchResponse=await handleSearchRoute(request,env,user?.id||null);
   if(searchResponse)return searchResponse;
   const videoResponse=await handleVideoRoutes(request,env,{url,path,method,user});
