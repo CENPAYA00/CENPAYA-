@@ -36,9 +36,14 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
     const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id,row.author_id,user.id,row.author_id).first();
     if(blocked)return fail("Video not found",404);
    }
-   const r=await processor(env,"/v1/playback?key="+encodeURIComponent(String(row.hls_key)),undefined,"GET");
+   const requestedKey=url.searchParams.get("key")||String(row.hls_key);
+   const prefix=String(row.hls_key).slice(0,String(row.hls_key).lastIndexOf("/")+1);
+   if(!requestedKey.startsWith(prefix)||!requestedKey.endsWith(".m3u8"))return fail("Invalid playlist",400);
+   const r=await processor(env,"/v1/playback?key="+encodeURIComponent(requestedKey),undefined,"GET");
    if(!r||!r.ok)return fail("Video playback is temporarily unavailable",503);
-   return new Response(r.body,{status:200,headers:{"Content-Type":"application/vnd.apple.mpegurl","Cache-Control":"private, no-store","Access-Control-Allow-Origin":url.origin,"Access-Control-Allow-Headers":"Range"}});
+   const playlist=await r.text();
+   const rewritten=playlist.replace(/__CENPAYA_PLAYLIST__\/([^\\s]+)/g,(_match,encoded)=>url.origin+"/api/videos/"+row.id+"/playlist?key="+encoded);
+   return new Response(rewritten,{status:200,headers:{"Content-Type":"application/vnd.apple.mpegurl","Cache-Control":"private, no-store","Access-Control-Allow-Origin":url.origin,"Access-Control-Allow-Headers":"Range"}});
   }
   if(m[2]==="complete"&&method==="POST"){
    if(!owner)return fail("Only the uploader can complete this video",403);

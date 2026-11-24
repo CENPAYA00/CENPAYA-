@@ -67,13 +67,14 @@ async function processVideo(d){
  }finally{await rm(dir,{recursive:true,force:true});}
 }
 async function playbackPlaylist(key){
- if(!safe(key)||!key.startsWith("videos/hls/")||!key.endsWith("/master.m3u8"))throw Error("invalid playlist");
+ if(!safe(key)||!key.startsWith("videos/hls/")||!key.endsWith(".m3u8"))throw Error("invalid playlist");
  const obj=await b2.send(new GetObjectCommand({Bucket:e.B2_BUCKET_NAME,Key:key}));let source="";
  for await(const c of obj.Body)source+=c.toString();
  const base=key.slice(0,key.lastIndexOf("/")+1),lines=source.split(/\r?\n/),rewritten=[];
  for(const line of lines){
   if(!line||line.startsWith("#")){rewritten.push(line);continue;}
   const child=base+line;
+  if(line.endsWith(".m3u8")){rewritten.push("__CENPAYA_PLAYLIST__/"+encodeURIComponent(child));continue;}
   const signed=await getSignedUrl(b2,new GetObjectCommand({Bucket:e.B2_BUCKET_NAME,Key:child}),{expiresIn:900});
   rewritten.push(signed);
  }
