@@ -236,12 +236,16 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   if (path === "/api/staff/tickets" && method === "GET") {
     if (!supportAuthority) return fail("Support Agent access required",403);
     const all=url.searchParams.get("scope")==="all";
+    const requestedStatus=url.searchParams.get("status")||"";
+    const validStatus=["open","in_progress","waiting","resolved","closed"].includes(requestedStatus);
     const unreadSql="(SELECT COUNT(*) FROM support_ticket_messages m WHERE m.ticket_id=t.id AND m.sender_type='user' AND m.status<>'deleted' AND m.created_at>COALESCE((SELECT r.last_read_at FROM support_ticket_staff_reads r WHERE r.ticket_id=t.id AND r.user_id=?),'1970-01-01T00:00:00.000Z')) AS unread";
-    const base="SELECT t.id,t.ticket_number,t.subject,t.category,t.priority,t.status,t.assigned_to_user_id,t.created_at,t.updated_at,u.username,"+unreadSql+" FROM support_tickets t JOIN users u ON u.id=t.user_id ";
-    const sql=all
-      ? base+(platformAdmin ? "WHERE t.status NOT IN ('resolved','closed') ORDER BY t.updated_at DESC LIMIT 200" : "WHERE t.status NOT IN ('resolved','closed') AND (t.assigned_to_user_id IS NULL OR t.assigned_to_user_id=?) ORDER BY t.updated_at DESC LIMIT 200")
-      : base+"WHERE t.assigned_to_user_id=? AND t.status NOT IN ('resolved','closed') ORDER BY t.updated_at DESC LIMIT 200";
-    const binds=all ? (platformAdmin ? [user!.id] : [user!.id,user!.id]) : [user!.id,user!.id];
+    const base="SELECT t.id,t.ticket_number,t.subject,t.category,t.priority,t.status,t.assigned_to_user_id,t.created_at,t.updated_at,u.username,u.country_iso AS country,(SELECT m.message_text FROM support_ticket_messages m WHERE m.ticket_id=t.id AND m.status<>'deleted' ORDER BY m.created_at DESC LIMIT 1) AS last_message,"+unreadSql+" FROM support_tickets t JOIN users u ON u.id=t.user_id ";
+    const where=all
+      ? (platformAdmin ? "WHERE 1=1" : "WHERE (t.assigned_to_user_id IS NULL OR t.assigned_to_user_id=?)")
+      : "WHERE t.assigned_to_user_id=?";
+    const statusClause=validStatus ? " AND t.status=?" : (all && !platformAdmin ? " AND t.status NOT IN ('resolved','closed')" : all && !requestedStatus ? " AND t.status NOT IN ('resolved','closed')" : "");
+    const sql=base+where+statusClause+" ORDER BY t.updated_at DESC LIMIT 200";
+    const binds=[user!.id,...(all ? (platformAdmin ? [] : [user!.id]) : [user!.id]),...(validStatus ? [requestedStatus] : [])];
     const rows=await env.DB.prepare(sql).bind(...binds).all();
     return json({success:true,data:rows.results.map((t:any)=>({...t,assigned_to_me:t.assigned_to_user_id===user!.id}))});
   }
