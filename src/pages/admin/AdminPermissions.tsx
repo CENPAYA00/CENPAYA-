@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { AdminPermission } from '../../types/AdminPermission';
 import { UserPlus, Check, Shield } from 'lucide-react';
 
@@ -25,7 +26,7 @@ export default function AdminPermissions() {
     const { data: staffData } = await supabase
       .from('users')
       .select('id, username, role')
-      .in('role', ['owner', 'super_admin', 'support_agent'])
+      .in('role', ['owner', 'super_admin', 'support_agent', 'staff_member'])
       .order('role')
       .order('username');
 
@@ -73,10 +74,10 @@ export default function AdminPermissions() {
   const promoteToAgent = async (userId: string) => {
     if (!window.confirm('Promote this user to Support Agent?')) return;
     setPromoting(userId);
-    const { error } = await supabase.rpc('admin_assign_role', {
-      p_target_user_id: userId,
-      p_new_role: 'support_agent',
-    });
+    let error: Error | null = null;
+    try { await supabaseWorkerRequest(`/api/v1/admin/users/${encodeURIComponent(userId)}/role`, {
+      method: 'POST', body: JSON.stringify({ role: 'support_agent' }),
+    }); } catch (err) { error = err instanceof Error ? err : new Error('Role update failed'); }
     if (error) alert(error.message);
     else { alert('Promoted.'); load(); }
     setPromoting(null);
@@ -85,10 +86,10 @@ export default function AdminPermissions() {
   const demoteToUser = async (userId: string) => {
     if (!window.confirm('Remove staff role and set this user back to regular user?')) return;
     setPromoting(userId);
-    const { error } = await supabase.rpc('admin_assign_role', {
-      p_target_user_id: userId,
-      p_new_role: 'user',
-    });
+    let error: Error | null = null;
+    try { await supabaseWorkerRequest(`/api/v1/admin/users/${encodeURIComponent(userId)}/role`, {
+      method: 'POST', body: JSON.stringify({ role: 'user' }),
+    }); } catch (err) { error = err instanceof Error ? err : new Error('Role update failed'); }
     if (error) alert(error.message);
     else { alert('Demoted.'); load(); }
     setPromoting(null);
@@ -103,7 +104,7 @@ export default function AdminPermissions() {
     <div>
       <h2 className="text-2xl font-bold text-navy dark:text-white mb-2">🔑 Staff Permissions</h2>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        Grant specific powers to staff. Only the owner can do this.
+        Grant specific powers to staff. Only Owner and Super Admin can manage staff permissions.
       </p>
 
       {/* Current staff list */}
