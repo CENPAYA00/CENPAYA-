@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Request } from '../lib/d1Api';
 import { MessageSquare, Check, Shield } from 'lucide-react';
 
 export default function StaffPanel() {
@@ -14,8 +14,8 @@ export default function StaffPanel() {
     setLoading(true);
     try {
       const [profileRes, ticketsRes] = await Promise.all([
-        supabaseWorkerRequest<{ data: any }>('/api/admin/staff/profile'),
-        supabaseWorkerRequest<{ data: any[] }>(`/api/admin/staff/tickets?scope=${tab}`),
+        d1Request<{ data: any }>('/api/staff/profile'),
+        d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`),
       ]);
       if (!profileRes.data) { navigate('/home'); return; }
       setProfile(profileRes.data);
@@ -32,7 +32,7 @@ export default function StaffPanel() {
 
   const claim = async (ticketId: string) => {
     try {
-      await supabaseWorkerRequest(`/api/admin/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
+      await d1Request(`/api/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
       load();
     } catch (error: any) { alert(error.message || 'Could not claim ticket'); }
   };
@@ -97,7 +97,7 @@ export default function StaffPanel() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[15px] font-bold text-[#0a3d2b] dark:text-white truncate">{t.subject}</p>
-                <p className="text-[12px] text-[#6f8077] font-medium mt-0.5">@{t.username}</p>
+                <p className="text-[12px] text-[#6f8077] font-medium mt-0.5">@{t.username || 'member'}</p>
                 
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <span className="text-[10px] font-bold bg-[#fff9e0] text-[#8a5a00] px-2 py-0.5 rounded-md border border-[#f3e08a]">
