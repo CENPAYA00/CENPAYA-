@@ -57,7 +57,7 @@ export default function StaffAccept() {
           </div>
           <p className="text-[15px] font-bold text-navy dark:text-white">You've been invited</p>
           <p className="text-[11px] text-gray-500 mt-1">
-            Accept to join the CenPaya team as a staff member.
+            Accept to join the CenPaya team in your assigned Support Agent or Staff Member workspace.
           </p>
           <button
             onClick={accept}
@@ -82,7 +82,7 @@ export default function StaffAccept() {
           </div>
           <p className="text-[14px] font-bold text-navy dark:text-white">Welcome to the team</p>
           <p className="text-[11px] text-gray-500 mt-1 capitalize">
-            Your role: {role.replace('_', ' ')}
+            Your role: {role === 'support_agent' ? 'Support Agent' : 'Staff Member'}
           </p>
           <p className="text-[10px] text-gray-400 mt-1">Redirecting to your workspace...</p>
         </>
