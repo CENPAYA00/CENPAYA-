@@ -110,7 +110,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
   return json({success:true,data:{post_id:postId,video_id:videoId}},201);
  }
  if(path==="/api/reels"&&method==="GET"){
-  const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||10),1),20),cursor=url.searchParams.get("cursor")||"";
+  const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||10),1),20),cursor=url.searchParams.get("cursor")||"",requestedVideoId=url.searchParams.get("video_id")||"";
   const rows=await env.DB.prepare(`SELECT v.id AS video_id,v.post_id,v.hls_key,v.thumbnail_key,v.duration_seconds,p.content,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url,
    (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id AND r.reaction_type='like') AS likes_count,
    (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count,
@@ -125,9 +125,10 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
    AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
    AND (?='' OR p.created_at<?)
    AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=?)))
+   AND (?='' OR v.id=?)
    ORDER BY CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 1 ELSE 0 END DESC,
      COALESCE((SELECT SUM(i.score) FROM user_interest_signals i WHERE i.user_id=? AND i.score>0 AND instr(lower(COALESCE(p.content,'')),i.topic_key)>0),0) DESC,
-     p.created_at DESC LIMIT ?`).bind(user?.id||'',user?.id||'',user?.id||'',cursor,cursor,user?.id||null,user?.id||null,user?.id||null,user?.id||null,user?.id||null,limit).all<Record<string,unknown>>();
+     p.created_at DESC LIMIT ?`).bind(user?.id||'',user?.id||'',user?.id||'',cursor,cursor,user?.id||null,user?.id||null,user?.id||null,user?.id||null,user?.id||null,requestedVideoId,requestedVideoId,limit).all<Record<string,unknown>>();
   const data=rows.results.map(row=>({...row,playlist_url:"/api/videos/"+row.video_id+"/playlist",thumbnail_url:null,next_cursor:row.created_at}));
   return json({success:true,data,next_cursor:data.length?data[data.length-1].next_cursor:null});
  }
