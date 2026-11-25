@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
@@ -25,7 +24,7 @@ type Dashboard = {
 };
 
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
-const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
+const METHODS: Method[] = ['mtn_momo', 'orange_money'];
 
 export default function Referrals() {
   const navigate = useNavigate();
@@ -40,46 +39,49 @@ export default function Referrals() {
   const [phone, setPhone] = useState('');
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [prefsSaved, setPrefsSaved] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
-      const { user } = await d1Me();
-      if (!user) { setLoading(false); return; }
-
-      setReferralLink(`https://cenpaya.pages.dev/signup?ref=${user.id.slice(0, 8)}`);
-
-      const [refRes, walletRes, userRes, countriesRes] = await Promise.all([
-        supabase
-          .from('referrals')
-          .select('id, referred_id, points, status, created_at')
-          .eq('referrer_id', user.id)
-          .order('created_at', { ascending: false }),
-        supabaseWorkerRequest<{ data: { referral_earnings_available?: number } }>('/api/v1/wallet'),
-        supabase.from('users').select('country_iso, phone, momo_number, momo_provider').eq('id', user.id).single(),
-        supabase.from('supported_countries').select('code, name, phone_prefix').eq('is_active', true).order('code'),
-      ]);
-
-      setCountries(countriesRes.data || []);
-
-      const iso = userRes.data?.country_iso || 'CM';
-      setSelectedCountry(iso);
-      if (userRes.data?.momo_number) setPhone(userRes.data.momo_number.replace(/^\+\d+\s?/, ''));
-      else if (userRes.data?.phone) setPhone(userRes.data.phone.replace(/^\+\d+\s?/, ''));
-      if (userRes.data?.momo_provider) setProvider(userRes.data.momo_provider as Method);
-
-      if (!refRes.error && refRes.data) {
-        const referrals = refRes.data as ReferralItem[];
+      setLoading(true);
+      setLoadError('');
+      try {
+        const { user } = await d1Me();
+        if (!user) throw new Error('Please sign in to view referrals.');
+        const [refRes, walletRes, prefsRes] = await Promise.all([
+          supabaseWorkerRequest<{ data: Dashboard & { referral_code?: string } }>('/api/v1/referrals'),
+          supabaseWorkerRequest<{ data: { referral_earnings_available?: number } }>('/api/v1/wallet'),
+          supabaseWorkerRequest<{ data: { profile: any; countries: any[] } }>('/api/v1/me/payment-preferences'),
+        ]);
+        if (!active) return;
+        const code = refRes.data?.referral_code;
+        if (code) setReferralLink(`${window.location.origin}/signup?ref=${encodeURIComponent(code)}`);
+        const countriesList = (prefsRes.data?.countries || []).map((item:any) => ({
+          code: item.country_iso, name: item.name, phone_prefix: item.phone_prefix, enabled_methods: item.enabled_methods || [],
+        }));
+        setCountries(countriesList);
+        const profile = prefsRes.data?.profile || {};
+        const iso = profile.country_iso || 'CM';
+        setSelectedCountry(iso);
+        if (profile.momo_number) setPhone(String(profile.momo_number).replace(/^\+\d+\s?/, ''));
+        else if (profile.phone) setPhone(String(profile.phone).replace(/^\+\d+\s?/, ''));
+        if (profile.momo_provider && METHODS.includes(profile.momo_provider as Method)) setProvider(profile.momo_provider as Method);
         setDashboard({
-          direct_referrals_count: referrals.length,
-          subscribed_referrals_count: referrals.filter(r => r.status === 'unlocked').length,
-          total_points: referrals.reduce((sum, r) => sum + (r.points || 0), 0),
-          available_earnings: walletRes.data?.referral_earnings_available || 0,
-          referrals,
+          direct_referrals_count: Number(refRes.data?.direct_referrals_count || 0),
+          subscribed_referrals_count: Number(refRes.data?.subscribed_referrals_count || 0),
+          total_points: Number(refRes.data?.total_points || 0),
+          available_earnings: Number(walletRes.data?.referral_earnings_available || 0),
+          referrals: Array.isArray(refRes.data?.referrals) ? refRes.data.referrals : [],
         });
+      } catch (error:any) {
+        if (active) setLoadError(error.message || 'Could not load your referral dashboard.');
+      } finally {
+        if (active) setLoading(false);
       }
-      setLoading(false);
     };
-    load();
+    void load();
+    return () => { active = false; };
   }, []);
 
   const copyLink = async () => {
@@ -95,22 +97,21 @@ export default function Referrals() {
   const savePrefs = async () => {
     setSavingPrefs(true);
     setPrefsSaved(false);
-    const { user } = await d1Me();
-    if (!user) { setSavingPrefs(false); return; }
-    const country = countries.find(c => c.code === selectedCountry);
-    const prefix = country?.phone_prefix || '+237';
-    const fullNumber = `${prefix} ${phone.trim()}`;
-
-    const { error } = await supabase.from('users').update({
-      country_iso: selectedCountry,
-      momo_number: fullNumber,
-      momo_provider: provider,
-    }).eq('id', user.id);
-
-    setSavingPrefs(false);
-    if (error) { alert(error.message); return; }
-    setPrefsSaved(true);
-    setTimeout(() => setPrefsSaved(false), 2000);
+    try {
+      const country = countries.find(c => c.code === selectedCountry);
+      const prefix = country?.phone_prefix || '+237';
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/me/payment-preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ country_iso: selectedCountry, momo_number: `${prefix} ${phone.trim()}`, momo_provider: provider }),
+      });
+      if (result.data?.ok === false) throw new Error(result.data.error || 'Could not save payment preferences.');
+      setPrefsSaved(true);
+      window.setTimeout(() => setPrefsSaved(false), 2000);
+    } catch (error:any) {
+      setLoadError(error.message || 'Could not save payment preferences.');
+    } finally {
+      setSavingPrefs(false);
+    }
   };
 
   const getStatusStyle = (status: string) => {
@@ -139,6 +140,7 @@ export default function Referrals() {
   return (
     <div className="px-3 py-3 pb-24">
       <h1 className="text-base font-bold text-navy dark:text-white mb-3">Referrals</h1>
+      {loadError && <div className="mb-3 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-200 text-[10px]">{loadError}</div>}
 
       <div className="bg-gradient-to-br from-brand to-brand-dark p-4 rounded-2xl shadow-lg shadow-brand/30 mb-3 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-accent/20 rounded-full -mr-12 -mt-12" />
@@ -158,7 +160,7 @@ export default function Referrals() {
           </p>
 
           <button
-            onClick={() => navigate('/referral-withdraw')}
+            onClick={() => navigate('/withdraw?source=referral')}
             disabled={available < 2000}
             className="mt-3 bg-white text-brand font-bold text-[11px] px-4 py-2 rounded-lg flex items-center gap-1.5 disabled:opacity-50 active:scale-[0.98] cursor-pointer"
           >
@@ -210,7 +212,7 @@ export default function Referrals() {
 
         <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mt-3 mb-2">Withdrawal method</p>
         <div className="grid grid-cols-2 gap-2 mb-3">
-          {METHODS.map((m) => (
+          {METHODS.filter(m => (countries.find(c => c.code === selectedCountry)?.enabled_methods || METHODS).includes(m)).map((m) => (
             <button
               key={m}
               onClick={() => setProvider(m)}
