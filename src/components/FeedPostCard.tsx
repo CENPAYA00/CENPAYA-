@@ -292,7 +292,7 @@ export default function FeedPostCard({
 
   return (
     <>
-      <article className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 520px' }}>
+      <article ref={postElementRef} className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 520px' }}>
         {AuthorRow}
         {text && (
           <div data-no-translate className="px-3.5 pb-2.5 text-[15px] text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words leading-relaxed">
