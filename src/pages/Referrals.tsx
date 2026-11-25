@@ -86,11 +86,22 @@ export default function Referrals() {
 
   const copyLink = async () => {
     try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Join me on CenPaya', text: 'Join me on CenPaya.', url: referralLink });
+        return;
+      }
       await navigator.clipboard.writeText(referralLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      alert('Could not copy. Long-press the link to copy manually.');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      try {
+        await navigator.clipboard.writeText(referralLink);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        alert('Could not share. Long-press the link to copy manually.');
+      }
     }
   };
 
@@ -156,7 +167,7 @@ export default function Referrals() {
             <span className="text-sm text-accent-light">XAF</span>
           </p>
           <p className="text-[9px] text-white/70 mt-1">
-            Earn 1,000 XAF per referred subscriber
+            Track invitations and subscriber conversions
           </p>
 
           <button
@@ -265,7 +276,7 @@ export default function Referrals() {
               <Users size={18} className="text-accent" />
             </div>
             <p className="text-[11px] font-bold text-navy dark:text-white">No referrals yet</p>
-            <p className="text-[9px] text-gray-500 mt-1">Share your link to start earning 1,000 XAF per subscriber.</p>
+            <p className="text-[9px] text-gray-500 mt-1">Share your invite link to grow your CenPaya network. Affiliate promotion compensation is arranged directly between the requester and sharer; CenPaya does not pay affiliate sharers.</p>
           </div>
         )}
 
