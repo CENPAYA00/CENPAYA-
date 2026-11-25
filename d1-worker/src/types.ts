@@ -1,7 +1,7 @@
 export type User = {
   id: string; username: string | null; display_name: string;
   email: string | null; phone: string | null; email_verified: number;
-  phone_verified: number; role: string; account_status: string;
+  phone_verified: number; is_premium?: number; role: string; account_status: string;
   banned: number; password_hash: string | null; onboarding_completed?: number;
 };
 export interface Env {
