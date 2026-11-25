@@ -18,7 +18,10 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
   if(path==="/api/me"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const [profile]=await hydrateUserMedia(env,url.origin,[safeUser(user) as unknown as Record<string,unknown>]);
-    return json({success:true,user:profile});
+    const trust=await env.DB.prepare(`SELECT COUNT(*) AS reviews_count,ROUND(AVG(r.rating),2) AS average_rating
+      FROM marketplace_reviews r JOIN marketplace_listings l ON l.id=r.listing_id
+      WHERE l.seller_id=? AND r.status='published'`).bind(user.id).first<{reviews_count:number;average_rating:number|null}>();
+    return json({success:true,user:{...profile,reviews_count:Number(trust?.reviews_count||0),average_rating:Number(trust?.average_rating||0)}});
   }
   if(path==="/api/me/profile"&&method==="PATCH"){
     if(!user)return fail("Unauthorized",401);
@@ -64,7 +67,7 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
   const publicProfile=path.match(/^\/api\/profiles\/([^/]+)$/);
   if(publicProfile&&publicProfile[1]!=="suggestions"&&method==="GET"){
     const key=decodeURIComponent(publicProfile[1]);
-    const profile=await env.DB.prepare("SELECT id,username,display_name,avatar_url,cover_url,bio,phone,email,country_code,location_city,location_region,occupation,is_premium,followers_count,sales_count,reputation_score,created_at,profile_visibility FROM users WHERE (id=? OR lower(username)=lower(?)) AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(key,key).first<Record<string,unknown>>();
+    const profile=await env.DB.prepare("SELECT id,username,display_name,avatar_url,cover_url,bio,phone,email,phone_verified,country_code,location_city,location_region,occupation,is_premium,followers_count,sales_count,reputation_score,created_at,profile_visibility FROM users WHERE (id=? OR lower(username)=lower(?)) AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(key,key).first<Record<string,unknown>>();
     if(!profile)return fail("Profile not found",404);
     const ownerId=String(profile.id),viewerId=user?.id||null;
     let isFollower=false;
@@ -79,7 +82,14 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
     const defaults={bio:"public",phone:"followers",email:"private",joined:"public",occupation:"public",location:"followers"};
     const rules={...defaults,...(visibility||{})};
     const canSee=(rule:string)=>viewerId===ownerId||rule==="public"||(rule==="followers"&&isFollower);
+    const trust=await env.DB.prepare(`SELECT COUNT(*) AS reviews_count,ROUND(AVG(r.rating),2) AS average_rating
+      FROM marketplace_reviews r JOIN marketplace_listings l ON l.id=r.listing_id
+      WHERE l.seller_id=? AND r.status='published'`).bind(ownerId).first<{reviews_count:number;average_rating:number|null}>();
     const data={...profile,
+      is_subscribed:!!profile.is_premium,
+      is_phone_verified:!!profile.phone_verified,
+      reviews_count:Number(trust?.reviews_count||0),
+      average_rating:Number(trust?.average_rating||0),
       bio:canSee(rules.bio)?profile.bio:null,
       phone:canSee(rules.phone)?profile.phone:null,
       email:canSee(rules.email)?profile.email:null,
