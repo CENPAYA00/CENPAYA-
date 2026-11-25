@@ -24,7 +24,7 @@ export async function handleInternalRoutes(request:Request,env:Env,url:URL,path:
     const regions=Array.isArray(b.regions)?b.regions:[];
     const methods=Array.isArray(b.enabled_methods)?b.enabled_methods:[];
     const active=b.is_active===true;
-    if(!/^[A-Z]{2}$/.test(countryCode)||name.length<2||!/^\\+[1-9][0-9]{0,6}$/.test(phonePrefix)||
+    if(!/^[A-Z]{2}$/.test(countryCode)||name.length<2||!(phonePrefix.startsWith("+") && /^[1-9][0-9]{0,6}$/.test(phonePrefix.slice(1)))||
        !/^[A-Z]{3}$/.test(currencyCode)||!Number.isFinite(currencyValue)||currencyValue<=0||
        regions.length>200||!regions.every(v=>typeof v==="string"&&v.trim().length<=100)||
        methods.length>10||!methods.every(v=>typeof v==="string"&&/^[a-z0-9_]{2,40}$/.test(v))||
