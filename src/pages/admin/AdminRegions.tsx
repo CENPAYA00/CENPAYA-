@@ -131,6 +131,14 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
     setCurrency(found.currency_code);
     setCurrencyValue(String(found.currency_value_in_xaf || 1));
     setFlag(found.flag_emoji || '');
+    setMethods(found.enabled_methods || []);
+    setRegions((found.regions || []).join(', '));
+    setBaseFee(String(found.base_marketplace_fee_pct ?? 4));
+    setPremiumFee(String(found.premium_subscriber_fee_pct ?? 2));
+    setWithdrawalFee(String(found.withdrawal_fee_pct ?? 0));
+    setBaseFixed(String(found.fee_fixed_base ?? 50));
+    setPremiumFixed(String(found.fee_fixed_premium ?? 50));
+    setIsActive(Boolean(found.is_active));
   };
 
   const toggleMethod = (m: string) => {
