@@ -14,6 +14,7 @@ type Target = {
   boosted_until?: string | null; 
   post_type?: string;
   bg_color?: string | null;
+  route_path?: string;
 };
 
 const resolveUrl = (u: string, bucket = 'listings'): string => {
@@ -74,11 +75,11 @@ export default function Boosted() {
 
       const productTargets = (listingsRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
         const rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
-        return { type: 'listing' as const, id: l.id, title: l.title, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until };
+        return { type: 'listing' as const, id: l.id, title: l.title, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until, route_path: 'listing' };
       });
       const serviceTargets = (servicesRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
         const rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
-        return { type: 'listing' as const, id: l.id, title: `Service: ${l.title}`, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until };
+        return { type: 'listing' as const, id: l.id, title: `Service: ${l.title}`, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until, route_path: 'service' };
       });
       const listingTargets = [...productTargets, ...serviceTargets];
       const postTargets: Target[] = (postsRes.data || []).filter((p: any) => p.moderation_status === 'approved').map((p: any) => {
@@ -133,7 +134,7 @@ export default function Boosted() {
         await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
           kind: 'system', title: 'Boost activated',
           body: `${selectedTier.label} — ${selected.type} boosted until ${new Date(data.until).toLocaleDateString()}`,
-          link_url: `/${selected.type}/${selected.id}`,
+          link_url: `/${selected.route_path || selected.type}/${selected.id}`,
         }) });
       }
     } catch (e) { console.warn('boost notification failed', e); }
