@@ -115,7 +115,11 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if(!member)return fail("Conversation not found",404);
     const blocked=await env.DB.prepare("SELECT 1 FROM chat_thread_members other JOIN user_blocks b ON (b.blocker_id=? AND b.blocked_id=other.user_id) OR (b.blocker_id=other.user_id AND b.blocked_id=?) WHERE other.thread_id=? AND other.user_id<>?").bind(user.id,user.id,threadId,user.id).first();
     if(blocked)return fail("Messaging is unavailable for this user",403);
-    const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||50),1),100),before=url.searchParams.get("before");
+    await env.DB.batch([
+       env.DB.prepare("UPDATE chat_thread_members SET last_read_at="+NOW+" WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id),
+       env.DB.prepare("UPDATE chat_messages SET delivered_at=COALESCE(delivered_at,"+NOW+"),read_at="+NOW+" WHERE thread_id=? AND sender_id<>? AND read_at IS NULL").bind(threadId,user.id)
+     ]);
+     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||50),1),100),before=url.searchParams.get("before");
     const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,CASE WHEN m.status='deleted' THEN 'Message deleted' ELSE m.message_text END AS message_text,CASE WHEN m.status='deleted' THEN 'text' ELSE m.message_type END AS message_type,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_url END AS media_url,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_key END AS media_key,m.media_duration_seconds,m.shared_post_id,m.delivered_at,m.read_at,m.status,m.created_at,
       u.username,u.display_name,u.avatar_url FROM chat_messages m JOIN users u ON u.id=m.sender_id
       WHERE m.thread_id=? ${before?"AND m.created_at < ?":""}
