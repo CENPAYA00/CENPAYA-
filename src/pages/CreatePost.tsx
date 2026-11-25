@@ -58,7 +58,6 @@ export default function CreatePost() {
     setVideoFile(file);
     setVideoPreview(URL.createObjectURL(file));
   };
-  }, [previews]);
 
   const hasImages = images.length > 0;
   const isLongText = content.length > LONG_TEXT_LIMIT;
