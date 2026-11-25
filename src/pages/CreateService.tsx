@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
-import { ArrowLeft, Upload, FileText, X, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, X, Image as ImageIcon, Zap } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import { compressImage } from '../utils/compressImage';
 import { useI18n } from '../contexts/i18n';
@@ -32,6 +32,7 @@ export default function CreateService() {
   const [usePriceRange, setUsePriceRange] = useState(false);
   const [deliveryDays, setDeliveryDays] = useState('');
   const [loading, setLoading] = useState(false);
+  const [boostAfterPublish, setBoostAfterPublish] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleImagePick = (files: FileList) => {
@@ -99,7 +100,7 @@ export default function CreateService() {
       });
 
       alert('Service published!');
-      navigate(`/service/${result.id}`);
+      navigate(boostAfterPublish ? `/boosted?type=listing&id=${encodeURIComponent(result.id)}` : `/service/${result.id}`);
     } catch (e: any) {
       setErrorMsg(e.message || 'Could not publish service.');
     }
@@ -108,6 +109,12 @@ export default function CreateService() {
 
   return (
     <div className="px-3 py-3 pb-24">
+      <label className="mb-3 flex items-center gap-2 rounded-xl border border-gray-200 dark:border-darkline bg-white dark:bg-darkcard p-3 cursor-pointer">
+        <input type="checkbox" checked={boostAfterPublish} onChange={e => setBoostAfterPublish(e.target.checked)} className="accent-[#12935a]" />
+        <span className="flex-1 text-[11px] font-semibold text-navy dark:text-white">Boost this freelance service after publishing</span>
+        <Zap size={15} className="text-accent" />
+      </label>
+      <p className="text-[9px] text-gray-400 -mt-2 mb-3">Choose a boost plan and confirm any payment after publishing.</p>
       <div className="flex items-center gap-2 mb-3">
         <button onClick={() => navigate(-1)} className="text-brand cursor-pointer"><ArrowLeft size={18} /></button>
         <h1 className="text-base font-bold text-navy dark:text-white">{t('create_service')}</h1>
