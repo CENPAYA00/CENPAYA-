@@ -365,7 +365,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     }
     if (action === "my-state" && method === "GET") {
       if (!user) return fail("Unauthorized", 401);
-      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null }>();
+      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at,content FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null; content: string }>();
       if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
       const [liked, saved] = await Promise.all([
         env.DB.prepare("SELECT 1 FROM post_reactions WHERE post_id=? AND user_id=?").bind(postId, user.id).first(),
