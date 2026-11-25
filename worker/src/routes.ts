@@ -642,6 +642,20 @@ export async function handleAuthenticatedApi(
     if (error) return failure("regions_lookup_failed", 502, headers);
     return success(data || [], headers);
   }
+  if (method === "GET" && path === "/api/v1/admin/payment-adapter") {
+    const provider = (url.searchParams.get("provider") || "").trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9_]{1,39}$/.test(provider)) return failure("invalid_payment_provider",400,headers);
+    const result = await rpc(supabase,"admin_get_payment_adapter_config",{p_provider_name:provider});
+    return result.error ? failure(result.error,result.status,headers) : success({config:result.data ?? null},headers);
+  }
+  if (method === "POST" && path === "/api/v1/admin/payment-adapter") {
+    const body = await readJsonObject(request, 32_000);
+    const provider = typeof body?.provider_name === "string" ? body.provider_name.trim().toUpperCase() : "";
+    const config = body?.config;
+    if (!body || !onlyKeys(body,["provider_name","config"]) || !/^[A-Z][A-Z0-9_]{1,39}$/.test(provider) || !config || typeof config !== "object" || Array.isArray(config) || JSON.stringify(config).length>24000) return failure("invalid_payment_adapter_config",400,headers);
+    const result = await rpc(supabase,"admin_set_payment_adapter_config",{p_provider_name:provider,p_config:config});
+    return result.error ? failure(result.error,result.status,headers) : success(result.data,headers);
+  }
   if (method === "GET" && path === "/api/v1/admin/providers") {
     const result = await rpc(supabase, "admin_list_providers", {});
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);

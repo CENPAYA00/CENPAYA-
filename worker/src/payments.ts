@@ -2,9 +2,10 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { Env } from "./env.js";
 import { jsonResponse, readJsonObject } from "./http-utils.js";
 import { createPaymentWorkerClient } from "./supabase.js";
+import { dynamicPayout, dynamicStatus, dynamicTopup } from "./dynamic-gateway.js";
 
-type Gateway = "FAPSHI" | "CAMPAY";
-type Credentials = { api_public_key?: string; api_secret_key?: string };
+type Gateway = string;
+type Credentials = Record<string, unknown> & { api_public_key?: string; api_secret_key?: string; __adapter_config?: unknown };
 type ProviderStatus = { status: string; amount: number; currency: string };
 const BODY_LIMIT = 16_384;
 const TIMEOUT_MS = 12_000;
@@ -17,7 +18,7 @@ function baseUrl(provider: Gateway, env: "sandbox" | "production"): string {
   return env === "sandbox" ? "https://demo.campay.net/api" : "https://api.campay.net/api";
 }
 function isGateway(value: unknown): value is Gateway {
-  return value === "FAPSHI" || value === "CAMPAY";
+  return typeof value === "string" && /^[A-Z][A-Z0-9_]{1,39}$/.test(value);
 }
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -45,8 +46,13 @@ async function credentials(db: SupabaseClient, provider: Gateway, env: Env): Pro
     p_provider_name: provider, p_environment: environment(env),
   });
   const value = object(data) as Credentials;
-  if (error || !value.api_secret_key || (provider === "FAPSHI" && !value.api_public_key)) {
-    throw new Error("gateway_credentials_unavailable");
+  if (error || Object.keys(value).length === 0 ||
+      (provider === "FAPSHI" && (!value.api_secret_key || !value.api_public_key)) ||
+      (provider === "CAMPAY" && !value.api_secret_key)) throw new Error("gateway_credentials_unavailable");
+  if (provider !== "FAPSHI" && provider !== "CAMPAY") {
+    const { data: config, error: configError } = await db.rpc("worker_get_payment_adapter_config", { p_provider_name: provider });
+    if (configError || !config) throw new Error("gateway_adapter_unavailable");
+    value.__adapter_config = config;
   }
   return value;
 }
@@ -59,6 +65,10 @@ async function providerFetch(url: string, init: RequestInit): Promise<{ response
 async function providerStatus(
   provider: Gateway, creds: Credentials, env: Env, reference: string,
 ): Promise<ProviderStatus> {
+  if (provider !== "FAPSHI" && provider !== "CAMPAY") {
+    if (!creds.__adapter_config) throw new Error("gateway_adapter_unavailable");
+    return dynamicStatus(creds.__adapter_config, creds, { reference });
+  }
   const base = baseUrl(provider, environment(env));
   let result: { response: Response; data: Record<string, unknown> };
   if (provider === "FAPSHI") {
@@ -172,6 +182,10 @@ async function startTopup(
   provider: Gateway, creds: Credentials, env: Env, id: string, amountXaf: number,
   phoneNumber: string | null, email: string, description = "CenPaya wallet top-up",
 ): Promise<{ reference: string; checkoutUrl: string | null }> {
+  if (provider !== "FAPSHI" && provider !== "CAMPAY") {
+    if (!creds.__adapter_config) throw new Error("gateway_adapter_unavailable");
+    return dynamicTopup(creds.__adapter_config, creds, { amount:String(amountXaf),currency:"XAF",reference:id,phone:phoneNumber||"",email,description,user_id:id,external_reference:id });
+  }
   const base = baseUrl(provider, environment(env));
   if (provider === "FAPSHI") {
     const { response, data } = await providerFetch(base + "/initiate-pay", {
@@ -202,6 +216,10 @@ async function startPayout(
   provider: Gateway, creds: Credentials, env: Env, id: string, amountXaf: number,
   phoneNumber: string, destinationProvider: string, recipientName: string,
 ): Promise<string> {
+  if (provider !== "FAPSHI" && provider !== "CAMPAY") {
+    if (!creds.__adapter_config) throw new Error("gateway_adapter_unavailable");
+    return dynamicPayout(creds.__adapter_config, creds, { amount:String(amountXaf),currency:"XAF",reference:id,phone:phoneNumber,destination_provider:destinationProvider,recipient_name:recipientName,description:"CenPaya wallet withdrawal",user_id:id,external_reference:id });
+  }
   const base = baseUrl(provider, environment(env));
   if (provider === "FAPSHI") {
     const { response, data } = await providerFetch(base + "/payout", {
