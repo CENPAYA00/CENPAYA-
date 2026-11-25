@@ -147,7 +147,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       .first<{author_id:string;visibility:string;content:string;post_type:string;status:string;deleted_at:string|null}>();
     if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB,user.id,post.author_id,post.visibility))) return fail("Post not found",404);
     if ((eventType === "video_watch" || eventType === "video_complete") && post.post_type !== "video") return fail("Video engagement requires a video post");
-    const recentEvents = await env.DB.prepare("SELECT COUNT(*) AS total FROM post_engagement_events WHERE user_id=? AND created_at>=datetime('now','-1 minute')").bind(user.id).first<{total:number}>();
+    const recentEvents = await env.DB.prepare("SELECT COUNT(*) AS total FROM post_engagement_events WHERE user_id=? AND created_at>=strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 minute')").bind(user.id).first<{total:number}>();
     if (Number(recentEvents?.total || 0) >= 120) return fail("Too many feed events",429);
     await env.DB.prepare("INSERT INTO post_engagement_events(id,user_id,post_id,event_type,dwell_ms,watch_ms,completed,source) VALUES(?,?,?,?,?,?,?,?)")
       .bind(uuid(),user.id,postId,eventType,dwellMs,watchMs,b.completed===true?1:0,source).run();
