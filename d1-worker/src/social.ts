@@ -238,10 +238,16 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const blocked = await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id, targetId, targetId, user.id).first();
       if (blocked) return fail("This follow is unavailable", 403);
       if (target.profile_visibility === "private") {
+        const alreadyFollowing = await env.DB.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(user.id,targetId).first();
         if (method === "DELETE") {
-          await env.DB.prepare("UPDATE friend_requests SET status='cancelled',responded_at="+NOW+",updated_at="+NOW+" WHERE requester_id=? AND recipient_id=? AND status='pending'").bind(user.id,targetId).run();
-          return json({success:true,following:false,request_sent:false});
+          await env.DB.batch([
+            env.DB.prepare("UPDATE friend_requests SET status='cancelled',responded_at="+NOW+",updated_at="+NOW+" WHERE requester_id=? AND recipient_id=? AND status='pending'").bind(user.id,targetId),
+            env.DB.prepare("DELETE FROM user_follows WHERE follower_id=? AND following_id=?").bind(user.id,targetId),
+            env.DB.prepare("DELETE FROM friendships WHERE user_a_id=? AND user_b_id=?").bind(...[user.id,targetId].sort())
+          ]);
+          return json({success:true,following:false,request_sent:false,friends:false});
         }
+        if (alreadyFollowing) return json({success:true,following:true,request_sent:false});
         const existing = await env.DB.prepare("SELECT id FROM friend_requests WHERE requester_id=? AND recipient_id=? AND status='pending'").bind(user.id,targetId).first();
         if (existing) return json({success:true,following:false,request_sent:true});
         const requestId=uuid();
@@ -261,7 +267,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       }
       await env.DB.batch([
         env.DB.prepare("DELETE FROM user_follows WHERE follower_id=? AND following_id=?").bind(user.id, targetId),
-        env.DB.prepare("DELETE FROM friendships WHERE user_a_id=? AND user_b_id=? AND source_request_id IS NULL").bind(...[user.id,targetId].sort())
+        env.DB.prepare("DELETE FROM friendships WHERE user_a_id=? AND user_b_id=?").bind(...[user.id,targetId].sort())
       ]);
       return json({ success: true, following: false, friends: false });
     }
@@ -312,6 +318,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     const [a, b] = [requesterId, user.id].sort();
     await env.DB.batch([
       env.DB.prepare("UPDATE friend_requests SET status='accepted',responded_at=" + NOW + ",updated_at=" + NOW + " WHERE id=?").bind(req.id),
+      env.DB.prepare("INSERT OR IGNORE INTO user_follows(follower_id,following_id) VALUES(?,?)").bind(requesterId,user.id),
       env.DB.prepare("INSERT OR IGNORE INTO friendships(user_a_id,user_b_id,source_request_id) VALUES(?,?,?)").bind(a, b, req.id),
     ]);
     await notify(env, requesterId, user.id, "friend_request_accepted", "user", user.id, "Friend request accepted", user.display_name + " accepted your friend request.");
