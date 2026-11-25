@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart, MessageCircle, Share2, X, MoreHorizontal,
-  Bookmark, EyeOff, Flag, Download, Link as LinkIcon, Crown, AtSign, Globe
+  Bookmark, EyeOff, Flag, Download, Link as LinkIcon, Crown, AtSign, Globe, Play
 } from 'lucide-react';
 import { d1Request } from '../lib/d1Api';
 import ImageGrid from './ImageGrid';
@@ -314,6 +314,12 @@ export default function FeedPostCard({
               </>
             )}
           </div>
+        )}
+        {post.post_type === 'video' && post.video_id && (
+          <button onClick={() => navigate(`/reels?video=${encodeURIComponent(post.video_id)}`)} className="relative w-full aspect-video bg-gradient-to-br from-[#0b3424] via-[#17613f] to-[#07150f] flex items-center justify-center overflow-hidden">
+            <span className="w-14 h-14 rounded-full bg-white/20 backdrop-blur border border-white/40 flex items-center justify-center text-white"><Play size={22} fill="currentColor"/></span>
+            <span className="absolute bottom-3 left-3 text-[10px] font-bold text-white bg-black/40 px-2 py-1 rounded-full">Watch video</span>
+          </button>
         )}
         {images.length > 0 && <ImageGrid images={images} onOpenImage={() => navigate(`/post/${post.id}`)} />}
         {docs.length > 0 && (
