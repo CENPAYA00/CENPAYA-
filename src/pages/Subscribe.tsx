@@ -7,7 +7,7 @@ import {
   METHOD_LABELS,
   payForSubscription,
 } from '../utils/payForSubscription';
-import { Check, X, Sparkles, Zap, Shield, Store, Crown, Wallet, Link2 } from 'lucide-react';
+import { Check, X, Sparkles, Zap, Shield, Store, Crown, Wallet } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import { PaymentMethodLogo } from '../components/PaymentMethodLogo';
 
