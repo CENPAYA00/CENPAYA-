@@ -18,6 +18,7 @@ export default function Home() {
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [openPost, setOpenPost] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'posts' | 'videos'>('posts');
+  const [activeFeed, setActiveFeed] = useState<'for_you' | 'following'>('for_you');
   const [videos, setVideos] = useState<any[]>([]);
   const [videosLoading, setVideosLoading] = useState(false);
   const [videosLoaded, setVideosLoaded] = useState(false);
@@ -28,19 +29,19 @@ export default function Home() {
       const user = await getCachedUser();
       if (user) setUserId(user.id);
 
-      const cached = getCached<any[]>('home_posts');
+      const cached = getCached<any[]>('home_posts_for_you');
       if (cached) {
         setPosts(cached);
         setLoading(false);
       }
-      await fetchPosts();
+      await fetchPosts('for_you');
     };
     init();
   }, []);
 
-  const fetchPosts = useCallback(async () => {
+  const fetchPosts = useCallback(async (scope: 'for_you' | 'following' = 'for_you') => {
     try {
-      const { data } = await d1Request<{ data: any[] }>('/api/feed?limit=40');
+      const { data } = await d1Request<{ data: any[] }>(`/api/feed?limit=40&scope=${scope}`);
       const feed = (data || []).map((post: any) => ({
         ...post,
         user_id: post.author_id,
@@ -50,7 +51,7 @@ export default function Home() {
         comments_count: post.comments_count || 0,
       }));
       setPosts(feed);
-      setCached('home_posts', feed);
+      setCached(`home_posts_${scope}`, feed);
       setFollowingIds(new Set(feed.filter((post: any) => post.is_following_author).map((post: any) => post.author_id)));
       setLikedPosts(new Set(feed.filter((post: any) => post.is_liked).map((post: any) => post.id)));
       setSavedPosts(new Set(feed.filter((post: any) => post.is_saved).map((post: any) => post.id)));
@@ -69,7 +70,7 @@ export default function Home() {
       finally { setVideosLoading(false); }
       return;
     }
-    await fetchPosts();
+    await fetchPosts(activeFeed);
   };
 
   useEffect(() => {
@@ -115,12 +116,12 @@ export default function Home() {
       setFollowingIds(prev => { const n = new Set(prev); n.delete(authorId); return n; });
     }
     setPosts(prev => prev.map(p => p.user_id === authorId ? { ...p, is_following_author: isNowFollowing } : p));
-    setCached('home_posts', null);
+    setCached(`home_posts_${activeFeed}`, null);
   };
 
   const handleCommentAdded = (postId: string) => {
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p));
-    setCached('home_posts', null);
+    setCached(`home_posts_${activeFeed}`, null);
   };
 
   const visible = posts.filter(p => showDemo || !p.is_demo);
@@ -156,11 +157,25 @@ export default function Home() {
           <button onClick={() => setActiveTab('posts')} className={`rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-2 ${activeTab === 'posts' ? 'bg-accent text-white' : 'bg-white dark:bg-darkcard text-gray-500'}`}><Eye size={14}/> Posts</button>
           <button onClick={() => setActiveTab('videos')} className={`rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-2 ${activeTab === 'videos' ? 'bg-accent text-white' : 'bg-white dark:bg-darkcard text-gray-500'}`}><Film size={14}/> Videos</button>
         </div>
+        {activeTab === 'posts' && (
+          <div className="grid grid-cols-2 gap-2 mb-3 px-1">
+            <button
+              onClick={() => { setActiveFeed('for_you'); void fetchPosts('for_you'); }}
+              aria-pressed={activeFeed === 'for_you'}
+              className={`rounded-lg py-2 text-[11px] font-bold ${activeFeed === 'for_you' ? 'bg-navy text-white dark:bg-accent' : 'bg-white dark:bg-darkcard text-gray-500'}`}
+            >For You</button>
+            <button
+              onClick={() => { setActiveFeed('following'); void fetchPosts('following'); }}
+              aria-pressed={activeFeed === 'following'}
+              className={`rounded-lg py-2 text-[11px] font-bold ${activeFeed === 'following' ? 'bg-navy text-white dark:bg-accent' : 'bg-white dark:bg-darkcard text-gray-500'}`}
+            >Following & Friends</button>
+          </div>
+        )}
 
         {activeTab === 'posts' && visible.length === 0 && (
           <div className="bg-white dark:bg-darkcard p-6 rounded-card shadow-soft text-center">
-            <p className="text-[13px] font-bold text-navy dark:text-white">No posts yet</p>
-            <p className="text-[11px] text-mute mt-1">Be the first to share something.</p>
+            <p className="text-[13px] font-bold text-navy dark:text-white">{activeFeed === 'following' ? 'No posts from your network yet' : 'No posts yet'}</p>
+            <p className="text-[11px] text-mute mt-1">{activeFeed === 'following' ? 'Follow people to see their posts here. Mutual follows appear as friends.' : 'Be the first to share something.'}</p>
           </div>
         )}
 
