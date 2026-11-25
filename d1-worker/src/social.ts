@@ -223,11 +223,19 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       if (blocked) return fail("This follow is unavailable", 403);
       if (method === "POST") {
         const result = await env.DB.prepare("INSERT OR IGNORE INTO user_follows(follower_id,following_id) VALUES(?,?)").bind(user.id, targetId).run();
+        const reverse = await env.DB.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(targetId,user.id).first();
+        if (reverse) {
+          const [a,b] = [user.id,targetId].sort();
+          await env.DB.prepare("INSERT OR IGNORE INTO friendships(user_a_id,user_b_id,source_request_id) VALUES(?,?,NULL)").bind(a,b).run();
+        }
         if (result.meta.changes) await notify(env, targetId, user.id, "new_follower", "user", user.id, "New follower", user.display_name + " started following you.");
-        return json({ success: true, following: true });
+        return json({ success: true, following: true, friends: !!reverse });
       }
-      await env.DB.prepare("DELETE FROM user_follows WHERE follower_id=? AND following_id=?").bind(user.id, targetId).run();
-      return json({ success: true, following: false });
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM user_follows WHERE follower_id=? AND following_id=?").bind(user.id, targetId),
+        env.DB.prepare("DELETE FROM friendships WHERE user_a_id=? AND user_b_id=? AND source_request_id IS NULL").bind(...[user.id,targetId].sort())
+      ]);
+      return json({ success: true, following: false, friends: false });
     }
   }
 
