@@ -129,11 +129,16 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     if (!UUID.test(postId) || !allowed.includes(eventType)) return fail("Invalid feed event");
     const dwellMs = Math.min(Math.max(Math.trunc(Number(b.dwell_ms) || 0), 0), 300000);
     const watchMs = Math.min(Math.max(Math.trunc(Number(b.watch_ms) || 0), 0), 300000);
+    const sourceValue = str(b.source,24);
+    const source = ["feed","videos","search","profile","shared"].includes(sourceValue) ? sourceValue : "feed";
     const post = await env.DB.prepare("SELECT author_id,visibility,content,post_type,status,deleted_at FROM posts WHERE id=?").bind(postId)
       .first<{author_id:string;visibility:string;content:string;post_type:string;status:string;deleted_at:string|null}>();
     if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB,user.id,post.author_id,post.visibility))) return fail("Post not found",404);
+    if ((eventType === "video_watch" || eventType === "video_complete") && post.post_type !== "video") return fail("Video engagement requires a video post");
+    const recentEvents = await env.DB.prepare("SELECT COUNT(*) AS total FROM post_engagement_events WHERE user_id=? AND created_at>=datetime('now','-1 minute')").bind(user.id).first<{total:number}>();
+    if (Number(recentEvents?.total || 0) >= 120) return fail("Too many feed events",429);
     await env.DB.prepare("INSERT INTO post_engagement_events(id,user_id,post_id,event_type,dwell_ms,watch_ms,completed,source) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(uuid(),user.id,postId,eventType,dwellMs,watchMs,b.completed===true?1:0,str(b.source,24)||"feed").run();
+      .bind(uuid(),user.id,postId,eventType,dwellMs,watchMs,b.completed===true?1:0,source).run();
     let weight = 0;
     if (eventType === "dwell" && dwellMs >= 2500) weight = Math.min(8, 2 + dwellMs / 6000);
     if (eventType === "video_watch" && watchMs >= 3000) weight = Math.min(10, 2 + watchMs / 10000);
