@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Image as ImageIcon, X, MapPin, FileText, Check
+  ArrowLeft, Image as ImageIcon, X, MapPin, FileText, Check, Zap
 } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
 import { compressImage } from '../utils/compressImage';
@@ -52,6 +52,7 @@ export default function CreateListing() {
 
   const [offerShipping, setOfferShipping] = useState(false);
   const [hideFromFriends, setHideFromFriends] = useState(false);
+  const [boostAfterPublish, setBoostAfterPublish] = useState(false);
 
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -220,7 +221,7 @@ export default function CreateListing() {
         }
       }
       alert('Listing published!');
-      navigate(`/listing/${result.id}`);
+      navigate(boostAfterPublish ? `/boosted?type=listing&id=${encodeURIComponent(result.id)}` : `/listing/${result.id}`);
     } catch (e: any) {
       setErrorMsg(e.message || 'Could not publish listing.');
     }
@@ -252,6 +253,12 @@ export default function CreateListing() {
       </div>
 
       <div className="px-3 py-3 space-y-3">
+        <label className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-darkline bg-white dark:bg-darkcard p-3 cursor-pointer">
+          <input type="checkbox" checked={boostAfterPublish} onChange={e => setBoostAfterPublish(e.target.checked)} className="accent-[#12935a]" />
+          <span className="flex-1 text-[11px] font-semibold text-navy dark:text-white">Boost this listing after publishing</span>
+          <Zap size={15} className="text-accent" />
+        </label>
+        <p className="text-[9px] text-gray-400 -mt-2">Choose a boost plan and confirm any payment after publishing.</p>
         <Field
           label="Category"
           value={selectedCategory?.display_name || 'Select'}
