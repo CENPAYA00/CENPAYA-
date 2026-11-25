@@ -74,6 +74,8 @@ export default function Reels() {
         hls.loadSource(src);
         hls.attachMedia(video);
         hlsRefs.current[item.video_id] = hls;
+      } else {
+        setError('This browser cannot play HLS video streams. Update your browser and try again.');
       }
     }
     return () => {
@@ -93,6 +95,7 @@ export default function Reels() {
 
   const onTimeUpdate = (item: Reel, currentTime: number) => {
     const previous = trackedSeconds.current[item.video_id] || 0;
+    if (currentTime < previous) { trackedSeconds.current[item.video_id] = currentTime; return; }
     if (currentTime - previous >= 10) {
       trackedSeconds.current[item.video_id] = currentTime;
       void track(item, 'video_watch', Math.min(300000, Math.round((currentTime - previous) * 1000)));
@@ -132,7 +135,6 @@ export default function Reels() {
               onTimeUpdate={event => onTimeUpdate(item, event.currentTarget.currentTime)}
               onEnded={() => onEnded(item)}
               onPlay={() => { void track(item, 'impression'); }}
-              onPause={() => { const video = videoRefs.current[item.video_id]; if (video && video.currentTime > 0) void track(item, 'video_watch', Math.min(300000, Math.round(video.currentTime * 1000))); }}
             />
             <div className="px-4 py-3 bg-gradient-to-t from-black to-transparent">
               <p className="font-bold text-sm">@{item.username || item.display_name || 'Cenpaya creator'}</p>
