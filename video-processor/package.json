@@ -1,1 +1,17 @@
-{"name":"@cenpaya/video-processor","private":true,"version":"1.0.0","type":"module","scripts":{"start":"node server.mjs"},"dependencies":{"@aws-sdk/client-s3":"^3.850.0","@aws-sdk/s3-request-presigner":"^3.850.0"}}
+{
+  "name": "cenpaya-video-processor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.800.0",
+    "@aws-sdk/s3-request-presigner": "^3.800.0"
+  }
+}
