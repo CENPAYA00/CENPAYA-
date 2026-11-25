@@ -113,6 +113,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
    (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id AND r.reaction_type='like') AS likes_count,
    (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count,
    (SELECT COUNT(*) FROM video_ratings vr WHERE vr.video_id=v.id) AS ratings_count,
+   (SELECT COUNT(*) FROM video_views vv WHERE vv.video_id=v.id) AS views_count,
    (SELECT ROUND(AVG(vr.stars),2) FROM video_ratings vr WHERE vr.video_id=v.id) AS average_rating,
    (SELECT vr.stars FROM video_ratings vr WHERE vr.video_id=v.id AND vr.user_id=?) AS viewer_rating,
    CASE WHEN EXISTS(SELECT 1 FROM post_reactions r WHERE r.post_id=p.id AND r.user_id=? AND r.reaction_type='like') THEN 1 ELSE 0 END AS is_liked,

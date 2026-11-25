@@ -9,7 +9,7 @@ type Reel = {
  video_id:string; post_id:string; author_id:string; content:string; username:string; display_name:string;
  playlist_url:string; duration_seconds:number|null; likes_count:number; comments_count:number;
  is_liked:number|boolean; is_following_author:number|boolean; average_rating:number|null;
- ratings_count:number; viewer_rating:number|null;
+ ratings_count:number; views_count:number; viewer_rating:number|null;
 };
 let loader:Promise<void>|null=null;
 function loadHls(){if(window.Hls)return Promise.resolve();if(!loader)loader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';script.onload=()=>resolve();script.onerror=()=>reject(new Error('HLS player unavailable'));document.head.appendChild(script);});return loader;}
@@ -31,7 +31,7 @@ export default function Reels(){
  <div className="p-3"><div className="flex items-center justify-between gap-2"><button onClick={()=>navigate('/seller/'+encodeURIComponent(item.author_id))} className="text-xs font-bold">@{item.username||item.display_name||'Cenpaya user'}</button>{meId&&meId!==item.author_id&&<button onClick={()=>void follow(item)} className="rounded-lg bg-white/15 px-3 py-1.5 text-[10px] font-bold flex items-center gap-1"><UserPlus size={12}/>{item.is_following_author?'Following':'Follow'}</button>}</div>
  {item.content&&<p className="text-xs mt-2 whitespace-pre-wrap">{item.content}</p>}
  <div className="flex items-center gap-4 mt-3 border-t border-white/15 pt-2"><button onClick={()=>void like(item)} className={`flex items-center gap-1.5 text-xs font-bold ${item.is_liked?'text-pink-400':'text-white'}`}><Heart size={16} fill={item.is_liked?'currentColor':'none'}/>{item.likes_count||0} Like</button><button onClick={()=>setCommentPost(item.post_id)} className="flex items-center gap-1.5 text-xs font-bold"><MessageCircle size={16}/>{item.comments_count||0} Comment</button></div>
- <div className="mt-3 flex items-center justify-between gap-2"><div className="flex items-center gap-1">{[1,2,3,4,5].map(star=><button key={star} aria-label={`Rate ${star} out of 5 stars`} onClick={()=>void rate(item,star)} className={star<=Number(item.viewer_rating||0)?'text-amber-400':'text-white/50'}><Star size={17} fill={star<=Number(item.viewer_rating||0)?'currentColor':'none'}/></button>)}</div><span className="text-[10px] text-white/70">{Number(item.average_rating||0).toFixed(1)} / 5 · {item.ratings_count||0} ratings</span></div>
+ <div className="mt-3 flex items-center justify-between gap-2"><div className="flex items-center gap-1">{[1,2,3,4,5].map(star=><button key={star} aria-label={`Rate ${star} out of 5 stars`} onClick={()=>void rate(item,star)} className={star<=Number(item.viewer_rating||0)?'text-amber-400':'text-white/50'}><Star size={17} fill={star<=Number(item.viewer_rating||0)?'currentColor':'none'}/></button>)}</div><span className="text-[10px] text-white/70">{item.views_count||0} views · {Number(item.average_rating||0).toFixed(1)} / 5 · {item.ratings_count||0} ratings</span></div>
  </div></article>)}</div>
  <CommentsSheet postId={commentPost} me={meId} onClose={()=>setCommentPost(null)} onCommentAdded={()=>setItems(p=>p.map(item=>item.post_id===commentPost?{...item,comments_count:item.comments_count+1}:item))}/>
  </div>;

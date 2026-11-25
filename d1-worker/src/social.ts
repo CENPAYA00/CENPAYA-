@@ -151,6 +151,10 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     if (Number(recentEvents?.total || 0) >= 120) return fail("Too many feed events",429);
     await env.DB.prepare("INSERT INTO post_engagement_events(id,user_id,post_id,event_type,dwell_ms,watch_ms,completed,source) VALUES(?,?,?,?,?,?,?,?)")
       .bind(uuid(),user.id,postId,eventType,dwellMs,watchMs,b.completed===true?1:0,source).run();
+    if (eventType === "video_watch" || eventType === "video_complete") {
+      await env.DB.prepare("INSERT OR IGNORE INTO video_views(video_id,user_id) SELECT id,? FROM video_assets WHERE post_id=? AND status='ready'")
+        .bind(user.id,postId).run();
+    }
     let weight = 0;
     if (eventType === "dwell" && dwellMs >= 2500) weight = Math.min(8, 2 + dwellMs / 6000);
     if (eventType === "video_watch" && watchMs >= 3000) weight = Math.min(10, 2 + watchMs / 10000);
