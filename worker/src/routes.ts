@@ -646,6 +646,16 @@ export async function handleAuthenticatedApi(
     const result = await rpc(supabase, "admin_list_providers", {});
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
+  if (method === "POST" && path === "/api/v1/admin/providers") {
+    const body = await readJsonObject(request, 4096);
+    const providerName = typeof body?.provider_name === "string" ? body.provider_name.trim().toUpperCase() : "";
+    const displayName = typeof body?.display_name === "string" ? body.display_name.trim() : "";
+    const countries = body?.supported_countries;
+    const priority = body?.priority === undefined ? 100 : body.priority;
+    if (!body || !onlyKeys(body, ["provider_name","display_name","supported_countries","priority"]) || !/^[A-Z][A-Z0-9_]{1,39}$/.test(providerName) || !displayName || displayName.length > 120 || !Number.isSafeInteger(priority) || Number(priority)<1 || Number(priority)>10000 || (countries !== undefined && countries !== null && (!Array.isArray(countries) || countries.length>30 || countries.some(country => typeof country !== "string" || !/^[A-Z]{2}$/.test(country))))) return failure("invalid_payment_provider_request",400,headers);
+    const result = await rpc(supabase,"admin_create_payment_provider",{p_provider_name:providerName,p_display_name:displayName,p_supported_countries:countries===undefined?null:countries,p_priority:Number(priority)});
+    return result.error ? failure(result.error,result.status,headers) : success(result.data,headers);
+  }
   if (method === "GET" && path === "/api/v1/admin/users") {
     const result = await rpc(supabase, "admin_list_users", {
       p_search: url.searchParams.get("search") || null,
@@ -733,21 +743,23 @@ export async function handleAuthenticatedApi(
   if (method === "POST" && path === "/api/v1/admin/gateway-credentials") {
     const body = await readJsonObject(request, 16_384);
     const provider = typeof body?.provider_name === "string" ? body.provider_name.trim() : "";
-    const publicKey = typeof body?.api_public_key === "string" ? body.api_public_key.trim() : "";
-    const secretKey = typeof body?.api_secret_key === "string" ? body.api_secret_key.trim() : "";
-    const webhookSecret = typeof body?.webhook_secret === "string" ? body.webhook_secret.trim() : null;
     const environment = typeof body?.environment === "string" ? body.environment : "production";
-    if (!body || !onlyKeys(body, ["provider_name", "api_public_key", "api_secret_key", "webhook_secret", "environment"]) ||
-        (body.webhook_secret !== undefined && body.webhook_secret !== null && typeof body.webhook_secret !== "string") ||
-        !provider || provider.length > 80 || !publicKey || publicKey.length > 2048 ||
-        !secretKey || secretKey.length > 4096 || (webhookSecret !== null && webhookSecret.length > 4096) ||
-        !["sandbox", "production"].includes(environment)) {
-      return failure("invalid_gateway_credentials_request", 400, headers);
+    let credentials: Record<string, string> = {};
+    if (body && body.credentials && typeof body.credentials === "object" && !Array.isArray(body.credentials)) {
+      if (!onlyKeys(body, ["provider_name", "environment", "credentials"])) return failure("invalid_gateway_credentials_request", 400, headers);
+      const entries = Object.entries(body.credentials as Record<string, unknown>);
+      if (entries.length < 1 || entries.length > 30 || entries.some(([key,value]) => !/^[a-z][a-z0-9_]{0,49}$/.test(key) || typeof value !== "string" || value.trim().length < 1 || value.length > 4096)) return failure("invalid_gateway_credentials_request", 400, headers);
+      credentials = Object.fromEntries(entries.map(([key,value]) => [key,(value as string).trim()]));
+    } else {
+      const publicKey = typeof body?.api_public_key === "string" ? body.api_public_key.trim() : "";
+      const secretKey = typeof body?.api_secret_key === "string" ? body.api_secret_key.trim() : "";
+      const webhookSecret = typeof body?.webhook_secret === "string" ? body.webhook_secret.trim() : "";
+      if (!body || !onlyKeys(body, ["provider_name","api_public_key","api_secret_key","webhook_secret","environment"]) || (body.webhook_secret !== undefined && body.webhook_secret !== null && typeof body.webhook_secret !== "string") || !publicKey || publicKey.length > 2048 || !secretKey || secretKey.length > 4096 || (webhookSecret && webhookSecret.length > 4096)) return failure("invalid_gateway_credentials_request", 400, headers);
+      credentials = { api_public_key: publicKey, api_secret_key: secretKey };
+      if (webhookSecret) credentials.webhook_secret = webhookSecret;
     }
-    const result = await rpc(supabase, "admin_set_gateway_credentials", {
-      p_provider_name: provider, p_api_public_key: publicKey, p_api_secret_key: secretKey,
-      p_webhook_secret: webhookSecret, p_environment: environment,
-    });
+    if (!provider || provider.length > 80 || !["sandbox","production"].includes(environment)) return failure("invalid_gateway_credentials_request", 400, headers);
+    const result = await rpc(supabase, "admin_set_gateway_credentials_map", { p_provider_name: provider, p_environment: environment, p_credentials: credentials });
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
   if (method === "POST" && path === "/api/v1/admin/gateway-credentials/remove") {
