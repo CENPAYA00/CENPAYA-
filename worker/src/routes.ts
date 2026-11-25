@@ -727,7 +727,7 @@ export async function handleAuthenticatedApi(
       }
       if (body.is_active && body.enabled_methods.length === 0) return failure("country_payment_setup_incomplete", 409, headers);
       const result = await rpc(supabase, "admin_upsert_supported_country", {
-        p_country_iso: countryIso, p_name: body.name.trim(), p_phone_prefix: body.phone_prefix,
+        p_country_iso: countryIso, p_name: String(body.name).trim(), p_phone_prefix: body.phone_prefix,
         p_currency_code: body.currency_code, p_currency_value_in_xaf: body.currency_value_in_xaf,
         p_flag_emoji: body.flag_emoji ?? null, p_regions: body.regions, p_enabled_methods: body.enabled_methods,
         p_base_fee_pct: body.base_marketplace_fee_pct, p_premium_fee_pct: body.premium_subscriber_fee_pct,
