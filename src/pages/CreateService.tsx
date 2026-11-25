@@ -53,7 +53,13 @@ export default function CreateService() {
     if (!description.trim()) return setErrorMsg('Description is required.');
 
     if (!usePriceRange && (!price || Number(price) <= 0)) return setErrorMsg('Enter a valid starting price.');
-    if (usePriceRange && (!priceMin || Number(priceMin) <= 0)) return setErrorMsg('Enter a valid minimum price.');
+    if (usePriceRange) {
+      const min = Number(priceMin);
+      const max = Number(priceMax);
+      if (!priceMin || !Number.isSafeInteger(min) || min <= 0) return setErrorMsg('Enter a valid positive minimum price in whole XAF.');
+      if (!priceMax || !Number.isSafeInteger(max) || max <= 0) return setErrorMsg('Enter a maximum price to complete the range.');
+      if (max <= min) return setErrorMsg('Maximum price must be greater than the minimum price.');
+    }
 
     setLoading(true);
     try {
@@ -94,7 +100,7 @@ export default function CreateService() {
           documents_json: docUrls,
           price_is_range: usePriceRange,
           price_min: usePriceRange ? Number(priceMin) : finalPrice,
-          price_max: usePriceRange ? (priceMax ? Number(priceMax) : Number(priceMin)) : finalPrice,
+          price_max: usePriceRange ? Number(priceMax) : finalPrice,
         }),
       });
 
@@ -238,7 +244,7 @@ export default function CreateService() {
               type="number"
               value={priceMax}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPriceMax(e.target.value)}
-              placeholder="Max"
+              placeholder="Max (required)"
               className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg text-xs bg-gray-50 dark:bg-darkbg"
             />
           </div>
