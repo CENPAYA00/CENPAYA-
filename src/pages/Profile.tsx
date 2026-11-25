@@ -81,7 +81,7 @@ export default function Profile() {
 
   const handleShare = async () => {
     if (!user) return;
-    const url = `https://cenpaya.pages.dev/seller/${user.id}`;
+    const url = `${window.location.origin}/profile/${user.id}`;
     if (navigator.share) {
       try { await navigator.share({ title: `@${user.username} on CenPaya`, url }); } catch {}
     } else {
@@ -90,11 +90,29 @@ export default function Profile() {
     }
   };
 
+  const handleSharePost = async (post: any) => {
+    if (!user || !post?.id) return;
+    const url = `${window.location.origin}/post/${post.id}`;
+    try {
+      await d1Request(`/api/posts/${encodeURIComponent(post.id)}/share`, { method: 'POST', body: JSON.stringify({ channel: 'external' }) });
+      void d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: post.id, event_type: 'share', source: 'profile' }) }).catch(() => undefined);
+    } catch { /* Sharing should still work if analytics are unavailable. */ }
+    if (navigator.share) {
+      try { await navigator.share({ title: `Post by @${user.username}`, url }); } catch {}
+    } else {
+      await navigator.clipboard.writeText(url);
+      alert('Post link copied');
+    }
+  };
+
   const handleLike = async (postId: string) => {
     const currentlyLiked = likedPosts.has(postId);
     setLikedPosts(prev => { const next = new Set(prev); currentlyLiked ? next.delete(postId) : next.add(postId); return next; });
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: (p.likes_count || 0) + (currentlyLiked ? -1 : 1) } : p));
-    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/like`, { method: currentlyLiked ? 'DELETE' : 'POST' }); }
+    try {
+      await d1Request(`/api/posts/${encodeURIComponent(postId)}/like`, { method: currentlyLiked ? 'DELETE' : 'POST' });
+      if (!currentlyLiked) void d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: postId, event_type: 'like', source: 'profile' }) }).catch(() => undefined);
+    }
     catch (error: any) {
       setLikedPosts(prev => { const next = new Set(prev); currentlyLiked ? next.add(postId) : next.delete(postId); return next; });
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: (p.likes_count || 0) + (currentlyLiked ? 1 : -1) } : p));
@@ -105,7 +123,10 @@ export default function Profile() {
   const handleSave = async (postId: string) => {
     const isSaved = savedPosts.has(postId);
     setSavedPosts(prev => { const next = new Set(prev); isSaved ? next.delete(postId) : next.add(postId); return next; });
-    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/save`, { method: isSaved ? 'DELETE' : 'POST' }); }
+    try {
+      await d1Request(`/api/posts/${encodeURIComponent(postId)}/save`, { method: isSaved ? 'DELETE' : 'POST' });
+      if (!isSaved) void d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: postId, event_type: 'save', source: 'profile' }) }).catch(() => undefined);
+    }
     catch (error: any) {
       setSavedPosts(prev => { const next = new Set(prev); isSaved ? next.add(postId) : next.delete(postId); return next; });
       alert(error.message || 'Could not update saved post');
@@ -127,7 +148,7 @@ export default function Profile() {
       isSaved={savedPosts.has(post.id)}
       onLike={() => handleLike(post.id)}
       onComment={() => navigate(`/post/${post.id}`)}
-      onShare={() => {}}
+      onShare={() => handleSharePost(post)}
       onSave={() => handleSave(post.id)}
     />
   ));
