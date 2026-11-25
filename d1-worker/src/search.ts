@@ -19,8 +19,13 @@ const firstString=(...values:unknown[]):string=>{
 const str=(value:unknown,max=200)=>typeof value==="string"?value.trim().slice(0,max):"";
 const SEARCH_STOP_WORDS = new Set(["the","and","for","with","from","your","you","are","that","this","how","what","who","where","when","les","des","une","pour","avec","dans","sur","qui","que","est","sont"]);
 function searchTopics(value:string):string[]{
- return [...new Set(value.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu," ").split(/\s+/)
-  .filter(token=>token.length>=3&&token.length<=28&&!SEARCH_STOP_WORDS.has(token)))].slice(0,6);
+ return [...new Set(value.toLowerCase().normalize("NFKD").replace(/[^\\p{L}\\p{N}]+/gu," ").split(/\\s+/)
+  .filter(token=>token.length>=2&&token.length<=28&&!SEARCH_STOP_WORDS.has(token)))].slice(0,8);
+}
+function relevanceSql(columns:string[],terms:string[],weight:number):{sql:string;binds:string[]}{
+ const expression=columns.join(" || ' ' || ");
+ const clauses=terms.map(() => `(CASE WHEN instr(lower(${expression}),?)>0 THEN ${weight} ELSE 0 END)`);
+ return {sql:clauses.length?`(${clauses.join("+")})`:"0",binds:terms};
 }
 
 async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,viewerId:string|null):Promise<SearchHit[]>{
@@ -32,14 +37,22 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,
     ]);
     return [...posts,...listings,...services].slice(0,limit);
   }
-  const term="%"+q.replace(/[%_]/g,"")+"%",results:SearchHit[]=[];
+  const term="%"+q.toLowerCase().replace(/[%_]/g,"")+"%",results:SearchHit[]=[];
   if(kind==="home"){
-    const rows=await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_demo
+    const terms=searchTopics(q),postScore=relevanceSql(["COALESCE(p.content,'')","COALESCE(u.username,'')","COALESCE(u.display_name,'')"],terms,3);
+    const tokenMatch=terms.length?` OR ${terms.map(()=>"(instr(lower(COALESCE(p.content,'')||' '||COALESCE(u.username,'')||' '||COALESCE(u.display_name,'')),?)>0)").join(" OR ")}`:"";
+    const rows=await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_demo,
+      (CASE WHEN lower(COALESCE(p.content,'')) LIKE ? THEN 12 ELSE 0 END+
+       CASE WHEN lower(COALESCE(u.username,'')) LIKE ? THEN 8 ELSE 0 END+
+       CASE WHEN lower(COALESCE(u.display_name,'')) LIKE ? THEN 6 ELSE 0 END+
+       ${postScore.sql}) AS relevance_score
       FROM posts p JOIN users u ON u.id=p.author_id
       WHERE p.status='published' AND p.deleted_at IS NULL AND p.visibility='public'
       AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
-      AND (p.content LIKE ? OR u.username LIKE ? OR u.display_name LIKE ?)
-      ORDER BY COALESCE(p.published_at,p.created_at) DESC LIMIT ?`).bind(term,term,term,limit).all<Record<string,unknown>>();
+      AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=?)))
+      AND (lower(COALESCE(p.content,'')) LIKE ? OR lower(COALESCE(u.username,'')) LIKE ? OR lower(COALESCE(u.display_name,'')) LIKE ?${tokenMatch})
+      ORDER BY relevance_score DESC,COALESCE(p.published_at,p.created_at) DESC LIMIT ?`)
+      .bind(term,term,term,...postScore.binds,viewerId,viewerId,viewerId,term,term,term,...terms,limit).all<Record<string,unknown>>();
     const posts=await hydratePosts(env,url.origin,rows.results);
     for(const post of posts){
       const content=firstString(post.content,"Post");
@@ -48,18 +61,24 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,
     }
   }else{
     const listingType=kind==="services"?"service":"product";
+    const terms=searchTopics(q),listingScore=relevanceSql(["COALESCE(l.title,'')","COALESCE(l.description,'')","COALESCE(u.username,'')"],terms,2);
+    const tokenMatch=terms.length?` OR ${terms.map(()=>"(instr(lower(COALESCE(l.title,'')||' '||COALESCE(l.description,'')||' '||COALESCE(u.username,'')),?)>0)").join(" OR ")}`:"";
     const rows=await env.DB.prepare(`SELECT l.id AS listing_id,l.title AS product_title,l.description,l.price_amount,l.currency_code,l.listing_type,l.images_json,l.city,l.country_code,
       COALESCE(l.published_at,l.created_at) AS published_date,u.username AS merchant_name,l.is_demo AS is_demo,
       CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=l.seller_id) THEN 18 ELSE 0 END AS relationship_score,
-      COALESCE((SELECT SUM(i.score) FROM user_interest_signals i WHERE i.user_id=? AND i.score>0 AND instr(lower(l.title||' '||COALESCE(l.description,'')),i.topic_key)>0),0) AS interest_score
+      COALESCE((SELECT SUM(i.score) FROM user_interest_signals i WHERE i.user_id=? AND i.score>0 AND instr(lower(l.title||' '||COALESCE(l.description,'')),i.topic_key)>0),0) AS interest_score,
+      (CASE WHEN lower(COALESCE(l.title,'')) LIKE ? THEN 18 ELSE 0 END+
+       CASE WHEN lower(COALESCE(l.description,'')) LIKE ? THEN 9 ELSE 0 END+
+       CASE WHEN lower(COALESCE(u.username,'')) LIKE ? THEN 6 ELSE 0 END+
+       ${listingScore.sql}) AS relevance_score
       FROM marketplace_listings l JOIN users u ON u.id=l.seller_id
       WHERE l.status='active' AND l.deleted_at IS NULL AND l.moderation_status='approved'
       AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL AND l.listing_type=?
       AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))
       AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=l.seller_id) OR (b.blocker_id=l.seller_id AND b.blocked_id=?)))
-      AND (l.title LIKE ? OR l.description LIKE ? OR u.username LIKE ?)
-      ORDER BY (l.boosted_until IS NOT NULL AND l.boosted_until > strftime('%Y-%m-%dT%H:%M:%fZ','now')) DESC,(relationship_score+interest_score) DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
-      .bind(viewerId,viewerId,listingType,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,term,term,term,limit).all<Record<string,unknown>>();
+      AND (lower(COALESCE(l.title,'')) LIKE ? OR lower(COALESCE(l.description,'')) LIKE ? OR lower(COALESCE(u.username,'')) LIKE ?${tokenMatch})
+      ORDER BY relevance_score DESC,(l.boosted_until IS NOT NULL AND l.boosted_until > strftime('%Y-%m-%dT%H:%M:%fZ','now')) DESC,(relationship_score+interest_score) DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
+      .bind(viewerId,viewerId,term,term,term,...listingScore.binds,listingType,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,term,term,term,...terms,limit).all<Record<string,unknown>>();
     for(const row of rows.results){
       let keys:string[]=[];
       if(typeof row.images_json==="string"){try{const parsed:unknown=JSON.parse(row.images_json);if(Array.isArray(parsed))keys=parsed.filter((value):value is string=>typeof value==="string");}catch{}}
