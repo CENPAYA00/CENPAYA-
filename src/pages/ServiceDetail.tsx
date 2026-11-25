@@ -47,8 +47,11 @@ export default function ServiceDetail() {
   }, [id]);
 
   const handleOrder = () => {
-    if (!service) return;
-    if (isOwn) return;
+    if (!service || isOwn) return;
+    if (service.price_is_range && !selectedPkg) {
+      void handleChat();
+      return;
+    }
     const pkgParam = selectedPkg ? `&package=${selectedPkg.id}` : '';
     navigate(`/checkout?service=${service.id}${pkgParam}`);
   };
@@ -245,7 +248,7 @@ export default function ServiceDetail() {
               onClick={handleOrder}
               className="flex-1 bg-accent text-white font-bold py-3 rounded-xl text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer"
             >
-              <ShoppingCart size={15} /> Order · {selectedPkg ? Number(selectedPkg.price).toLocaleString() : Number(service.starting_price || 0).toLocaleString()} XAF
+              <ShoppingCart size={15} /> {service.price_is_range && !selectedPkg ? 'Discuss price' : `Order · ${selectedPkg ? Number(selectedPkg.price).toLocaleString() : Number(service.starting_price || 0).toLocaleString()} XAF`}
             </button>
             <button
               onClick={handleChat}
