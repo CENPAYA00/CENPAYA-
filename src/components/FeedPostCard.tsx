@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart, MessageCircle, Share2, X, MoreHorizontal,
-  Bookmark, EyeOff, Flag, Download, Link as LinkIcon, Crown, AtSign, Globe
+  Bookmark, EyeOff, Flag, Download, Link as LinkIcon, Crown, AtSign, Globe, Folder, FolderPlus
 } from 'lucide-react';
 import { d1Request } from '../lib/d1Api';
 import ImageGrid from './ImageGrid';
@@ -21,7 +21,7 @@ type Props = {
   onLike?: (postId: string) => void;
   onComment?: (postId: string) => void;
   onShare?: (postId: string) => void;
-  onSave?: (postId: string) => void;
+  onSave?: (postId: string) => void;\n  onSaveToFolder?: (postId: string, folderId: string) => void;
   onHide?: (postId: string) => void;
   onFollowToggle?: (isNowFollowing: boolean) => void;
   readOnly?: boolean;
@@ -41,13 +41,13 @@ function colorToVar(id: string): { bg: string; isGradient: boolean } {
 }
 
 export default function FeedPostCard({
-  post, currentUserId, isLiked = false, isSaved = false, onLike, onComment, onShare, onSave, onHide, onFollowToggle, readOnly = false,
+  post, currentUserId, isLiked = false, isSaved = false, onLike, onComment, onShare, onSave, onSaveToFolder, onHide, onFollowToggle, readOnly = false,
 }: Props) {
   const navigate = useNavigate();
   const { play } = useSound();
   
   const [hidden, setHidden] = useState(false);
-  const [showShareSheet, setShowShareSheet] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);\n  const [showSaveFolders, setShowSaveFolders] = useState(false);\n  const [saveFolders, setSaveFolders] = useState<Array<{id:string;name:string}>>([]);\n  const [saveFoldersLoading, setSaveFoldersLoading] = useState(false);
   const [showPostMenu, setShowPostMenu] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [isInterested, setIsInterested] = useState(false);
@@ -154,6 +154,18 @@ export default function FeedPostCard({
     catch { prompt('Copy this link:', url); }
   };
 
+  const openSaveFolders = async () => {
+    if (isSaved) { onSave?.(post.id); return; }
+    setShowSaveFolders(true); setSaveFoldersLoading(true);
+    try { const result=await d1Request<{data:Array<{id:string;name:string}>}>('/api/saved/folders'); setSaveFolders(result.data||[]); }
+    catch (error:any) { showToast(error.message||'Could not load folders'); }
+    finally { setSaveFoldersLoading(false); }
+  };
+  const saveIntoFolder = async (folderId:string) => {
+    try { await d1Request('/api/posts/'+encodeURIComponent(post.id)+'/save',{method:'POST',body:JSON.stringify({folder_id:folderId})}); onSaveToFolder?.(post.id,folderId); setShowSaveFolders(false); showToast('Saved to folder'); }
+    catch (error:any) { showToast(error.message||'Could not save to folder'); }
+  };
+
   const openShareSheet = () => {
     play('tap');
     setShowShareSheet(true);
@@ -252,6 +264,16 @@ export default function FeedPostCard({
       {showShareSheet && !readOnly && (
         <ShareSheet postId={post.id} onClose={() => setShowShareSheet(false)} onShared={() => handleShareComplete()} />
       )}
+      {showSaveFolders && !readOnly && (
+        <div className="fixed inset-0 z-[210] bg-black/60 flex items-end" onClick={()=>setShowSaveFolders(false)}>
+          <div onClick={e=>e.stopPropagation()} className="w-full rounded-t-3xl bg-white dark:bg-darkcard p-4 pb-8 max-h-[70vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-3"><p className="text-sm font-bold text-navy dark:text-white">Save to…</p><button onClick={()=>setShowSaveFolders(false)} className="text-xs text-gray-500">Close</button></div>
+            <button onClick={()=>{onSave?.(post.id);setShowSaveFolders(false);}} className="w-full flex items-center gap-3 rounded-xl bg-offwhite dark:bg-darkbg p-3 mb-2 text-left"><Bookmark size={17}/><span className="text-sm font-bold text-navy dark:text-white">All saved</span></button>
+            {saveFoldersLoading?<p className="p-4 text-center text-xs text-gray-500">Loading folders…</p>:saveFolders.map(folder=><button key={folder.id} onClick={()=>void saveIntoFolder(folder.id)} className="w-full flex items-center gap-3 rounded-xl p-3 mb-1 hover:bg-offwhite dark:hover:bg-darkbg text-left"><Folder size={17} className="text-brand"/><span className="text-sm font-bold text-navy dark:text-white">{folder.name}</span></button>)}
+            <button onClick={()=>navigate('/saved')} className="w-full flex items-center gap-2 rounded-xl border border-dashed border-gray-300 dark:border-darkline p-3 mt-2 text-brand text-sm font-bold"><FolderPlus size={16}/> Manage saved folders</button>
+          </div>
+        </div>
+      )}
       {showPostMenu && !readOnly && (
         <PostMenu hasImage={images.length > 0} isInterested={isInterested} onClose={() => setShowPostMenu(false)} onInterested={markInterested} onNotInterested={notInterested} onReport={() => { setShowPostMenu(false); setShowReport(true); }} onSaveToGallery={saveToGallery} onCopyLink={copyLink} />
       )}
@@ -277,7 +299,7 @@ export default function FeedPostCard({
           <MetricsRow likes={post.likes_count} comments={post.comments_count} shares={post.shares_count} onComment={() => onComment?.(post.id)} />
           
           {/* EXACTLY AS CLAUDE SPECIFIED */}
-          {!readOnly && <ActionBar post={post} isLiked={isLiked} isSaved={isSaved} onLike={() => onLike?.(post.id)} onComment={() => onComment?.(post.id)} onShare={openShareSheet} onSave={() => onSave?.(post.id)} />}
+          {!readOnly && <ActionBar post={post} isLiked={isLiked} isSaved={isSaved} onLike={() => onLike?.(post.id)} onComment={() => onComment?.(post.id)} onShare={openShareSheet} onSave={openSaveFolders} />}
         </article>
         {menus}
       </>
