@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bookmark, FolderPlus, Folder, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Bookmark, FolderPlus, Folder, Pencil, Play, Trash2, Video } from 'lucide-react';
 import { useI18n } from '../contexts/i18n';
 import FeedPostCard from '../components/FeedPostCard';
 import { d1Request } from '../lib/d1Api';
@@ -67,6 +67,7 @@ export default function Saved() {
     {!loading&&posts.length===0&&<div className="bg-white dark:bg-darkcard rounded-2xl p-8 text-center shadow-sm"><Bookmark size={28} className="mx-auto text-gray-400 mb-2" /><p className="text-xs text-gray-500">{activeFolder?'This folder is empty':'No saved posts or videos yet'}</p></div>}
     {posts.map(post=><div key={post.id} className="mb-3">
       <FeedPostCard post={post} readOnly={true}/>
+      {post.post_type==='video' && post.video_id && <button onClick={()=>navigate('/reels?video_id='+encodeURIComponent(post.video_id))} className="w-full -mt-2 mb-3 rounded-xl bg-black text-white p-3 flex items-center gap-3 text-left"><span className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center"><Play size={18} fill="currentColor"/></span><span className="flex-1"><span className="block text-xs font-bold">Watch saved video</span><span className="block text-[10px] text-white/65">Open this video in Videos</span></span><Video size={18}/></button>}
       {activeFolder ? <button onClick={()=>void removeFromFolder(post.id)} className="w-full -mt-2 mb-3 rounded-xl border border-gray-200 dark:border-darkline py-2 text-xs font-bold text-red-500">Remove from this folder</button> :
         folders.length>0 && <div className="flex items-center gap-2 -mt-2 mb-3 rounded-xl bg-white dark:bg-darkcard border border-gray-100 dark:border-darkline p-2"><Folder size={14} className="text-brand"/><span className="text-[11px] text-gray-500 flex-1">Add post or video to folder</span><select aria-label="Choose saved folder" defaultValue="" onChange={e=>{if(e.target.value)void addToFolder(post.id,e.target.value);e.target.value='';}} className="max-w-[48%] rounded-lg bg-offwhite dark:bg-darkbg px-2 py-2 text-xs"><option value="" disabled>Choose folder</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>}
     </div>)}
