@@ -726,6 +726,7 @@ export async function handleAuthenticatedApi(
         return failure("invalid_country_configuration", 400, headers);
       }
       if (body.is_active && body.enabled_methods.length === 0) return failure("country_payment_setup_incomplete", 409, headers);
+      const { data: previousCountry } = await supabase.from("supported_countries").select("is_active").eq("country_iso", countryIso).maybeSingle();
       const result = await rpc(supabase, "admin_upsert_supported_country", {
         p_country_iso: countryIso, p_name: String(body.name).trim(), p_phone_prefix: body.phone_prefix,
         p_currency_code: body.currency_code, p_currency_value_in_xaf: body.currency_value_in_xaf,
@@ -749,7 +750,7 @@ export async function handleAuthenticatedApi(
         is_active: body.is_active,
       };
       if (!await syncCountryToD1(env, countryForSync)) {
-        if (body.is_active) await rpc(supabase, "admin_set_supported_country_active", { p_country_iso: countryIso, p_is_active: false });
+        await rpc(supabase, "admin_set_supported_country_active", { p_country_iso: countryIso, p_is_active: previousCountry?.is_active === true });
         return failure("country_d1_sync_failed", 503, headers);
       }
       return success({ ...(result.data as Record<string, unknown>), d1_synced: true }, headers);
