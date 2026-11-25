@@ -100,7 +100,7 @@ export default function Checkout() {
           setMilestones([{ title: 'Project delivery', amount: Number(quoteResponse.data.amount) }]);
           setQuoteReady(true);
         } catch { setQuoteReady(false); }
-      } else if (serviceId && (!loadedItem?.price_is_range || !!packageId)) {
+      } else if (serviceId && !loadedItem?.price_is_range) {
         try {
           const quoteResponse = await supabaseWorkerRequest<{ data: {
             seller_id: string; amount: number; fee_pct: number; fee_fixed: number;
@@ -160,7 +160,7 @@ export default function Checkout() {
     ? Number(pkg?.price || item?.starting_price || 0)
     : (item?.price_is_range ? Number(item?.price_min || 0) : Number(item?.price || 0)));
 
-  const requiresPriceAgreement = !!item?.price_is_range && !(item._kind === 'service' && !!pkg);
+  const requiresPriceAgreement = !!item?.price_is_range;
   const feePctAmount = serverPlatformFee;
   const total = serverTotal ?? amount;
 
@@ -245,7 +245,7 @@ export default function Checkout() {
       <div className="p-3">
         {requiresPriceAgreement && (
           <div className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] p-3 rounded-xl mb-3">
-            This item has a negotiable price range ({Number(item?.price_min || 0).toLocaleString()}–{Number(item?.price_max || 0).toLocaleString()} XAF). Contact the seller and agree on the final amount before checkout. The minimum price will not be charged automatically.
+            This item has a negotiable price range ({Number(item?.price_min || 0).toLocaleString()}–{Number(item?.price_max || 0).toLocaleString()} XAF). Contact the seller and agree on the final amount before checkout. A service package on a range-priced listing must also be confirmed with the seller first.
           </div>
         )}
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 flex gap-3 mb-3">
