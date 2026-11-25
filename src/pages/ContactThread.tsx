@@ -8,6 +8,7 @@ export default function ContactThread() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [ticket, setTicket] = useState<any>(null);
+  const backPath = ticket?.queue_type === 'admin' ? '/contact-admin' : '/contact-support';
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [me, setMe] = useState<any>(null);
@@ -60,7 +61,7 @@ export default function ContactThread() {
   return (
     <div className="flex flex-col h-screen bg-offwhite dark:bg-darkbg">
       <header className="bg-gradient-to-r from-brand to-brand-dark text-white px-3 py-3 flex items-center gap-2 sticky top-0 z-10">
-        <button onClick={() => navigate('/contact-admin')}><ArrowLeft size={18} /></button>
+        <button onClick={() => navigate(backPath)}><ArrowLeft size={18} /></button>
         <div className="flex-1 min-w-0">
           <p className="text-[12px] font-bold truncate">{ticket.subject}</p>
           <p className="text-[9px] opacity-80 capitalize">
@@ -84,7 +85,7 @@ export default function ContactThread() {
               }`}>
                 {!mine && (
                   <p className={`text-[9px] font-bold mb-0.5 ${isStaff ? 'text-accent' : 'text-gray-500'}`}>
-                    {isStaff ? 'Admin' : `@${m.sender_username}`}
+                    {isStaff ? (ticket.queue_type === 'admin' ? 'Admin team' : 'Support agent') : `@${m.sender_username}`}
                   </p>
                 )}
                 <p className="whitespace-pre-wrap">{m.body}</p>
@@ -105,7 +106,7 @@ export default function ContactThread() {
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder="Reply to admin..."
+          placeholder={ticket.queue_type === 'admin' ? 'Reply to admin team...' : 'Reply to support...'}
           className="flex-1 p-2.5 bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline rounded-full text-xs"
         />
         <button
