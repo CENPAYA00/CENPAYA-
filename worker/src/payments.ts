@@ -257,6 +257,57 @@ export async function handleAuthenticatedPaymentApi(
 ): Promise<Response | null> {
   const url = new URL(request.url), method = request.method.toUpperCase();
 
+
+  if (method === "GET" && url.pathname === "/api/v1/referrals") {
+    const [{ data: referrals, error }, { data: profile, error: profileError }] = await Promise.all([
+      userDb.from("referrals").select("id,referred_id,points,status,created_at")
+        .eq("referrer_id", userId).order("created_at", { ascending: false }).limit(500),
+      userDb.from("users").select("referral_code").eq("id", userId).maybeSingle(),
+    ]);
+    if (error || profileError) return jsonResponse({ success: false, error: "referral_dashboard_unavailable" }, 502, headers);
+    const rows = (referrals || []).map((row: Record<string, unknown>) => ({
+      id: String(row.id), referred_id: String(row.referred_id), referred_username: null,
+      points: Number(row.points || 0), status: String(row.status || "pending"), created_at: String(row.created_at || ""),
+    }));
+    return jsonResponse({ success: true, data: {
+      referral_code: typeof profile?.referral_code === "string" ? profile.referral_code : null,
+      direct_referrals_count: rows.length,
+      subscribed_referrals_count: rows.filter(row => row.status === "unlocked").length,
+      total_points: rows.reduce((sum, row) => sum + row.points, 0),
+      referrals: rows,
+    } }, 200, headers);
+  }
+
+  if (method === "GET" && url.pathname === "/api/v1/me/payment-preferences") {
+    const [{ data: profile, error: profileError }, { data: countries, error: countriesError }] = await Promise.all([
+      userDb.from("users").select("country_iso,phone,momo_number,momo_provider").eq("id", userId).maybeSingle(),
+      userDb.from("supported_countries").select("country_iso,name,phone_prefix,currency_code,enabled_methods")
+        .eq("is_active", true).order("country_iso"),
+    ]);
+    if (profileError || countriesError) return jsonResponse({ success: false, error: "payment_preferences_unavailable" }, 502, headers);
+    return jsonResponse({ success: true, data: { profile: profile || {}, countries: countries || [] } }, 200, headers);
+  }
+
+  if (method === "PATCH" && url.pathname === "/api/v1/me/payment-preferences") {
+    const body = await readJsonObject(request, BODY_LIMIT);
+    if (!body || Object.keys(body).some(key => !["country_iso","momo_number","momo_provider"].includes(key))) {
+      return jsonResponse({ success: false, error: "invalid_payment_preferences" }, 400, headers);
+    }
+    const countryIso = text(body.country_iso, 2).toUpperCase();
+    const mobile = phone(body.momo_number);
+    const paymentMethod = text(body.momo_provider, 24).toLowerCase();
+    if (!/^[A-Z]{2}$/.test(countryIso) || !mobile || !["mtn_momo","orange_money"].includes(paymentMethod)) {
+      return jsonResponse({ success: false, error: "invalid_payment_preferences" }, 400, headers);
+    }
+    const { data, error } = await userDb.rpc("update_my_payment_preferences", {
+      p_country_iso: countryIso, p_momo_number: "+" + mobile, p_momo_provider: paymentMethod,
+    });
+    if (error) return jsonResponse({ success: false, error: "payment_preferences_update_unavailable" }, 503, headers);
+    const result = object(data);
+    if (result.ok !== true) return jsonResponse({ success: false, error: String(result.error || "invalid_payment_preferences") }, 400, headers);
+    return jsonResponse({ success: true, data: result }, 200, headers);
+  }
+
   if (method === "GET" && url.pathname === "/api/v1/subscriptions/options") {
     const { data, error } = await userDb.rpc("cenpaya_momo_membership_options", {
       p_user_id: userId, p_environment: environment(env), p_supported: ["FAPSHI", "CAMPAY"],
