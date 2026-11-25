@@ -33,7 +33,7 @@ const INTEREST_STOP_WORDS = new Set(["about","after","again","also","because","b
 function extractInterestTopics(value: unknown): string[] {
   if (typeof value !== "string") return [];
   return [...new Set(value.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").split(/\s+/)
-    .filter(token => token.length >= 3 && token.length <= 28 && !INTEREST_STOP_WORDS.has(token) && !/^\\d+$/.test(token)))].slice(0, 8);
+    .filter(token => token.length >= 3 && token.length <= 28 && !INTEREST_STOP_WORDS.has(token) && !/^\d+$/.test(token)))].slice(0, 8);
 }
 
 async function applyInterestSignal(db: D1Database, userId: string, content: unknown, weight: number): Promise<void> {
