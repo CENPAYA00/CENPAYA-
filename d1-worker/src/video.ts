@@ -135,7 +135,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
 }
 export async function processVideoQueue(env:Env):Promise<void>{
  const master=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_global'").first<{enabled:number}>().catch(()=>null);
- if(Number(master?.enabled||0)!==1||!env.VIDEO_PROCESSOR||!env.VIDEO_PROCESSOR_TOKEN)return;
+ if(Number(master?.enabled||0)!==1||(!env.VIDEO_PROCESSOR&&!env.VIDEO_PROCESSOR_URL)||!env.VIDEO_PROCESSOR_TOKEN)return;
  const postFlag=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_posts'").first<{enabled:number}>().catch(()=>null);
  const jobs=await env.DB.prepare(`SELECT j.id AS job_id,v.id AS video_id,v.source_key,v.source_bytes,v.mime_type,v.purpose,v.max_duration_seconds
   FROM video_processing_jobs j JOIN video_assets v ON v.id=j.video_id
