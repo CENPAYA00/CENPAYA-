@@ -1,5 +1,4 @@
 import type { Env, User } from "./types.js";
-import { cacheGet, cachePut } from "./security.js";
 import { readUser, safeUser } from "./auth.js";
 import { hydrateUserMedia } from "./media.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
