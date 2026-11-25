@@ -60,6 +60,7 @@ export default function FeedPostCard({
     if (!element || !currentUserId || !post?.id || typeof IntersectionObserver === 'undefined') return;
     let impressionSent = false;
     let visibleSince = 0;
+    let lastReportedAt = 0;
     let dwellTimer: number | undefined;
     const send = (event_type: string, dwell_ms = 0) => d1Request('/api/feed/events', {
       method: 'POST', body: JSON.stringify({ post_id: post.id, event_type, dwell_ms, source: 'feed' }),
@@ -70,21 +71,30 @@ export default function FeedPostCard({
           if (!impressionSent) { impressionSent = true; void send('impression'); }
           if (!visibleSince) {
             visibleSince = Date.now();
-            dwellTimer = window.setTimeout(() => {
-              if (visibleSince) void send('dwell', Math.min(300000, Date.now() - visibleSince));
-              visibleSince = 0;
+            lastReportedAt = visibleSince;
+            dwellTimer = window.setInterval(() => {
+              const now = Date.now();
+              const elapsed = now - lastReportedAt;
+              if (elapsed >= 2500) {
+                void send('dwell', Math.min(300000, elapsed));
+                lastReportedAt = now;
+              }
             }, 3000);
           }
         } else if (visibleSince) {
-          window.clearTimeout(dwellTimer);
-          const elapsed = Date.now() - visibleSince;
-          if (elapsed >= 2500) void send('dwell', Math.min(300000, elapsed));
+          window.clearInterval(dwellTimer);
+          const now = Date.now();
+          const totalVisible = now - visibleSince;
+          const unreported = now - lastReportedAt;
+          if (totalVisible < 1500) void send('skip');
+          else if (unreported >= 1000) void send('dwell', Math.min(300000, unreported));
           visibleSince = 0;
+          lastReportedAt = 0;
         }
       }
     }, { threshold: [0, 0.6, 1] });
     observer.observe(element);
-    return () => { observer.disconnect(); window.clearTimeout(dwellTimer); };
+    return () => { observer.disconnect(); window.clearInterval(dwellTimer); };
   }, [post?.id, currentUserId]);
 
   if (hidden) return null;
