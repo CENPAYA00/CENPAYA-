@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Search, Film } from 'lucide-react';
+import { Eye, EyeOff, Search, Play, Film } from 'lucide-react';
 import { getCachedUser, getCached, setCached } from '../lib/cache';
 import FeedPostCard from '../components/FeedPostCard';
 import PullToRefresh from '../components/PullToRefresh';

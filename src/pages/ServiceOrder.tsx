@@ -7,6 +7,7 @@ import { ArrowLeft, Shield, Upload, Check, AlertTriangle, Wallet, Clock } from '
 import { getCachedUser } from '../lib/cache';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
 import OrderWorkflowPanel from '../components/OrderWorkflowPanel';
+import { compressImage } from '../utils/compressImage';
 
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
 const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];

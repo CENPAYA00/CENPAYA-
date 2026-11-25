@@ -54,9 +54,9 @@ export default function OrderWorkflowPanel({ orderId, userId, buyerId, sellerId 
   const latest = workflow?.deliveries?.find(d => d.status === 'submitted');
   return <section className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
     <div className="flex items-center gap-2 mb-2"><ShieldCheck size={14} className="text-accent"/><h2 className="text-[12px] font-bold text-navy dark:text-white">Work delivery & review</h2></div>
-    {workflow && <p className="text-[10px] text-gray-500 mb-2">Workflow: {workflow.workflow_status.replaceAll('_',' ')} · Payment: {workflow.financial_status.replaceAll('_',' ')}</p>}
+    {workflow && <p className="text-[10px] text-gray-500 mb-2">Workflow: {workflow.workflow_status .replace(/_/g,' ')} · Payment: {workflow.financial_status .replace(/_/g,' ')}</p>}
     {workflow?.deliveries?.map(d => <div key={d.id} className="border border-gray-200 dark:border-darkline rounded-xl p-2 mb-2">
-      <div className="flex justify-between text-[10px] font-bold"><span>Delivery v{d.version}</span><span>{d.status.replaceAll('_',' ')}</span></div>
+      <div className="flex justify-between text-[10px] font-bold"><span>Delivery v{d.version}</span><span>{d.status .replace(/_/g,' ')}</span></div>
       {d.delivery_note && <p className="text-[11px] whitespace-pre-wrap mt-1">{d.delivery_note}</p>}
       {d.files?.map(f => <a key={f.id} href={f.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[10px] text-accent underline mt-2"><FileText size={12}/>{f.name} · {(f.size/1024/1024).toFixed(1)} MB</a>)}
     </div>)}
