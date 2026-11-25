@@ -11,6 +11,7 @@ import { handleSocialRoutes } from "./social.js";
 import { handleMediaRoutes } from "./media.js";
 import { handleSearchRoute } from "./search.js";
 import { handleVideoRoutes, processVideoQueue } from "./video.js";
+import { handleVideoLifecycleRoutes, processVideoLifecycleCleanupQueue, processListingRetentionQueue } from "./video-lifecycle.js";
 import { handleAdminRoutes } from "./admin.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
@@ -58,6 +59,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(searchResponse)return searchResponse;
   const videoResponse=await handleVideoRoutes(request,env,{url,path,method,user});
   if(videoResponse)return videoResponse;
+  const lifecycleVideoResponse=await handleVideoLifecycleRoutes(request,env,{url,path,method,user});
+  if(lifecycleVideoResponse)return lifecycleVideoResponse;
   const mediaResponse=await handleMediaRoutes(request,env,{url,path,method,user});
   if(mediaResponse)return mediaResponse;
   const profileResponse=await handleProfileRoutes(request,env,{url,path,method,user});
@@ -72,7 +75,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(marketplaceResponse)return marketplaceResponse;
   return fail("Route not found",404);
 }
-export default { async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{ ctx.waitUntil(processVideoQueue(env)); }, async fetch(request:Request,env:Env):Promise<Response>{
+export default { async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{ ctx.waitUntil(Promise.all([processVideoQueue(env),processVideoLifecycleCleanupQueue(env),processListingRetentionQueue(env)]).then(()=>undefined)); }, async fetch(request:Request,env:Env):Promise<Response>{
   try{return withCors(await handle(request,env),request,env);}
   catch(error){console.error("D1 Worker request failed",error instanceof Error?error.message:"unknown");return withCors(fail("Internal server error",500),request,env);}
 }};

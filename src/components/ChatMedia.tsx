@@ -34,6 +34,21 @@ export const VoiceBubble = ({ src, duration }: { src: string; duration: number }
   );
 };
 
+export const MarketplaceVideoPlayer = ({ videoId }: { videoId: string }) => {
+  const [src, setSrc] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    d1Request<{ data: { url: string } }>(`/api/video-assets/${encodeURIComponent(videoId)}/download`)
+      .then(result => { if (active) setSrc(result.data.url); })
+      .catch(err => { if (active) setError(err instanceof Error ? err.message : 'Video unavailable'); });
+    return () => { active = false; };
+  }, [videoId]);
+  return <div className="rounded-xl overflow-hidden bg-black my-2">
+    {src ? <video src={src} controls playsInline preload="metadata" className="w-full max-h-[420px]" /> : <p className="p-3 text-xs text-white">{error || 'Loading video…'}</p>}
+  </div>;
+};
+
 export const SharedPostCard = ({ post, onOpen }: { post: any, onOpen: () => void }) => (
   <div onClick={onOpen} className="w-56 bg-white dark:bg-darkcard rounded-xl overflow-hidden border border-gray-100 dark:border-darkline shadow-sm cursor-pointer hover:opacity-90 transition-opacity">
     <div className="flex items-center gap-2 p-2.5 bg-gray-50 dark:bg-darkline/50">

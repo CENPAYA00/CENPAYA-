@@ -23,8 +23,8 @@ function definitions(env: Env): FeatureDefinition[] {
       key: "video_global",
       display_name: "All video features",
       description: "Master switch for video uploads, chat videos, delivery evidence, marketplace videos, posts, and playback.",
-      ready: true,
-      blocked_reason: null,
+      ready: videoReady,
+      blocked_reason: videoReady ? null : "Configure the video processor binding or HTTPS URL and VIDEO_PROCESSOR_TOKEN first.",
     },
     {
       key: "voice_calls",

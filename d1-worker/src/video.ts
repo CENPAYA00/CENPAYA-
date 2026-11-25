@@ -134,20 +134,22 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
  return null;
 }
 export async function processVideoQueue(env:Env):Promise<void>{
- const flag=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_posts'").first<{enabled:number}>().catch(()=>null);
- if(Number(flag?.enabled||0)!==1||!env.VIDEO_PROCESSOR||!env.VIDEO_PROCESSOR_TOKEN)return;
- const jobs=await env.DB.prepare(`SELECT j.id AS job_id,v.id AS video_id,v.source_key,v.source_bytes,v.mime_type
+ const master=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_global'").first<{enabled:number}>().catch(()=>null);
+ if(Number(master?.enabled||0)!==1||!env.VIDEO_PROCESSOR||!env.VIDEO_PROCESSOR_TOKEN)return;
+ const postFlag=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_posts'").first<{enabled:number}>().catch(()=>null);
+ const jobs=await env.DB.prepare(`SELECT j.id AS job_id,v.id AS video_id,v.source_key,v.source_bytes,v.mime_type,v.purpose,v.max_duration_seconds
   FROM video_processing_jobs j JOIN video_assets v ON v.id=j.video_id
   WHERE (j.status='queued' OR (j.status='processing' AND j.updated_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 minutes')))
-    AND v.status='processing' ORDER BY j.created_at LIMIT 2`).all<Record<string,unknown>>();
+    AND v.status='processing' ORDER BY j.created_at LIMIT 5`).all<Record<string,unknown>>();
  for(const job of jobs.results){
   const claimed=await env.DB.prepare("UPDATE video_processing_jobs SET status='processing',attempts=attempts+1 ,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND (status='queued' OR (status='processing' AND updated_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 minutes')))").bind(job.job_id).run();
   if(!claimed.meta.changes)continue;
+  if(job.purpose==="post"&&Number(postFlag?.enabled||0)!==1){await env.DB.prepare("UPDATE video_processing_jobs SET status='queued',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(job.job_id).run();continue;}
   try{
-   const response=await processor(env,"/v1/process",{video_id:job.video_id,source_key:job.source_key,source_bytes:job.source_bytes,mime_type:job.mime_type});
+   const response=await processor(env,"/v1/process",{video_id:job.video_id,source_key:job.source_key,source_bytes:job.source_bytes,mime_type:job.mime_type,max_duration_seconds:job.max_duration_seconds});
    if(!response||!response.ok)throw new Error("Processor unavailable");
    const result=await response.json() as {status?:string;hls_key?:string;thumbnail_key?:string;duration_seconds?:number;width?:number;height?:number;sha256?:string;backup?:string};
-   if(result.status!=="ready"||!result.hls_key||result.backup!=="verified")throw new Error("HLS or backup verification failed");
+   if(result.status!=="ready"||!result.hls_key||result.backup!=="verified"||!Number.isFinite(Number(result.duration_seconds))||Number(result.duration_seconds)>Number(job.max_duration_seconds||300))throw new Error("HLS, duration or backup verification failed");
    await env.DB.batch([
     env.DB.prepare("UPDATE video_assets SET status='ready',hls_key=?,thumbnail_key=?,duration_seconds=?,width=?,height=?,failure_code=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='processing'").bind(result.hls_key,result.thumbnail_key||null,result.duration_seconds||null,result.width||null,result.height||null,job.video_id),
     env.DB.prepare("UPDATE video_processing_jobs SET status='completed',last_error=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(job.job_id),

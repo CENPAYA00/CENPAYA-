@@ -6,7 +6,7 @@ The export describes 73 application tables, 3 views, 146 explicit indexes, and 6
 
 ## Canonical incremental migrations
 
-Migrations **0052–0067** are maintained in `database/d1/migrations/` and are applied in numeric order. They extend the supplied version-51 schema; they are not a bootstrap for an empty database.
+Migrations **0052–0073** are maintained in `database/d1/migrations/` and are applied in numeric order. Migration 0072 adds the Owner/Super Admin global video switch; migration 0073 adds private chat, delivery-evidence and listing-video lifecycle metadata, retention queues, sold-listing retention fields, and per-user chat deletion records. They extend the supplied version-51 schema; they are not a bootstrap for an empty database.
 
 Migration **0067_country_configuration_projection.sql** adds the D1 country configuration projection and seeds the six CEMAC countries. Cameroon is initially active with MTN MoMo and Orange Money enabled in the projection; the Central African Republic, Republic of the Congo, Gabon, Equatorial Guinea, and Chad are marked `coming_soon`.
 
@@ -16,9 +16,9 @@ Supabase remains authoritative for country financial prices, fees, provider read
 
 1. Confirm that the target is the intended Cenpaya D1 database.
 2. Inspect its remote `cenpaya_migrations` tracker.
-3. Confirm the schema is based on the supplied export and currently at migration 51, or determine exactly which migrations from 52–67 are already applied.
+3. Confirm the schema is based on the supplied export and currently at migration 51, or determine exactly which migrations from 52–73 are already applied.
 4. Apply only the missing migrations, in numeric order. Never replay a migration already recorded as applied.
-5. Do not apply migrations 52–67 to a blank database; restore the approved base schema through migration 51 first.
+5. Do not apply migrations 52–73 to a blank database; restore the approved base schema through migration 51 first.
 6. Do not deploy the D1 Worker or Supabase Worker as part of this migration preparation.
 
 The D1 Worker's Wrangler configuration points `migrations_dir` to this canonical directory using `../database/d1/migrations`. Do not create a second migration directory under `d1-worker/`.

@@ -1,6 +1,7 @@
 import type { Env, User } from "./types.js";
 import { extractMediaKey, signMediaUrl } from "./media.js";
 import { uuid } from "./security.js";
+import { enqueueVideoCleanup } from "./video-lifecycle.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -108,6 +109,26 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       return raced?json({success:true,id:raced.id,existing:true}):fail("Unable to create conversation",409);
     }
   }
+  const chatMessageAction=path.match(/^\/api\/chat\/threads\/([^/]+)\/messages\/([^/]+)$/);
+  if(chatMessageAction&&method==="DELETE"){
+    if(!user)return fail("Unauthorized",401);
+    const threadId=chatMessageAction[1],messageId=chatMessageAction[2],mode=url.searchParams.get("for")==="me"?"me":"everyone";
+    const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id).first();
+    if(!member)return fail("Conversation not found",404);
+    const message=await env.DB.prepare("SELECT id,sender_id,video_asset_id,status FROM chat_messages WHERE id=? AND thread_id=?").bind(messageId,threadId).first<{id:string;sender_id:string;video_asset_id:string|null;status:string}>();
+    if(!message)return fail("Message not found",404);
+    if(mode==="me"){
+      await env.DB.prepare("INSERT OR IGNORE INTO chat_message_user_deletions(message_id,user_id) VALUES(?,?)").bind(messageId,user.id).run();
+      return json({success:true,deleted_for:"me"});
+    }
+    if(message.sender_id!==user.id)return fail("Only the sender can delete a message for everyone",403);
+    await env.DB.prepare("UPDATE chat_messages SET status='deleted',message_text='Message deleted',media_key=NULL,media_url=NULL,video_asset_id=NULL WHERE id=? AND thread_id=?").bind(messageId,threadId).run();
+    if(message.video_asset_id){
+      await env.DB.prepare("UPDATE video_assets SET retention_expires_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND purpose='chat'").bind(message.video_asset_id).run();
+      await enqueueVideoCleanup(env,message.video_asset_id);
+    }
+    return json({success:true,deleted_for:"everyone"});
+  }
   const chatMessages=path.match(/^\/api\/chat\/threads\/([^/]+)\/messages$/);
   if(chatMessages&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
@@ -121,10 +142,10 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
        env.DB.prepare("UPDATE chat_messages SET delivered_at=COALESCE(delivered_at,"+NOW+"),read_at="+NOW+" WHERE thread_id=? AND sender_id<>? AND read_at IS NULL").bind(threadId,user.id)
      ]);
      const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||50),1),100),before=url.searchParams.get("before");
-    const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,CASE WHEN m.status='deleted' THEN 'Message deleted' ELSE m.message_text END AS message_text,CASE WHEN m.status='deleted' THEN 'text' ELSE m.message_type END AS message_type,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_url END AS media_url,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_key END AS media_key,m.media_duration_seconds,m.shared_post_id,m.delivered_at,m.read_at,m.status,m.created_at,
-      u.username,u.display_name,u.avatar_url FROM chat_messages m JOIN users u ON u.id=m.sender_id
-      WHERE m.thread_id=? ${before?"AND m.created_at < ?":""}
-      ORDER BY m.created_at DESC LIMIT ?`).bind(threadId,...(before?[before]:[]),limit).all();
+    const rows=await env.DB.prepare(`SELECT m.id,m.thread_id,m.sender_id,CASE WHEN m.status='deleted' THEN 'Message deleted' ELSE m.message_text END AS message_text,CASE WHEN m.status='deleted' THEN 'text' WHEN m.video_asset_id IS NOT NULL AND va.status='ready' THEN 'video' ELSE m.message_type END AS message_type,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_url END AS media_url,CASE WHEN m.status='deleted' THEN NULL ELSE m.media_key END AS media_key,m.media_duration_seconds,m.shared_post_id,m.video_asset_id,va.status AS video_status,va.duration_seconds AS video_duration_seconds,m.delivered_at,m.read_at,m.status,m.created_at,
+      u.username,u.display_name,u.avatar_url FROM chat_messages m JOIN users u ON u.id=m.sender_id LEFT JOIN video_assets va ON va.id=m.video_asset_id
+      WHERE m.thread_id=? AND NOT EXISTS(SELECT 1 FROM chat_message_user_deletions d WHERE d.message_id=m.id AND d.user_id=?) ${before?"AND m.created_at < ?":""}
+      ORDER BY m.created_at DESC LIMIT ?`).bind(threadId,user.id,...(before?[before]:[]),limit).all();
     const ordered=rows.results.reverse();
     const messageIds=ordered.map((row:any)=>String(row.id));
     const attachmentsByMessage=new Map<string,Array<Record<string,unknown>>>();
@@ -139,9 +160,13 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       }
     }
     const data=await Promise.all(ordered.map(async(row:any)=>{
-      const {media_key,...message}=row;
+      const {media_key,video_hls_key,video_status,video_duration_seconds,...message}=row;
       const attachments=attachmentsByMessage.get(String(row.id))||[];
-      return {...message,message_type:attachments.length?"file":message.message_type,media_url:media_key?await signMediaUrl(env,url.origin,String(media_key)):message.media_url,attachments};
+      const isVideo=!!message.video_asset_id&&video_status==="ready";
+      return {...message,message_type:isVideo?"video":attachments.length?"file":message.message_type,media_url:media_key?await signMediaUrl(env,url.origin,String(media_key)):message.media_url,
+        video_url:isVideo?"/api/video-assets/"+message.video_asset_id+"/playlist":null,
+        video_download_url:isVideo?"/api/chat/videos/"+message.video_asset_id+"/download":null,
+        media_duration_seconds:isVideo?video_duration_seconds:message.media_duration_seconds,attachments};
     }));
     return json({success:true,data});
   }
@@ -154,7 +179,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const sharedPostId=str(b.shared_post_id,64);
     const duration=b.media_duration_seconds;
     const attachmentUrl=str(b.attachment_url,2048),attachmentName=str(b.attachment_name,160);
-    if(!["text","image","voice_note","shared_post","file"].includes(messageType))return fail("Invalid message type");
+    if(!["text","image","voice_note","shared_post","file","video"].includes(messageType))return fail("Invalid message type");
     if(messageType==="text"&&!message)return fail("Message text is required");
     if(messageType==="file"&&(!attachmentUrl||!attachmentName))return fail("A file attachment is required");
     let attachmentKey:string|null=null;
@@ -174,6 +199,14 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if(messageType==="shared_post"&&!UUID.test(sharedPostId))return fail("A valid shared post is required");
     const member=await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(threadId,user.id).first();
     if(!member)return fail("Conversation not found",404);
+    let videoAssetId:string|null=null;
+    if(messageType==="video"){
+      const master=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_global'").first<{enabled:number}>();
+      if(Number(master?.enabled||0)!==1)return fail("All video features are disabled by the platform administrator",503);
+      videoAssetId=str(b.video_asset_id,64);
+      const asset=await env.DB.prepare("SELECT id FROM video_assets WHERE id=? AND owner_id=? AND purpose='chat' AND related_id=? AND status='ready' AND deleted_at IS NULL AND retention_expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')").bind(videoAssetId,user.id,threadId).first();
+      if(!asset)return fail("A processed, unexpired chat video is required",404);
+    }
     const blocked=await env.DB.prepare("SELECT 1 FROM chat_thread_members other JOIN user_blocks b ON (b.blocker_id=? AND b.blocked_id=other.user_id) OR (b.blocker_id=other.user_id AND b.blocked_id=?) WHERE other.thread_id=? AND other.user_id<>?").bind(user.id,user.id,threadId,user.id).first();
     if(blocked)return fail("Messaging is unavailable for this user",403);
     if(messageType==="shared_post"){
@@ -181,8 +214,8 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
       if(!post)return fail("Shared post not found",404);
     }
     const id=uuid();
-    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,media_key,message_type,media_duration_seconds,shared_post_id) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(id,threadId,user.id,message || (messageType==="image" ? "Photo" : messageType==="voice_note" ? "Voice message" : messageType==="file" ? attachmentName : "Shared a post"),mediaKey,messageType==="file"?"text":messageType,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null).run();
+    await env.DB.prepare("INSERT INTO chat_messages(id,thread_id,sender_id,message_text,media_key,message_type,media_duration_seconds,shared_post_id,video_asset_id) VALUES(?,?,?,?,?,?,?,?,?)")
+      .bind(id,threadId,user.id,message || (messageType==="image" ? "Photo" : messageType==="voice_note" ? "Voice message" : messageType==="file" ? attachmentName : messageType==="video" ? "Video" : "Shared a post"),mediaKey,messageType==="file"||messageType==="video"?"text":messageType,typeof duration==="number"?duration:null,messageType==="shared_post"?sharedPostId:null,videoAssetId).run();
     if(messageType==="file"&&attachmentKey){
       const object=await env.MEDIA_BUCKET!.head(attachmentKey);
       await env.DB.prepare("INSERT INTO chat_message_attachments(id,message_id,thread_id,sender_id,r2_object_key,original_name,mime_type,file_size_bytes) VALUES(?,?,?,?,?,?,?,?)")

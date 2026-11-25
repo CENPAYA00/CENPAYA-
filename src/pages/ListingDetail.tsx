@@ -5,6 +5,7 @@ import { ArrowLeft, Shield, MessageCircle, ShoppingCart, MapPin, Package, Zap } 
 import { getCachedUser } from '../lib/cache';
 import ImageViewer from '../components/ImageViewer';
 import DocumentCard from '../components/DocumentCard';
+import { MarketplaceVideoPlayer } from '../components/ChatMedia';
 import BoostModal from '../components/BoostModal'; // ADDED
 
 export default function ListingDetail() {
@@ -109,6 +110,12 @@ export default function ListingDetail() {
           )}
         </div>
       )}
+      {Array.isArray(listing.videos) && listing.videos.length > 0 && (
+        <div className="px-4 pt-3">
+          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Listing videos</p>
+          {listing.videos.filter((video: any) => video.status === 'ready').map((video: any) => <MarketplaceVideoPlayer key={video.id} videoId={video.id} />)}
+        </div>
+      )}
 
       <div className="p-4">
         {listing.category && (
@@ -127,6 +134,9 @@ export default function ListingDetail() {
           <span className="inline-flex items-center gap-1 mt-2 bg-yellow-100 text-yellow-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
             Only one available
           </span>
+        )}
+        {listing.sale_state === 'sold' && (
+          <span className="inline-flex items-center gap-1 mt-2 bg-gray-200 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded-full">Sold</span>
         )}
 
         {(listing.location_city || listing.location) && (
@@ -199,12 +209,16 @@ export default function ListingDetail() {
           style={{ bottom: 'calc(env(safe-area-inset-bottom) + 56px)' }}
         >
           <div className="flex gap-2 max-w-[600px] mx-auto">
-            <button
-              onClick={handleBuy}
-              className="flex-1 bg-accent text-white font-bold py-3 rounded-xl text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer"
-            >
-              <ShoppingCart size={15} /> Buy Now
-            </button>
+            {listing.sale_state !== 'sold' ? (
+              <button
+                onClick={handleBuy}
+                className="flex-1 bg-accent text-white font-bold py-3 rounded-xl text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer"
+              >
+                <ShoppingCart size={15} /> Buy Now
+              </button>
+            ) : (
+              <div className="flex-1 bg-gray-200 text-gray-600 font-bold py-3 rounded-xl text-[12px] text-center">Sold</div>
+            )}
             <button
               onClick={handleChat}
               disabled={startingChat}

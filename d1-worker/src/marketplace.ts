@@ -21,7 +21,10 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
     const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
     if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
-    const row=await env.DB.prepare("SELECT * FROM public_marketplace_search WHERE listing_id=?").bind(decodeURIComponent(internalListingQuote[1])).first<Record<string,unknown>>();
+    const listingId=decodeURIComponent(internalListingQuote[1]);
+    const listingState=await env.DB.prepare("SELECT sale_state,deleted_at FROM marketplace_listings WHERE id=?").bind(listingId).first<{sale_state:string;deleted_at:string|null}>();
+    if(!listingState||listingState.deleted_at||listingState.sale_state==="sold")return fail("This listing has already been sold",409);
+    const row=await env.DB.prepare("SELECT * FROM public_marketplace_search WHERE listing_id=?").bind(listingId).first<Record<string,unknown>>();
     if(!row)return fail("Listing not found",404);
     const data={...row,listing_id:row.listing_id||row.id,id:row.listing_id||row.id,title:row.product_title||row.title,price:row.product_price??row.price_amount??row.price,seller_id:row.seller_id||row.merchant_id,images:row.images||(row.image_url?[row.image_url]:[]),currency_code:row.currency_code||row.currency||"XAF"};
     return json({success:true,data});
@@ -41,7 +44,8 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     if(!row)return fail("Listing not found",404);
     const images=(await Promise.all(jsonArray(row.images_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
     const documents=(await Promise.all(jsonArray(row.documents_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
-    const data={...row,id:row.id,listing_id:row.id,title:row.title,price:row.price_amount,starting_price:row.price_amount,images,documents,thumbnail_url:images[0]||null,seller_id:row.seller_id,delivery_days:row.estimated_delivery_days,location_city:row.city||null,location:row.city||null};
+    const listingVideos=await env.DB.prepare("SELECT v.id,v.status,v.duration_seconds,v.thumbnail_key FROM marketplace_listing_videos lv JOIN video_assets v ON v.id=lv.video_id WHERE lv.listing_id=? AND v.deleted_at IS NULL ORDER BY lv.created_at").bind(row.id).all<Record<string,unknown>>();
+    const data={...row,id:row.id,listing_id:row.id,title:row.title,price:row.price_amount,starting_price:row.price_amount,images,documents,videos:listingVideos.results.map(v=>({...v,playlist_url:"/api/video-assets/"+v.id+"/playlist",download_url:"/api/video-assets/"+v.id+"/download"})),thumbnail_url:images[0]||null,seller_id:row.seller_id,delivery_days:row.estimated_delivery_days,location_city:row.city||null,location:row.city||null};
     return json({success:true,data});
   }
   if(publicListing&&method==="DELETE"){
@@ -59,7 +63,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
   if((path==="/api/market/my-listings"||path==="/api/market/my-services")&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const type=path.endsWith("my-services")?"service":"product";
-    const rows=await env.DB.prepare(`SELECT l.id,l.seller_id,l.category_id,l.title,l.description,l.listing_type,l.condition,l.price_type,l.price_amount,l.currency_code,l.country_code,l.region,l.city,l.status,l.published_at,l.created_at,l.updated_at,l.price_is_range,l.price_min,l.price_max,l.estimated_delivery_days,l.images_json,l.documents_json,c.name AS category
+    const rows=await env.DB.prepare(`SELECT l.id,l.seller_id,l.category_id,l.title,l.description,l.listing_type,l.condition,l.price_type,l.price_amount,l.currency_code,l.country_code,l.region,l.city,l.status,l.sale_state,l.sold_at,l.purge_after,l.published_at,l.created_at,l.updated_at,l.price_is_range,l.price_min,l.price_max,l.estimated_delivery_days,l.images_json,l.documents_json,c.name AS category
       FROM marketplace_listings l JOIN marketplace_categories c ON c.id=l.category_id
       WHERE l.seller_id=? AND l.listing_type=? AND l.deleted_at IS NULL ORDER BY l.created_at DESC LIMIT 100`).bind(user.id,type).all();
     const data=await Promise.all(rows.results.map(async(row:any)=>{
@@ -180,7 +184,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const q=str(url.searchParams.get("q"),100).replace(/[%_]/g,""),category=str(url.searchParams.get("category_id"),64),country=str(url.searchParams.get("country"),2).toUpperCase(),listingType=str(url.searchParams.get("type"),20)||"product";
     const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||24),1),50),offset=Math.min(Math.max(Number(url.searchParams.get("offset")||0),0),500);
     const viewerId=user?.id||null;
-    const where:string[]=["l.status='active'","l.deleted_at IS NULL","l.moderation_status='approved'","u.account_status='active'","u.banned=0","u.deleted_at IS NULL"];const values:unknown[]=[viewerId,viewerId,viewerId,viewerId,viewerId];
+    const where:string[]=["l.status='active'","l.sale_state='available'","l.deleted_at IS NULL","l.moderation_status='approved'","u.account_status='active'","u.banned=0","u.deleted_at IS NULL"];const values:unknown[]=[viewerId,viewerId,viewerId,viewerId,viewerId];
     if(q){where.push("(s.product_title LIKE ? OR l.description LIKE ? OR u.username LIKE ? OR COALESCE(l.city,'') LIKE ?)");values.push("%"+q+"%","%"+q+"%","%"+q+"%","%"+q+"%");}
     if(category){where.push("s.category_id=?");values.push(category);}
     if(country){where.push("s.country_code=?");values.push(country);}
@@ -206,6 +210,23 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
         seller_id:row.seller_id,delivery_days:row.estimated_delivery_days};
     }));
     return json({success:true,data});
+  }
+  const listingVideos=path.match(/^\/api\/market\/listings\/([^/]+)\/videos$/);
+  if(listingVideos&&method==="POST"){
+    if(!user)return fail("Unauthorized",401);
+    const listingId=decodeURIComponent(listingVideos[1]),b=await body(request);if(!b)return fail("Valid JSON body required");
+    const listing=await env.DB.prepare("SELECT seller_id,sale_state,deleted_at FROM marketplace_listings WHERE id=?").bind(listingId).first<{seller_id:string;sale_state:string;deleted_at:string|null}>();
+    if(!listing||listing.seller_id!==user.id||listing.deleted_at||listing.sale_state==="sold")return fail("Available seller listing not found",404);
+    const master=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_global'").first<{enabled:number}>();
+    if(Number(master?.enabled||0)!==1)return fail("All video features are disabled by the platform administrator",503);
+    const ids=Array.isArray(b.video_ids)?[...new Set(b.video_ids.filter((v):v is string=>typeof v==="string"))].slice(0,5):[];
+    if(!ids.length)return fail("Add at least one processed listing video");
+    for(const id of ids){
+      const asset=await env.DB.prepare("SELECT id FROM video_assets WHERE id=? AND owner_id=? AND purpose='listing' AND related_id=? AND status='ready' AND deleted_at IS NULL AND duration_seconds<=300").bind(id,user.id,listingId).first();
+      if(!asset)return fail("A listing video is not processed, owned by you, or exceeds the 5-minute limit",409);
+      await env.DB.prepare("INSERT OR IGNORE INTO marketplace_listing_videos(listing_id,video_id,owner_id) VALUES(?,?,?)").bind(listingId,id,user.id).run();
+    }
+    return json({success:true,attached:ids.length});
   }
   if(path==="/api/market/listings"&&method==="POST"){
     if(!user)return fail("Unauthorized",401);

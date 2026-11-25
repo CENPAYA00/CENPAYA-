@@ -34,6 +34,8 @@ export default function ServiceOrder() {
 
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryFile, setDeliveryFile] = useState<File | null>(null);
+  const [deliveryVideoFile, setDeliveryVideoFile] = useState<File | null>(null);
+  const [deliveryVideos, setDeliveryVideos] = useState<any[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -80,6 +82,10 @@ export default function ServiceOrder() {
           setService(svcRes.data);
           setPkg((packagesRes.data || []).find((row: any) => row.id === existingOrder.package_id) || null);
           setSeller(sellerRes.data);
+          try {
+            const workflow = await d1Request<{ data: { deliveries?: any[] } }>(`/api/market/orders/${encodeURIComponent(id)}`);
+            setDeliveryVideos((workflow.data.deliveries || []).flatMap((delivery: any) => (delivery.videos || []).map((video: any) => video)));
+          } catch { /* Financial order remains readable if its media projection is unavailable. */ }
         }
       }
       setLoading(false);
@@ -109,6 +115,32 @@ export default function ServiceOrder() {
     if (!deliveryNote.trim()) return setErrorMsg('Add a delivery note.');
     setBusy(true);
 
+    let videoIds: string[] = [];
+    if (deliveryVideoFile) {
+      try {
+        if (!deliveryVideoFile.type.startsWith('video/') || deliveryVideoFile.size > 500 * 1024 * 1024) throw new Error('Choose a supported video up to 500 MB.');
+        const intent = await d1Request<{ data: { video_id: string; upload_url: string; method: string; headers: Record<string, string> } }>('/api/video-assets/upload-intent', {
+          method: 'POST', body: JSON.stringify({ purpose: 'delivery', related_id: order.id, mime_type: deliveryVideoFile.type, size_bytes: deliveryVideoFile.size, filename: deliveryVideoFile.name }),
+        });
+        const uploaded = await fetch(intent.data.upload_url, { method: intent.data.method, headers: intent.data.headers, body: deliveryVideoFile });
+        if (!uploaded.ok) throw new Error('Delivery video upload failed.');
+        await d1Request(`/api/video-assets/${encodeURIComponent(intent.data.video_id)}/complete`, { method: 'POST', body: JSON.stringify({}) });
+        let ready = false;
+        for (let attempt = 0; attempt < 120; attempt++) {
+          await new Promise(resolve => window.setTimeout(resolve, 3000));
+          const status = await d1Request<{ data: { status: string } }>(`/api/video-assets/${encodeURIComponent(intent.data.video_id)}/status`);
+          if (status.data.status === 'ready') { ready = true; break; }
+          if (status.data.status === 'failed') throw new Error('Delivery video processing failed.');
+        }
+        if (!ready) throw new Error('Delivery video is still processing. Please try again shortly.');
+        videoIds = [intent.data.video_id];
+      } catch (error: unknown) {
+        setErrorMsg(error instanceof Error ? error.message : 'Delivery video upload failed.');
+        setBusy(false);
+        return;
+      }
+    }
+
     let fileUrl: string | null = null;
     if (deliveryFile) {
       const compressed = deliveryFile.type.startsWith('image/')
@@ -123,6 +155,7 @@ export default function ServiceOrder() {
     }
 
     try {
+      await d1Request(`/api/market/orders/${encodeURIComponent(order.id)}/delivery`, { method: 'POST', body: JSON.stringify({ delivery_note: deliveryNote.trim(), video_ids: videoIds }) });
       await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/delivery`, { method: 'POST', body: JSON.stringify({ delivery_note: deliveryNote.trim(), delivery_file_url: fileUrl }) });
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Service delivery is unavailable.');
@@ -139,6 +172,7 @@ export default function ServiceOrder() {
     setBusy(true);
     try {
       await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/approve`, { method: 'POST', body: JSON.stringify({}) });
+      await d1Request(`/api/market/orders/${encodeURIComponent(order.id)}/accept`, { method: 'POST', body: JSON.stringify({}) }).catch(() => {});
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Service order approval is unavailable.');
       setBusy(false);
@@ -312,6 +346,16 @@ export default function ServiceOrder() {
               View delivered file →
             </a>
           )}
+          {deliveryVideos.map((video: any) => (
+            <button key={video.id} type="button" onClick={async () => {
+              try {
+                const result = await d1Request<{ data: { url: string } }>(`/api/video-assets/${encodeURIComponent(video.id)}/download`);
+                window.open(result.data.url, '_blank', 'noopener,noreferrer');
+              } catch (error: any) { setErrorMsg(error.message || 'Delivery video is unavailable.'); }
+            }} className="block text-accent text-[11px] font-bold underline mt-2">
+              Play / download delivery video · {Math.round(Number(video.duration_seconds || 0))} seconds
+            </button>
+          ))}
         </div>
       )}
 
@@ -328,6 +372,13 @@ export default function ServiceOrder() {
           <input
             type="file"
             onChange={e => setDeliveryFile(e.target.files?.[0] || null)}
+            className="text-xs mb-2 block w-full"
+          />
+          <label className="block text-[10px] font-semibold text-gray-500 mb-1">Delivery video · maximum 3 minutes</label>
+          <input
+            type="file"
+            accept="video/mp4,video/quicktime,video/webm"
+            onChange={e => setDeliveryVideoFile(e.target.files?.[0] || null)}
             className="text-xs mb-2 block w-full"
           />
           <button

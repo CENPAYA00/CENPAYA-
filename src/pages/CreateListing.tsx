@@ -27,6 +27,7 @@ export default function CreateListing() {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
 
   const [user, setUser] = useState<any>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -55,6 +56,7 @@ export default function CreateListing() {
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [docs, setDocs] = useState<File[]>([]);
+  const [listingVideoFiles, setListingVideoFiles] = useState<File[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -191,6 +193,32 @@ export default function CreateListing() {
         }),
       });
 
+      if (listingVideoFiles.length) {
+        try {
+          const videoIds: string[] = [];
+          for (const videoFile of listingVideoFiles.slice(0, 5)) {
+            if (!videoFile.type.startsWith('video/') || videoFile.size > 500 * 1024 * 1024) throw new Error('Each listing video must be a supported format up to 500 MB.');
+            const intent = await d1Request<{ data: { video_id: string; upload_url: string; method: string; headers: Record<string, string> } }>('/api/video-assets/upload-intent', {
+              method: 'POST', body: JSON.stringify({ purpose: 'listing', related_id: result.id, mime_type: videoFile.type, size_bytes: videoFile.size, filename: videoFile.name }),
+            });
+            const uploaded = await fetch(intent.data.upload_url, { method: intent.data.method, headers: intent.data.headers, body: videoFile });
+            if (!uploaded.ok) throw new Error('A listing video could not be uploaded.');
+            await d1Request(`/api/video-assets/${encodeURIComponent(intent.data.video_id)}/complete`, { method: 'POST', body: JSON.stringify({}) });
+            let ready = false;
+            for (let attempt = 0; attempt < 120; attempt++) {
+              await new Promise(resolve => window.setTimeout(resolve, 3000));
+              const status = await d1Request<{ data: { status: string } }>(`/api/video-assets/${encodeURIComponent(intent.data.video_id)}/status`);
+              if (status.data.status === 'ready') { ready = true; break; }
+              if (status.data.status === 'failed') throw new Error('A listing video failed processing.');
+            }
+            if (!ready) throw new Error('Listing video processing is taking longer than expected.');
+            videoIds.push(intent.data.video_id);
+          }
+          await d1Request(`/api/market/listings/${encodeURIComponent(result.id)}/videos`, { method: 'POST', body: JSON.stringify({ video_ids: videoIds }) });
+        } catch (videoError: any) {
+          alert(`Your listing was published, but its video could not be attached: ${videoError?.message || 'Please add it again from the listing page.'}`);
+        }
+      }
       alert('Listing published!');
       navigate(`/listing/${result.id}`);
     } catch (e: any) {
@@ -355,6 +383,24 @@ export default function CreateListing() {
             className="hidden"
             onChange={e => e.target.files && handleImagePick(e.target.files)}
           />
+        </div>
+
+        <div>
+          <p className="text-[11px] font-medium text-gray-600 dark:text-gray-400 mb-2">Listing videos (optional · maximum 5 minutes each)</p>
+          <button type="button" onClick={() => videoRef.current?.click()} className="w-full p-3 rounded-xl border-2 border-dashed border-gray-300 dark:border-darkline text-[12px] text-gray-500 flex items-center justify-center gap-2 cursor-pointer">
+            Add video
+          </button>
+          <input ref={videoRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" multiple className="hidden" onChange={e => {
+            const selected = Array.from(e.target.files || []);
+            setListingVideoFiles(prev => [...prev, ...selected].slice(0, 5));
+            if (videoRef.current) videoRef.current.value = '';
+          }} />
+          {listingVideoFiles.map((file, i) => (
+            <div key={i} className="flex items-center gap-2 mt-2 p-2 rounded-lg bg-gray-50 dark:bg-darkbg">
+              <span className="flex-1 text-[11px] truncate">{file.name}</span>
+              <button type="button" onClick={() => setListingVideoFiles(prev => prev.filter((_, index) => index !== i))} className="text-red-500"><X size={12} /></button>
+            </div>
+          ))}
         </div>
 
         <div>

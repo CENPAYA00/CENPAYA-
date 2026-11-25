@@ -4,7 +4,7 @@ import {spawn} from "node:child_process";
 import {mkdtemp,readFile,writeFile,readdir,stat,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {S3Client,PutObjectCommand,GetObjectCommand,HeadObjectCommand} from "@aws-sdk/client-s3";
+import {S3Client,PutObjectCommand,GetObjectCommand,HeadObjectCommand,DeleteObjectsCommand,ListObjectsV2Command} from "@aws-sdk/client-s3";
 import {getSignedUrl} from "@aws-sdk/s3-request-presigner";
 const e=process.env;
 const b2=new S3Client({region:e.B2_REGION,endpoint:e.B2_ENDPOINT,forcePathStyle:true,credentials:{accessKeyId:e.B2_KEY_ID||"",secretAccessKey:e.B2_APPLICATION_KEY||""}});
@@ -29,7 +29,8 @@ async function processVideo(d){
   await writeFile(input,bytes);
   const probe=await new Promise((ok,no)=>{const p=spawn("ffprobe",["-v","error","-show_entries","format=duration:stream=width,height,codec_type","-of","json",input]);let s="";p.stdout.on("data",x=>s+=x);p.on("error",no);p.on("close",c=>c===0?ok(JSON.parse(s)):no(Error("invalid video")));});
   const duration=Number(probe.format?.duration||0);
-  if(!duration||duration>300)throw Error("maximum video duration is five minutes");
+  const maximum=Math.min(300,Math.max(1,Number(d.max_duration_seconds)||300));
+  if(!duration||duration>maximum)throw Error("maximum video duration is "+maximum+" seconds");
   const streams=probe.streams||[],video=streams.find(x=>x.codec_type==="video");
   if(!video||!video.width||!video.height)throw Error("video stream is missing");
   const renditions=[{name:"360p",height:360,bandwidth:800000},{name:"480p",height:480,bandwidth:1400000},{name:"720p",height:720,bandwidth:2800000}].filter(x=>Number(video.height)>=x.height);
@@ -82,6 +83,24 @@ async function playbackPlaylist(key){
  }
  return rewritten.join("\n");
 }
+async function deletePrefix(client,bucket,prefix){
+ let token;
+ do{
+  const page=await client.send(new ListObjectsV2Command({Bucket:bucket,Prefix:prefix,ContinuationToken:token}));
+  const keys=(page.Contents||[]).map(x=>({Key:x.Key})).filter(x=>x.Key);
+  if(keys.length)await client.send(new DeleteObjectsCommand({Bucket:bucket,Delete:{Objects:keys,Quiet:true}}));
+  token=page.IsTruncated?page.NextContinuationToken:undefined;
+ }while(token);
+}
+async function deleteVideoObjects(d){
+ if(!safe(d.source_key)||!d.source_key.startsWith("videos/source/"))throw Error("invalid source key");
+ const hls=typeof d.hls_key==="string"&&safe(d.hls_key)&&d.hls_key.startsWith("videos/hls/")?d.hls_key.slice(0,d.hls_key.lastIndexOf("/")+1):"";
+ for(const [client,bucket] of [[b2,e.B2_BUCKET_NAME],[tg,e.TIGRIS_BUCKET_NAME]]){
+  await client.send(new DeleteObjectsCommand({Bucket:bucket,Delete:{Objects:[{Key:d.source_key}],Quiet:true}}));
+  if(hls)await deletePrefix(client,bucket,hls);
+ }
+ return {deleted:true};
+}
 http.createServer(async(req,res)=>{try{
  if(!auth(req)){res.writeHead(401).end();return;}
  const u=new URL(req.url,"http://localhost");
@@ -90,11 +109,18 @@ http.createServer(async(req,res)=>{try{
   const key=u.searchParams.get("key")||"",playlist=await playbackPlaylist(key);
   res.writeHead(200,{"content-type":"application/vnd.apple.mpegurl","cache-control":"private, no-store","access-control-allow-origin":"*"}).end(playlist);return;
  }
+ if(req.method==="GET"&&u.pathname==="/v1/download"){
+  const key=u.searchParams.get("key")||"";
+  if(!safe(key)||!key.startsWith("videos/source/"))throw Error("invalid source key");
+  const download=await getSignedUrl(b2,new GetObjectCommand({Bucket:e.B2_BUCKET_NAME,Key:key}),{expiresIn:900});
+  res.writeHead(200,{"content-type":"application/json"}).end(JSON.stringify({url:download,expires_at:new Date(Date.now()+900000).toISOString()}));return;
+ }
  const d=await body(req);let out;
  if(u.pathname==="/v1/uploads"&&req.method==="POST"){
   if(!safe(d.object_key)||!d.object_key.startsWith("videos/source/")||!Number.isSafeInteger(d.size_bytes)||d.size_bytes>524288000)throw Error("invalid upload");
   out={upload_url:await getSignedUrl(b2,new PutObjectCommand({Bucket:e.B2_BUCKET_NAME,Key:d.object_key,ContentType:d.mime_type}),{expiresIn:900}),expires_at:new Date(Date.now()+900000).toISOString()};
  }else if(u.pathname==="/v1/process"&&req.method==="POST")out=await processVideo(d);
+ else if(u.pathname==="/v1/delete"&&req.method==="POST")out=await deleteVideoObjects(d);
  else{res.writeHead(404).end();return;}
  res.writeHead(200,{"content-type":"application/json"}).end(JSON.stringify(out));
  }catch(err){res.writeHead(400,{"content-type":"application/json"}).end(JSON.stringify({error:err.message||"failed"}));}
