@@ -42,7 +42,7 @@ export default function Subscribe() {
         supabaseWorkerRequest<{ data: { is_subscribed: boolean } }>('/api/v1/me/profile'),
         supabaseWorkerRequest<{ data: { available_funds: number } | null }>('/api/v1/wallet'),
         d1Request<{ data: { phone?: string; momo_number?: string } }>('/api/me/personal-details'),
-        supabaseWorkerRequest<{ data: { plan_price?: number; currency?: string; options?: Array<{ payment_method: string }> } }>('/api/v1/subscriptions/options').catch(() => ({ data: { plan_price: 3000, options: [] } })),
+        supabaseWorkerRequest<{ data: { plan_price?: number; currency?: string; options?: Array<{ payment_method: string }> } }>('/api/v1/subscriptions/options').catch(() => ({ data: { plan_price: 3000, currency: 'XAF', options: [] } })),
       ]);
 
       if (userRes.data) setIsSubscribed(userRes.data.is_subscribed);
