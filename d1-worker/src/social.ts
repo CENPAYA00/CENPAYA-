@@ -333,6 +333,58 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     return json({ success: true });
   }
 
+  if (path === "/api/saved/folders" && (method === "GET" || method === "POST")) {
+    if (!user) return fail("Unauthorized", 401);
+    if (method === "GET") {
+      const rows = await env.DB.prepare(`SELECT f.id,f.name,f.created_at,f.updated_at,COUNT(i.post_id) AS item_count
+        FROM post_saved_folders f LEFT JOIN post_saved_folder_items i ON i.folder_id=f.id AND i.user_id=f.user_id
+        WHERE f.user_id=? GROUP BY f.id ORDER BY f.created_at ASC`).bind(user.id).all();
+      return json({ success: true, data: rows.results });
+    }
+    const b = await body(request); if (!b) return fail("Valid JSON body required");
+    const name = str(b.name, 40).trim();
+    if (name.length < 2) return fail("Folder name must contain 2 to 40 characters");
+    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM post_saved_folders WHERE user_id=?").bind(user.id).first<{n:number}>();
+    if (Number(count?.n || 0) >= 50) return fail("You can create up to 50 saved folders", 409);
+    const id = uuid();
+    try {
+      await env.DB.prepare("INSERT INTO post_saved_folders(id,user_id,name) VALUES(?,?,?)").bind(id,user.id,name).run();
+    } catch { return fail("A folder with that name already exists", 409); }
+    return json({ success: true, data: { id, name, item_count: 0 } }, 201);
+  }
+  const savedFolder = path.match(/^\/api\/saved\/folders\/([^/]+)(?:\/(posts))?$/);
+  if (savedFolder) {
+    if (!user) return fail("Unauthorized", 401);
+    const folderId = decodeURIComponent(savedFolder[1]);
+    if (!UUID.test(folderId)) return fail("Invalid folder id");
+    const folder = await env.DB.prepare("SELECT id,name FROM post_saved_folders WHERE id=? AND user_id=?").bind(folderId,user.id).first<{id:string;name:string}>();
+    if (!folder) return fail("Saved folder not found", 404);
+    if (savedFolder[2] === "posts" && method === "GET") {
+      const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url
+        FROM post_saved_folder_items i JOIN posts p ON p.id=i.post_id JOIN users u ON u.id=p.author_id
+        WHERE i.folder_id=? AND i.user_id=? AND p.status='published' AND p.deleted_at IS NULL
+        AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id))
+          OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?))))
+        AND NOT EXISTS(SELECT 1 FROM user_blocks bl WHERE (bl.blocker_id=? AND bl.blocked_id=p.author_id) OR (bl.blocker_id=p.author_id AND bl.blocked_id=?))
+        ORDER BY i.created_at DESC LIMIT 200`).bind(folderId,user.id,user.id,user.id,user.id,user.id,user.id,user.id).all();
+      return json({ success: true, folder, data: await hydratePosts(env,url.origin,rows.results as Array<Record<string,unknown>>) });
+    }
+    if (savedFolder[2]) return fail("Method not allowed", 405);
+    if (method === "PATCH") {
+      const b = await body(request); if (!b) return fail("Valid JSON body required");
+      const name = str(b.name,40).trim();
+      if (name.length < 2) return fail("Folder name must contain 2 to 40 characters");
+      try { await env.DB.prepare("UPDATE post_saved_folders SET name=?,updated_at=" + NOW + " WHERE id=? AND user_id=?").bind(name,folderId,user.id).run(); }
+      catch { return fail("A folder with that name already exists",409); }
+      return json({ success:true,data:{id:folderId,name} });
+    }
+    if (method === "DELETE") {
+      await env.DB.prepare("DELETE FROM post_saved_folders WHERE id=? AND user_id=?").bind(folderId,user.id).run();
+      return json({success:true});
+    }
+    return fail("Method not allowed",405);
+  }
+
   const postRoute = path.match(/^\/api\/posts\/([^/]+)(?:\/(like|my-state|save|comments|share|archive|restore|not-interested))?$/);
   if (postRoute) {
     const postId = decodeURIComponent(postRoute[1]);
@@ -404,16 +456,24 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     }
     if (action === "save" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Unauthorized", 401);
+      const b = await body(request);
+      const folderId = str(b?.folder_id,64);
       const post = await env.DB.prepare("SELECT author_id,visibility,content FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string; content: string }>();
       if (!post || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
+      if (folderId && !UUID.test(folderId)) return fail("Invalid folder id");
+      if (folderId && !(await env.DB.prepare("SELECT id FROM post_saved_folders WHERE id=? AND user_id=?").bind(folderId,user.id).first())) return fail("Saved folder not found",404);
       if (method === "POST") {
         const result = await env.DB.prepare("INSERT OR IGNORE INTO post_bookmarks(user_id,post_id) VALUES(?,?)").bind(user.id, postId).run();
+        if (folderId) await env.DB.prepare("INSERT OR IGNORE INTO post_saved_folder_items(user_id,folder_id,post_id) VALUES(?,?,?)").bind(user.id,folderId,postId).run();
         if (result.meta.changes) await applyInterestSignal(env.DB,user.id,post.content,12);
+      } else if (folderId) {
+        await env.DB.prepare("DELETE FROM post_saved_folder_items WHERE user_id=? AND folder_id=? AND post_id=?").bind(user.id,folderId,postId).run();
       } else {
         const result = await env.DB.prepare("DELETE FROM post_bookmarks WHERE user_id=? AND post_id=?").bind(user.id, postId).run();
+        await env.DB.prepare("DELETE FROM post_saved_folder_items WHERE user_id=? AND post_id=?").bind(user.id,postId).run();
         if (result.meta.changes) await applyInterestSignal(env.DB,user.id,post.content,-5);
       }
-      return json({ success: true, saved: method === "POST" });
+      return json({ success: true, saved: method === "POST", folder_id: folderId || null });
     }
     if (action === "share" && method === "POST") {
       if (!user) return fail("Unauthorized", 401);
