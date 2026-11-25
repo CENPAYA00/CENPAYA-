@@ -35,16 +35,15 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
  }
  const m=path.match(/^\/api\/videos\/([0-9a-f-]{36})\/(complete|status|playlist)$/i);
  if(m){
-  if(!user)return fail("Authentication required",401);
   const row=await env.DB.prepare("SELECT v.id,v.owner_id,v.status,v.source_key,v.source_bytes,v.mime_type,v.hls_key,v.duration_seconds,v.thumbnail_key,v.post_id,p.author_id,p.visibility,p.status AS post_status,p.deleted_at FROM video_assets v LEFT JOIN posts p ON p.id=v.post_id WHERE v.id=?").bind(m[1]).first<Record<string,unknown>>();
   if(!row)return fail("Video not found",404);
-  const owner=row.owner_id===user.id;
-  const visible=owner||(row.post_id&&row.post_status==="published"&&!row.deleted_at&&row.visibility==="public"&&row.author_id!==user.id?true:false);
+  const owner=!!user&&row.owner_id===user.id;
+  const visible=owner||(row.post_id&&row.post_status==="published"&&!row.deleted_at&&row.visibility==="public"&&(!user||row.author_id!==user.id)?true:false);
   if(!visible)return fail("Video not found",404);
   if(m[2]==="status"&&method==="GET")return json({success:true,data:{video_id:row.id,status:row.status,duration_seconds:row.duration_seconds}});
   if(m[2]==="playlist"&&method==="GET"){
    if(row.status!=="ready"||!row.hls_key)return fail("Video is still processing",409);
-   if(!owner){
+   if(user&&!owner){
     const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id,row.author_id,row.author_id,user.id).first();
     if(blocked)return fail("Video not found",404);
    }
@@ -58,6 +57,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
    return new Response(rewritten,{status:200,headers:{"Content-Type":"application/vnd.apple.mpegurl","Cache-Control":"private, no-store","Access-Control-Allow-Origin":url.origin,"Access-Control-Allow-Headers":"Range"}});
   }
   if(m[2]==="complete"&&method==="POST"){
+   if(!user)return fail("Authentication required",401);
    if(!owner)return fail("Only the uploader can complete this video",403);
    if(row.status!=="awaiting_upload")return fail("Video is already queued",409);
    await env.DB.batch([
@@ -92,7 +92,9 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
    AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
    AND (?='' OR p.created_at<?)
    AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=?)))
-   ORDER BY p.created_at DESC LIMIT ?`).bind(cursor,cursor,user?.id||null,user?.id||null,user?.id||null,limit).all<Record<string,unknown>>();
+   ORDER BY CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 1 ELSE 0 END DESC,
+     COALESCE((SELECT SUM(i.score) FROM user_interest_signals i WHERE i.user_id=? AND i.score>0 AND instr(lower(COALESCE(p.content,'')),i.topic_key)>0),0) DESC,
+     p.created_at DESC LIMIT ?`).bind(cursor,cursor,user?.id||null,user?.id||null,user?.id||null,user?.id||null,user?.id||null,limit).all<Record<string,unknown>>();
   const data=rows.results.map(row=>({...row,playlist_url:"/api/videos/"+row.video_id+"/playlist",thumbnail_url:null,next_cursor:row.created_at}));
   return json({success:true,data,next_cursor:data.length?data[data.length-1].next_cursor:null});
  }
