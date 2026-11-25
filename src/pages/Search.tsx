@@ -23,7 +23,8 @@ const MAX_RECENT = 8;
 export default function Search() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const contextParam = (params.get('context') || 'home') as Context;
+  const rawContext = params.get('context') || 'home';
+  const contextParam: Context = (['home', 'market', 'services'].includes(rawContext) ? rawContext : 'home') as Context;
   const [context, setContext] = useState<Context>(contextParam);
 
   const [query, setQuery] = useState('');
@@ -32,6 +33,7 @@ export default function Search() {
   const [recent, setRecent] = useState<string[]>([]);
   const [people, setPeople] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [meId, setMeId] = useState<string | null>(null);
 
   useEffect(() => { setContext(contextParam); }, [contextParam]);
@@ -72,6 +74,7 @@ export default function Search() {
     let cancelled = false;
     const run = async () => {
       setLoading(true);
+      setSearchError('');
       try {
         const type = context === 'home' ? 'home' : context === 'market' ? 'market' : 'services';
         const { data } = await d1Request<{ data: Result[] }>(
@@ -80,6 +83,8 @@ export default function Search() {
         const list: Result[] = data || [];
 
         if (!cancelled) setResults(list);
+      } catch (error: any) {
+        if (!cancelled) { setResults([]); setSearchError(error.message || 'Search is temporarily unavailable.'); }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -193,7 +198,9 @@ export default function Search() {
               </div>
             )}
 
-            {!loading && results.length === 0 && (
+            {!loading && searchError && <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-200 rounded-xl p-3 text-xs mb-3">{searchError}</div>}
+
+            {!loading && !searchError && results.length === 0 && (
               <div className="bg-white dark:bg-darkcard rounded-2xl p-6 text-center shadow-sm">
                 <SearchIcon size={28} className="mx-auto text-gray-400 mb-2" />
                 <p className="text-[11px] font-bold text-navy dark:text-white">No results for "{debounced}"</p>
