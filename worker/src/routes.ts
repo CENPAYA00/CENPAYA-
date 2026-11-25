@@ -635,6 +635,65 @@ export async function handleAuthenticatedApi(
     if (error) return failure("payment_methods_lookup_failed", 502, headers);
     return success(data || [], headers);
   }
+  if (path === "/api/v1/admin/countries" || path.startsWith("/api/v1/admin/countries/")) {
+    const profile = await readUserProfile(supabase, userId);
+    if (!profile || !["owner", "super_admin"].includes(String(profile.role))) {
+      return failure("not_authorized", 403, headers);
+    }
+    if (method === "GET" && path === "/api/v1/admin/countries") {
+      const [{ data: countries, error: countryError }, { data: configs, error: configError }] = await Promise.all([
+        supabase.from("supported_countries").select("country_iso,name,phone_prefix,currency_code,currency_value_in_xaf,flag_emoji,regions,enabled_methods,is_active").order("name"),
+        supabase.from("regional_market_configurations").select("country_iso,base_marketplace_fee_pct,premium_subscriber_fee_pct,withdrawal_fee_pct,fee_fixed_base,fee_fixed_premium"),
+      ]);
+      if (countryError || configError) return failure("countries_lookup_failed", 502, headers);
+      const byCode = new Map((configs || []).map((row: Record<string, unknown>) => [row.country_iso, row]));
+      return success((countries || []).map((row: Record<string, unknown>) => {
+        const config = byCode.get(row.country_iso) || {};
+        return { ...row, code: row.country_iso, ...config };
+      }), headers);
+    }
+    const countryPath = path.match(/^\/api\/v1\/admin\/countries\/([A-Z]{2})$/);
+    if (!countryPath) return failure("invalid_country_path", 400, headers);
+    const countryIso = countryPath[1];
+    if (method === "PATCH") {
+      const body = await readJsonObject(request, 2048);
+      if (!body || !onlyKeys(body, ["is_active"]) || typeof body.is_active !== "boolean") {
+        return failure("invalid_country_activation_request", 400, headers);
+      }
+      const result = await rpc(supabase, "admin_set_supported_country_active", {
+        p_country_iso: countryIso, p_is_active: body.is_active,
+      });
+      return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+    }
+    if (method === "PUT" || method === "POST") {
+      const body = await readJsonObject(request, 12_000);
+      const validMethods = ["mtn_momo", "orange_money", "airtel_money", "moov_money"];
+      if (!body || !onlyKeys(body, ["code","name","phone_prefix","currency_code","currency_value_in_xaf","flag_emoji","regions","enabled_methods","is_active","base_marketplace_fee_pct","premium_subscriber_fee_pct","withdrawal_fee_pct","fee_fixed_base","fee_fixed_premium"]) ||
+          body.code !== countryIso || !isText(body.name, 100, 2) ||
+          typeof body.phone_prefix !== "string" || !/^\\+[1-9][0-9]{0,6}$/.test(body.phone_prefix) ||
+          typeof body.currency_code !== "string" || !/^[A-Z]{3}$/.test(body.currency_code) ||
+          typeof body.currency_value_in_xaf !== "number" || !Number.isFinite(body.currency_value_in_xaf) || body.currency_value_in_xaf <= 0 ||
+          (body.flag_emoji !== null && body.flag_emoji !== undefined && !isText(body.flag_emoji, 32)) ||
+          !Array.isArray(body.regions) || body.regions.length > 100 || !body.regions.every((v) => isText(v, 100)) ||
+          !Array.isArray(body.enabled_methods) || body.enabled_methods.length > 4 || !body.enabled_methods.every((v) => validMethods.includes(v)) ||
+          typeof body.is_active !== "boolean" || !isPercent(body.base_marketplace_fee_pct) ||
+          !isPercent(body.premium_subscriber_fee_pct) || !isPercent(body.withdrawal_fee_pct) ||
+          !integerIn(body.fee_fixed_base, 0, 1_000_000_000) || !integerIn(body.fee_fixed_premium, 0, 1_000_000_000)) {
+        return failure("invalid_country_configuration", 400, headers);
+      }
+      const result = await rpc(supabase, "admin_upsert_supported_country", {
+        p_country_iso: countryIso, p_name: body.name.trim(), p_phone_prefix: body.phone_prefix,
+        p_currency_code: body.currency_code, p_currency_value_in_xaf: body.currency_value_in_xaf,
+        p_flag_emoji: body.flag_emoji ?? null, p_regions: body.regions, p_enabled_methods: body.enabled_methods,
+        p_base_fee_pct: body.base_marketplace_fee_pct, p_premium_fee_pct: body.premium_subscriber_fee_pct,
+        p_withdrawal_fee_pct: body.withdrawal_fee_pct, p_fee_fixed_base: body.fee_fixed_base,
+        p_fee_fixed_premium: body.fee_fixed_premium, p_is_active: body.is_active,
+      });
+      return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+    }
+    return failure("method_not_allowed", 405, headers);
+  }
+
   if (method === "GET" && (path === "/api/v1/admin/regions" || path === "/api/v1/admin/countries")) {
     const { data, error } = await supabase.from("regional_market_configurations")
       .select("country_iso,currency_code,base_marketplace_fee_pct,premium_subscriber_fee_pct,withdrawal_fee_pct,is_operational,fee_fixed_premium,fee_fixed_base")
