@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Search, Play, Film } from 'lucide-react';
+import { Eye, EyeOff, Search, Film } from 'lucide-react';
 import { getCachedUser, getCached, setCached } from '../lib/cache';
 import FeedPostCard from '../components/FeedPostCard';
 import PullToRefresh from '../components/PullToRefresh';
@@ -157,7 +157,7 @@ export default function Home() {
           <button onClick={() => setActiveTab('videos')} className={`rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-2 ${activeTab === 'videos' ? 'bg-accent text-white' : 'bg-white dark:bg-darkcard text-gray-500'}`}><Film size={14}/> Videos</button>
         </div>
 
-        {visible.length === 0 && (
+        {activeTab === 'posts' && visible.length === 0 && (
           <div className="bg-white dark:bg-darkcard p-6 rounded-card shadow-soft text-center">
             <p className="text-[13px] font-bold text-navy dark:text-white">No posts yet</p>
             <p className="text-[11px] text-mute mt-1">Be the first to share something.</p>

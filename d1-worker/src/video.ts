@@ -36,7 +36,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
   await env.DB.prepare("INSERT INTO video_assets(id,owner_id,status,source_key,source_bytes,mime_type) VALUES(?,?,'awaiting_upload',?,?,?)").bind(id,user.id,key,size,mime).run();
   return json({success:true,data:{video_id:id,filename,upload_url:data.upload_url,method:"PUT",headers:{"Content-Type":mime},expires_at:data.expires_at,max_duration_seconds:300}},201);
  }
- const ratingMatch=path.match(/^\\/api\\/videos\\/([0-9a-f-]{36})\\/rating$/i);
+ const ratingMatch=path.match(/^\/api\/videos\/([0-9a-f-]{36})\/rating$/i);
  if(ratingMatch&&(method==='GET'||method==='POST')){
   const videoId=ratingMatch[1];
   const asset=await env.DB.prepare("SELECT v.id,v.owner_id,v.status,v.post_id,p.author_id,p.visibility,p.status AS post_status,p.deleted_at FROM video_assets v LEFT JOIN posts p ON p.id=v.post_id WHERE v.id=?").bind(videoId).first<Record<string,unknown>>();
