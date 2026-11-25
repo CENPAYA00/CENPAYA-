@@ -257,7 +257,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   const staffClaim=path.match(/^\/api\/staff\/tickets\/([^/]+)\/claim$/);
   if(staffClaim && method==="POST"){
     if(!supportAuthority)return fail("Support Agent access required",403);
-    const row=await env.DB.prepare("SELECT id,assigned_to_user_id,queue_type FROM support_tickets WHERE id=?").bind(staffClaim[1]).first<{id:string;assigned_to_user_id:string|null}>();
+    const row=await env.DB.prepare("SELECT id,assigned_to_user_id,queue_type FROM support_tickets WHERE id=?").bind(staffClaim[1]).first<{id:string;assigned_to_user_id:string|null;queue_type:string}>();
     if(!row)return fail("Ticket not found",404);
     if(!platformAdmin && row.queue_type!=="support")return fail("This ticket belongs to the admin team",403);
     if(row.assigned_to_user_id && row.assigned_to_user_id!==user!.id && !platformAdmin)return fail("Ticket is assigned to another agent",409);
