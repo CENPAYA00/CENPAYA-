@@ -99,7 +99,7 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
   }
   if(path==="/api/countries"&&method==="GET"){
     try{
-      const rows=await env.DB.prepare("SELECT s.country_code,s.name,s.currency_code,s.phone_prefix,s.status,c.currency_value_in_xaf,c.flag_emoji,c.regions_json,c.enabled_methods_json,c.config_version FROM supported_countries s LEFT JOIN country_configuration_projection c ON c.country_code=s.country_code WHERE s.status IN ('active','coming_soon') ORDER BY CASE s.status WHEN 'active' THEN 0 ELSE 1 END,s.name").all<Record<string,unknown>>();
+      const rows=await env.DB.prepare("SELECT s.country_code,s.name,s.currency_code,s.phone_prefix,s.status,c.currency_value_in_xaf,c.flag_emoji,c.regions_json,c.enabled_methods_json,c.config_version FROM supported_countries s LEFT JOIN country_configuration_projection c ON c.country_code=s.country_code WHERE s.status='active' AND (c.status IS NULL OR c.status='active') ORDER BY s.name").all<Record<string,unknown>>();
       const data=rows.results.map(row=>({
         ...row,
         flag_emoji:row.flag_emoji||null,
