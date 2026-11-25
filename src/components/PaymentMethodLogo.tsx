@@ -1,47 +1,39 @@
-/* src/components/PaymentMethodLogo.tsx */
-
+/* Brand-led payment method marks. Keep the marks crisp at small mobile sizes. */
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
 
 export function PaymentMethodLogo({ method, size = 40 }: { method: Method; size?: number }) {
-  const logos: Record<Method, React.ReactNode> = {
+  const marks: Record<Method, React.ReactNode> = {
     mtn_momo: (
-      <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-        <rect width="120" height="120" rx="16" fill="#FFCC00" />
-        <path d="M60 25C40 25 25 40 25 60C25 80 40 95 60 95C80 95 95 80 95 60C95 40 80 25 60 25ZM60 85C46 85 35 74 35 60C35 46 46 35 60 35C74 35 85 46 85 60C85 74 74 85 60 85Z" fill="#000000"/>
-        <text x="60" y="68" textAnchor="middle" fontSize="22" fontWeight="900" fill="#000000" fontFamily="sans-serif">MTN</text>
+      <svg viewBox="0 0 120 76" width={size * 1.42} height={size} role="img" aria-label="MTN Mobile Money">
+        <rect x="2" y="4" width="116" height="68" rx="25" fill="#FFCC00" />
+        <path d="M82 61 L105 61 L93 73 Z" fill="#FFCC00" />
+        <text x="60" y="51" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="43" fontWeight="900" letterSpacing="-3" fill="#111111">MTN</text>
       </svg>
     ),
     orange_money: (
-      <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-        <rect width="120" height="120" rx="16" fill="#FFFFFF" stroke="#E5E7EB" strokeWidth="2" />
-        <rect x="25" y="25" width="70" height="70" fill="#FF7900" />
-        <text x="60" y="75" textAnchor="middle" fontSize="18" fontWeight="700" fill="#FFFFFF" fontFamily="sans-serif">orange</text>
-        <text x="90" y="35" textAnchor="end" fontSize="8" fill="#FF7900" fontFamily="sans-serif">™</text>
+      <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label="Orange Money">
+        <rect width="100" height="100" rx="17" fill="#FF7900" />
+        <text x="50" y="57" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="19" fontWeight="700" letterSpacing="-1.1" fill="#FFFFFF">orange</text>
+        <text x="82" y="37" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="7" fontWeight="700" fill="#FFFFFF">®</text>
       </svg>
     ),
     airtel_money: (
-      <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-        <rect width="120" height="120" rx="16" fill="#E40000" />
-        <path d="M60 30 C 45 35, 30 50, 40 70 C 50 85, 60 80, 60 70 C 60 60, 45 55, 45 45 C 45 35, 55 30, 60 30 Z" fill="#FFFFFF" />
-        <path d="M60 30 C 75 35, 90 50, 80 70 C 70 85, 60 80, 60 70 C 60 60, 75 55, 75 45 C 75 35, 65 30, 60 30 Z" fill="#FFFFFF" opacity="0.8"/>
-        <text x="60" y="100" textAnchor="middle" fontSize="20" fontWeight="700" fill="#FFFFFF" fontFamily="sans-serif">airtel</text>
+      <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label="Airtel Money">
+        <rect width="100" height="100" rx="17" fill="#E40000" />
+        <path d="M48 19 C35 34 29 43 34 54 C38 64 49 67 56 58 C62 50 56 40 50 34 C51 45 44 47 43 41 C41 34 46 26 48 19Z" fill="#FFFFFF"/>
+        <text x="50" y="82" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="15" fontWeight="800" fill="#FFFFFF">airtel</text>
       </svg>
     ),
     moov_money: (
-      <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-        <rect width="120" height="120" rx="16" fill="#005CA9" />
-        <text x="50" y="58" textAnchor="middle" fontSize="16" fontWeight="900" fill="#FFFFFF" fontFamily="sans-serif">Moov</text>
-        <text x="50" y="76" textAnchor="middle" fontSize="14" fontWeight="700" fill="#FFFFFF" fontFamily="sans-serif">Africa</text>
-        <path d="M85 35 C 105 45, 105 75, 85 85 C 90 70, 90 50, 85 35 Z" fill="#F39200" />
+      <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label="Moov Money">
+        <rect width="100" height="100" rx="17" fill="#005CA9" />
+        <text x="43" y="51" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="18" fontWeight="900" fill="#FFFFFF">moov</text>
+        <text x="43" y="68" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="9" fontWeight="700" letterSpacing="1.4" fill="#FFFFFF">AFRICA</text>
+        <path d="M75 23 C91 36 91 62 75 77 C81 59 81 41 75 23Z" fill="#F39200"/>
       </svg>
     ),
   };
-
-  return (
-    <div className="inline-flex items-center justify-center overflow-hidden rounded-xl shadow-sm">
-      {logos[method]}
-    </div>
-  );
+  return <span className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-xl" style={{ width: method === 'mtn_momo' ? size * 1.42 : size, height: size }}>{marks[method]}</span>;
 }
 
 export const METHOD_LABELS: Record<Method, string> = {
