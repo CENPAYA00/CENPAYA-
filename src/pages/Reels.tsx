@@ -15,7 +15,7 @@ type Reel = {
 let loader:Promise<void>|null=null;
 function loadHls(){if(window.Hls)return Promise.resolve();if(!loader)loader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';script.onload=()=>resolve();script.onerror=()=>reject(new Error('HLS player unavailable'));document.head.appendChild(script);});return loader;}
 export default function Reels(){
- const navigate=useNavigate(),[items,setItems]=useState<Reel[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[meId,setMeId]=useState<string|null>(null),[commentPost,setCommentPost]=useState<string|null>(null);
+ const navigate=useNavigate(),[items,setItems]=useState<Reel[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[meId,setMeId]=useState<string|null>(null),[commentPost,setCommentPost]=useState<string|null>(null),[sharePost,setSharePost]=useState<string|null>(null),[savedIds,setSavedIds]=useState<Set<string>>(new Set());
  const refs=useRef<Record<string,HTMLVideoElement|null>>({}),lastWatch=useRef<Record<string,number>>({});
  const load=async()=>{setLoading(true);setError('');try{const [result,saved]=await Promise.all([d1Request<{data:Reel[]}>('/api/reels?limit=20'),d1Request<{data:any[]}>('/api/posts/saved')]);setItems(result.data||[]);setSavedIds(new Set((saved.data||[]).map((post:any)=>post.id)));}catch(e:any){setError(e.message||'Could not load videos');}finally{setLoading(false);}};
  useEffect(()=>{getCachedUser().then(user=>setMeId(user?.id||null)).catch(()=>setMeId(null));void load();},[]);
