@@ -30,52 +30,76 @@ export default function Subscribe() {
   const [subscriptionCurrency, setSubscriptionCurrency] = useState('XAF');
   const [paymentPhone, setPaymentPhone] = useState('');
   const [pendingPaymentId, setPendingPaymentId] = useState<string | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [pageError, setPageError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
   const idempotencyKey = useRef<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
-      const user = await getCachedUser();
-      if (!user) return;
-      setUserId(user.id);
-
-      const [userRes, walletRes, profileRes, optionsRes] = await Promise.all([
-        supabaseWorkerRequest<{ data: { is_subscribed: boolean } }>('/api/v1/me/profile'),
-        supabaseWorkerRequest<{ data: { available_funds: number } | null }>('/api/v1/wallet'),
-        d1Request<{ data: { phone?: string; momo_number?: string } }>('/api/me/personal-details'),
-        supabaseWorkerRequest<{ data: { plan_price?: number; currency?: string; options?: Array<{ payment_method: string }> } }>('/api/v1/subscriptions/options').catch(() => ({ data: { plan_price: 3000, currency: 'XAF', options: [] } })),
-      ]);
-
-      if (userRes.data) setIsSubscribed(userRes.data.is_subscribed);
-      if (walletRes.data) setWalletBalance(walletRes.data.available_funds);
-      setPaymentPhone(profileRes.data?.momo_number || profileRes.data?.phone || '');
-      setSubscriptionFee(Number(optionsRes.data?.plan_price) || 3000);
-      setSubscriptionCurrency(optionsRes.data?.currency || 'XAF');
-      const methodMap: Record<string, MobileMoneyMethod> = { MTN_MOMO: 'mtn', ORANGE_MONEY: 'orange', AIRTEL_MONEY: 'airtel', MOOV_MONEY: 'moov' };
-      const configured = (optionsRes.data?.options || []).map(option => methodMap[option.payment_method]).filter((method): method is MobileMoneyMethod => Boolean(method));
-      setMethods([...new Set<MobileMoneyMethod>([...configured, 'wallet'])]);
+      setPageLoading(true);
+      setPageError('');
+      try {
+        const user = await getCachedUser();
+        if (!user) throw new Error('Please sign in to view membership options.');
+        if (active) setUserId(user.id);
+        const [userRes, walletRes, profileRes, optionsRes] = await Promise.all([
+          supabaseWorkerRequest<{ data: { is_subscribed: boolean } }>('/api/v1/me/profile'),
+          supabaseWorkerRequest<{ data: { available_funds: number } | null }>('/api/v1/wallet'),
+          supabaseWorkerRequest<{ data: { profile: any; countries: any[] } }>('/api/v1/me/payment-preferences'),
+          supabaseWorkerRequest<{ data: { plan_price?: number; currency?: string; options?: Array<{ payment_method: string }> } }>('/api/v1/subscriptions/options'),
+        ]);
+        if (!active) return;
+        if (userRes.data) setIsSubscribed(!!userRes.data.is_subscribed);
+        if (walletRes.data) setWalletBalance(Number(walletRes.data.available_funds || 0));
+        const profile = profileRes.data?.profile || {};
+        setPaymentPhone(profile.momo_number || profile.phone || '');
+        setSubscriptionFee(Number(optionsRes.data?.plan_price) || 3000);
+        setSubscriptionCurrency(optionsRes.data?.currency || 'XAF');
+        const methodMap: Record<string, MobileMoneyMethod> = { MTN_MOMO: 'mtn', ORANGE_MONEY: 'orange', AIRTEL_MONEY: 'airtel', MOOV_MONEY: 'moov' };
+        const configured = (optionsRes.data?.options || []).map(option => methodMap[option.payment_method]).filter((method): method is MobileMoneyMethod => Boolean(method));
+        setMethods([...new Set<MobileMoneyMethod>([...configured, 'wallet'])]);
+      } catch (error:any) {
+        if (active) setPageError(error.message || 'Could not load subscription options.');
+      } finally {
+        if (active) setPageLoading(false);
+      }
     };
-    load();
+    void load();
+    return () => { active = false; };
   }, []);
 
   const handleSubscribe = async (method: MobileMoneyMethod) => {
     if (!userId) return alert('Please log in.');
     setLoading(method);
     const key = idempotencyKey.current || (idempotencyKey.current = crypto.randomUUID());
+    if (method !== 'wallet' && !paymentPhone.trim()) {
+      setPageError('Enter your Mobile Money number before continuing.');
+      setLoading(null);
+      return;
+    }
+    if (method === 'wallet' && walletBalance < subscriptionFee) {
+      setPageError('Your wallet balance is not enough. Top up your wallet first.');
+      setLoading(null);
+      return;
+    }
     const result = await payForSubscription(method, paymentPhone, key);
     if (!result.success) {
-      alert('Error: ' + result.error);
+      setPageError(result.error || 'Subscription payment failed.');
       if (!/uncertain|already submitted/i.test(result.error || '')) idempotencyKey.current = null;
     } else if (result.paymentUrl) {
       setPendingPaymentId(result.paymentId || null);
       window.location.href = result.paymentUrl;
+      return;
     } else if (result.pending) {
       setPendingPaymentId(result.paymentId || null);
-      alert('Payment request sent. Approve it on your phone, then check the payment status here.');
+      setActionMessage('Payment request sent. Approve the prompt on your phone, then check its status below.');
     } else {
       idempotencyKey.current = null;
       setIsSubscribed(true);
-      alert('Premium membership activated successfully.');
-      navigate('/home');
+      setPendingPaymentId(null);
+      setActionMessage('Premium membership activated successfully.');
     }
     setLoading(null);
   };
@@ -89,23 +113,25 @@ export default function Subscribe() {
         setIsSubscribed(true);
         setPendingPaymentId(null);
         idempotencyKey.current = null;
-        alert('Payment confirmed. Premium membership is active.');
+        setActionMessage('Payment confirmed. Premium membership is active.');
         navigate('/home');
       } else if (result.data.status === 'failed') {
         setPendingPaymentId(null);
         idempotencyKey.current = null;
-        alert('The provider reported that the payment failed. You can try again.');
+        setPageError('The provider reported that the payment failed. You can try again.');
       } else if (result.data.status === 'needs_review' || result.data.activation_error) {
-        alert('Payment needs review. Please contact CenPaya support before trying again.');
+        setPageError('Payment needs review. Please contact CenPaya support before trying again.');
       } else {
-        alert('Payment is still pending. Approve the request on your phone and check again.');
+        setActionMessage('Payment is still pending. Approve the request on your phone and check again.');
       }
     } catch (error: unknown) {
-      alert(error instanceof Error ? error.message : 'Could not check payment status.');
+      setPageError(error instanceof Error ? error.message : 'Could not check payment status.');
     } finally {
       setLoading(null);
     }
   };
+
+  if (pageLoading) return <div className="p-5 text-center text-xs text-gray-500">Loading membership…</div>;
 
   if (isSubscribed) {
     return (
@@ -146,6 +172,8 @@ export default function Subscribe() {
   return (
     <div className="px-3 py-3 pb-24">
       <h1 className="text-base font-bold text-navy dark:text-white mb-1">Upgrade to Premium</h1>
+      {pageError && <div className="mb-3 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-200 text-[10px]">{pageError}</div>}
+      {actionMessage && <div className="mb-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-200 text-[10px]">{actionMessage}</div>}
       <p className="text-[10px] text-gray-500 mb-3">
         Unlock lower fees and powerful features on CenPaya.
       </p>
@@ -191,6 +219,11 @@ export default function Subscribe() {
         <ComparisonRow feature="Free monthly boosts" free={false} premium={true} />
       </div>
 
+      <div className="bg-white dark:bg-darkcard rounded-xl shadow-sm overflow-hidden mb-3">
+        <label className="block p-3 text-[10px] font-bold text-gray-600 dark:text-gray-300">Mobile Money number</label>
+        <input type="tel" value={paymentPhone} onChange={e=>setPaymentPhone(e.target.value)} placeholder="+237 6XX XXX XXX" autoComplete="tel" className="mx-3 mb-3 w-[calc(100%-24px)] p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs" />
+      </div>
+
       <div className="bg-white dark:bg-darkcard rounded-xl shadow-sm overflow-hidden">
         <p className="p-3 text-xs font-bold text-navy dark:text-white border-b border-gray-100 dark:border-darkline">
           Choose your payment method
@@ -208,7 +241,7 @@ export default function Subscribe() {
             <button
               key={m}
               onClick={() => handleSubscribe(m)}
-              disabled={loading !== null}
+              disabled={loading !== null || (m === 'wallet' && walletBalance < subscriptionFee)}
               className="w-full flex items-center px-3 py-3 border-b border-gray-50 dark:border-darkline last:border-b-0 active:bg-gray-50 dark:active:bg-darkbg disabled:opacity-50"
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -224,15 +257,11 @@ export default function Subscribe() {
                     {METHOD_LABELS[m]}
                   </p>
                   {m === 'wallet' && walletBalance > 0 && (
-                    <p className="text-[9px] text-gray-500">
-                      Balance: {walletBalance.toLocaleString()} XAF
-                    </p>
+                    <p className="text-[9px] text-gray-500">Balance: {walletBalance.toLocaleString()} XAF</p>
                   )}
                 </div>
               </div>
-              <p className="w-16 text-right text-[11px] font-bold text-gray-600 dark:text-gray-300">
-                0%
-              </p>
+              <p className="w-16 text-right text-[11px] font-bold text-gray-600 dark:text-gray-300">0%</p>
               <p className="w-8 text-right text-accent font-bold">
                 {loading === m ? '…' : '→'}
               </p>
@@ -240,6 +269,8 @@ export default function Subscribe() {
           );
         })}
       </div>
+
+      {methods.includes('wallet') && walletBalance < subscriptionFee && <button onClick={()=>navigate('/wallet/topup')} className="w-full mt-3 text-xs font-bold text-brand">Top up your wallet to subscribe</button>}
 
       {pendingPaymentId && (
         <button onClick={checkSubscriptionStatus} disabled={loading !== null} className="w-full mt-3 bg-brand text-white font-bold py-2.5 rounded-lg text-xs disabled:opacity-50">
