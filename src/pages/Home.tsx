@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Play, Video } from 'lucide-react';
+import { Eye, EyeOff, Play } from 'lucide-react';
 import { getCachedUser, getCached, setCached } from '../lib/cache';
 import FeedPostCard from '../components/FeedPostCard';
 import PullToRefresh from '../components/PullToRefresh';
@@ -153,8 +153,7 @@ export default function Home() {
           </button>
         </div>
 
-        {videoPosts.length > 0 && (
-          <section className="mb-5" aria-label="Videos">
+        <section className="mb-5" aria-label="Videos">
             <div className="flex items-center justify-between px-2 mb-2">
               <div className="flex items-center gap-2">
                 <span className="w-8 h-8 rounded-xl bg-black text-white grid place-items-center"><Play size={15} fill="currentColor" /></span>
@@ -179,8 +178,8 @@ export default function Home() {
                 </button>
               ))}
             </div>
+          {videoPosts.length === 0 && <div className="mx-1 p-4 rounded-2xl bg-gray-50 dark:bg-darkcard text-center"><p className="text-[11px] font-bold text-navy dark:text-white">No videos yet</p><p className="text-[10px] text-gray-500 mt-1">Community videos will appear here. Open the video feed to explore.</p></div>}
           </section>
-        )}
 
         {visible.length === 0 && (
           <div className="bg-white dark:bg-darkcard p-6 rounded-card shadow-soft text-center">
