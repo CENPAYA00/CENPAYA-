@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Zap, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-type Tier = { id: number; price: number; duration_days: number; scope: string; label: string; description: string };
+type Tier = { id: number; price: number; currency_code?: string; duration_days: number; scope: string; label: string; description: string };
 
 export function InlineBoostBar({ 
   itemId, kind, isOwner, onSelectPlan 
@@ -43,7 +43,7 @@ export function InlineBoostBar({
       >
         <span className="flex items-center gap-2"><Zap size={16} /> Boost this {kind}</span>
         <span className="text-[11px] font-medium opacity-90">
-          {hasFree ? 'FREE' : `from ${lowestPrice.toLocaleString()} XAF`} {open ? '▲' : '▼'}
+          {hasFree ? 'FREE' : `from ${lowestPrice.toLocaleString()} ${tiers[0]?.currency_code || "XAF"}`} {open ? '▲' : '▼'}
         </span>
       </button>
 
@@ -73,7 +73,7 @@ export function InlineBoostBar({
                   
                   <p className="text-[10px] font-bold text-mute uppercase tracking-wider">{p.scope}</p>
                   <p className="text-[16px] font-black text-[#0a3d2b] dark:text-white mt-0.5">
-                    {p.price.toLocaleString()} <span className="text-[10px] text-mute font-semibold">XAF</span>
+                    {p.price.toLocaleString()} <span className="text-[10px] text-mute font-semibold">{p.currency_code || "XAF"}</span>
                   </p>
                   <p className="text-[12px] font-semibold text-navy dark:text-gray-200 mt-0.5">{p.label}</p>
                   <p className="text-[10px] text-mute">{p.duration_days} days</p>
