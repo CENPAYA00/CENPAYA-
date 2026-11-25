@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react'; // Removed 'Search' icon
+import { Eye, EyeOff, Play, Video } from 'lucide-react';
 import { getCachedUser, getCached, setCached } from '../lib/cache';
 import FeedPostCard from '../components/FeedPostCard';
 import PullToRefresh from '../components/PullToRefresh';
@@ -17,6 +17,7 @@ export default function Home() {
   const [showDemo, setShowDemo] = useState(true);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [openPost, setOpenPost] = useState<string | null>(null);
+  const [videoPosts, setVideoPosts] = useState<any[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,7 +30,7 @@ export default function Home() {
         setPosts(cached);
         setLoading(false);
       }
-      await fetchPosts();
+      await Promise.all([fetchPosts(), fetchVideos()]);
     };
     init();
   }, []);
@@ -57,8 +58,18 @@ export default function Home() {
     setLoading(false);
   }, []);
 
+  const fetchVideos = useCallback(async () => {
+    try {
+      const { data } = await d1Request<{ data: any[] }>('/api/reels?limit=8');
+      setVideoPosts(Array.isArray(data) ? data : []);
+    } catch (error) {
+      // Video publishing is feature-flagged; keep the regular feed available when disabled.
+      setVideoPosts([]);
+    }
+  }, []);
+
   const handleRefresh = async () => {
-    await fetchPosts();
+    await Promise.all([fetchPosts(), fetchVideos()]);
   };
 
   const handleLike = async (postId: string) => {
@@ -127,6 +138,35 @@ export default function Home() {
           </button>
         </div>
 
+        {videoPosts.length > 0 && (
+          <section className="mb-5" aria-label="Videos">
+            <div className="flex items-center justify-between px-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-xl bg-black text-white grid place-items-center"><Play size={15} fill="currentColor" /></span>
+                <div>
+                  <h2 className="text-[14px] font-extrabold text-navy dark:text-white">Videos</h2>
+                  <p className="text-[10px] text-mute">Discover clips from the community</p>
+                </div>
+              </div>
+              <button onClick={() => navigate('/reels')} className="text-[11px] font-bold text-brand">See all</button>
+            </div>
+            <div className="flex gap-2.5 overflow-x-auto px-1 pb-2 snap-x snap-mandatory scrollbar-hide">
+              {videoPosts.map((video: any) => (
+                <button key={video.video_id} onClick={() => navigate('/reels?video=' + encodeURIComponent(video.video_id))}
+                  className="relative shrink-0 w-[138px] h-[190px] rounded-2xl overflow-hidden bg-gradient-to-br from-[#102b22] via-[#174c38] to-[#07150f] text-left snap-start">
+                  {video.thumbnail_url && <img src={video.thumbnail_url} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />}
+                  <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/10" />
+                  <span className="absolute top-3 left-3 w-8 h-8 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-white"><Play size={14} fill="currentColor" /></span>
+                  <span className="absolute bottom-3 left-3 right-3 text-white">
+                    <span className="block text-[11px] font-bold line-clamp-2">{video.content || 'Community video'}</span>
+                    <span className="block text-[9px] text-white/75 mt-1">@{video.username || video.display_name || 'Cenpaya creator'}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         {visible.length === 0 && (
           <div className="bg-white dark:bg-darkcard p-6 rounded-card shadow-soft text-center">
             <p className="text-[13px] font-bold text-navy dark:text-white">No posts yet</p>
@@ -138,7 +178,7 @@ export default function Home() {
           <FeedPostCard
             key={post.id}
             post={post}
-            readOnly={true}
+            readOnly={false}
             currentUserId={userId}
             isLiked={likedPosts.has(post.id)}
             isSaved={savedPosts.has(post.id)}
