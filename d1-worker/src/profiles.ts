@@ -99,11 +99,20 @@ export async function handleProfileRoutes(request:Request,env:Env,context:RouteC
     return json({success:true,data:await hydrateUserMedia(env,url.origin,rows.results as Array<Record<string,unknown>>)});
   }
   if(path==="/api/countries"&&method==="GET"){
-    const cached=await cacheGet(env,"supported-countries");
-    if(cached)return json({success:true,data:cached,source:"cache"});
-    const rows=await env.DB.prepare("SELECT country_code,name,currency_code,phone_prefix,status FROM supported_countries WHERE status IN ('active','coming_soon') ORDER BY name").all();
-    await cachePut(env,"supported-countries",rows.results,3600);
-    return json({success:true,data:rows.results});
+    try{
+      const rows=await env.DB.prepare("SELECT s.country_code,s.name,s.currency_code,s.phone_prefix,s.status,c.currency_value_in_xaf,c.flag_emoji,c.regions_json,c.enabled_methods_json,c.config_version FROM supported_countries s LEFT JOIN country_configuration_projection c ON c.country_code=s.country_code WHERE s.status IN ('active','coming_soon') ORDER BY CASE s.status WHEN 'active' THEN 0 ELSE 1 END,s.name").all<Record<string,unknown>>();
+      const data=rows.results.map(row=>({
+        ...row,
+        flag_emoji:row.flag_emoji||null,
+        currency_value_in_xaf:Number(row.currency_value_in_xaf||1),
+        regions:(()=>{try{return JSON.parse(String(row.regions_json||"[]"));}catch{return [];}})(),
+        enabled_methods:(()=>{try{return JSON.parse(String(row.enabled_methods_json||"[]"));}catch{return [];}})(),
+        is_active:row.status==="active",
+      }));
+      return json({success:true,data});
+    }catch{
+      return fail("Country configuration is unavailable. Apply D1 migration 0067 first.",503);
+    }
   }
 
   return null;
