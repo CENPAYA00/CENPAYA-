@@ -88,7 +88,14 @@ export default function Withdraw() {
         }),
       });
       if (!result.data?.id) throw new Error('Withdrawal reference was not returned. Check your wallet history before retrying.');
-      setWithdrawal(result.data);
+      let currentState = result.data;
+      try {
+        const statusResult = await supabaseWorkerRequest<{ data: any }>(`/api/v1/wallet/withdrawals/${encodeURIComponent(result.data.id)}`);
+        currentState = statusResult.data || currentState;
+        const refreshedWallet = await supabaseWorkerRequest<{data:any}>('/api/v1/wallet');
+        setWallet(refreshedWallet.data);
+      } catch { /* Keep the request reference visible even if status lookup is temporarily unavailable. */ }
+      setWithdrawal({ ...currentState, requested_amount: currentState.requested_amount ?? parsedAmount });
       setAmount('');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Withdrawal failed';
