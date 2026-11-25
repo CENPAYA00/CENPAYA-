@@ -109,7 +109,14 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
   const [currency, setCurrency] = useState(existing?.currency_code || 'XAF');
   const [currencyValue, setCurrencyValue] = useState(String(existing?.currency_value_in_xaf ?? 1));
   const [flag, setFlag] = useState(existing?.flag_emoji || '');
-  const [methods, setMethods] = useState<string[]>(existing?.enabled_methods || ['mtn_momo','orange_money','airtel_money','moov_money']);
+  const [methods, setMethods] = useState<string[]>(existing?.enabled_methods || []);
+  const [regions, setRegions] = useState((existing?.regions || []).join(', '));
+  const [baseFee, setBaseFee] = useState(String(existing?.base_marketplace_fee_pct ?? 4));
+  const [premiumFee, setPremiumFee] = useState(String(existing?.premium_subscriber_fee_pct ?? 2));
+  const [withdrawalFee, setWithdrawalFee] = useState(String(existing?.withdrawal_fee_pct ?? 0));
+  const [baseFixed, setBaseFixed] = useState(String(existing?.fee_fixed_base ?? 50));
+  const [premiumFixed, setPremiumFixed] = useState(String(existing?.fee_fixed_premium ?? 50));
+  const [isActive, setIsActive] = useState(Boolean(existing?.is_active));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -142,7 +149,11 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
         method: 'PUT', body: JSON.stringify({
           code: code.toUpperCase(), name: name.trim(), phone_prefix: phonePrefix.trim(),
           currency_code: currency.trim().toUpperCase(), currency_value_in_xaf: Number(currencyValue) || 1,
-          flag_emoji: flag.trim() || null, enabled_methods: methods, is_active: true,
+          flag_emoji: flag.trim() || null, enabled_methods: methods,
+          regions: regions.split(',').map((v: string) => v.trim()).filter(Boolean),
+          base_marketplace_fee_pct: Number(baseFee), premium_subscriber_fee_pct: Number(premiumFee),
+          withdrawal_fee_pct: Number(withdrawalFee), fee_fixed_base: Number(baseFixed),
+          fee_fixed_premium: Number(premiumFixed), is_active: isActive,
         }),
       });
     } catch (error: any) { setErr(error.message || 'Could not save country'); setBusy(false); return; }
@@ -249,6 +260,29 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
               Example: if 1 NGN = 0.0024 XAF, enter 0.0024.
             </p>
           </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Regions / states (comma-separated)</label>
+            <input value={regions} onChange={e => setRegions(e.target.value)} placeholder="Littoral, Centre, North-West"
+              className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="text-[10px] font-bold block mb-1">Base marketplace fee (%)</label>
+              <input type="number" min="0" max="100" value={baseFee} onChange={e=>setBaseFee(e.target.value)} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-darkbg text-xs" /></div>
+            <div><label className="text-[10px] font-bold block mb-1">Premium fee (%)</label>
+              <input type="number" min="0" max="100" value={premiumFee} onChange={e=>setPremiumFee(e.target.value)} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-darkbg text-xs" /></div>
+            <div><label className="text-[10px] font-bold block mb-1">Withdrawal fee (%)</label>
+              <input type="number" min="0" max="100" value={withdrawalFee} onChange={e=>setWithdrawalFee(e.target.value)} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-darkbg text-xs" /></div>
+            <div><label className="text-[10px] font-bold block mb-1">Base fixed fee</label>
+              <input type="number" min="0" value={baseFixed} onChange={e=>setBaseFixed(e.target.value)} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-darkbg text-xs" /></div>
+            <div><label className="text-[10px] font-bold block mb-1">Premium fixed fee</label>
+              <input type="number" min="0" value={premiumFixed} onChange={e=>setPremiumFixed(e.target.value)} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-darkbg text-xs" /></div>
+          </div>
+          <label className="flex items-center gap-2 text-xs">
+            <input type="checkbox" checked={isActive} onChange={e=>setIsActive(e.target.checked)} />
+            Activate this country for users
+          </label>
+          {!isActive && <p className="text-[10px] text-amber-600">Country remains unavailable to users until activated.</p>}
 
           <div>
             <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 block">
