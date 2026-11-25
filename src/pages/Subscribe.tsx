@@ -240,6 +240,9 @@ export default function Subscribe() {
 
         {methods.map((m) => {
           const logoKey = METHOD_KEYS[m];
+          const option = paymentOptions.find(item => item.payment_method === logoKey);
+          const gatewayFee = m === 'wallet' ? 0 : Number(option?.gateway_fee || 0);
+          const grossAmount = m === 'wallet' ? subscriptionFee : Number(option?.gross_amount || subscriptionFee);
           return (
             <button
               key={m}
