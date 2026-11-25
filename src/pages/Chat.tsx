@@ -16,7 +16,6 @@ type ChatRow = {
   last_sender_id: string | null;
   unread_count: number;
   is_demo?: boolean;
-  other_user_id?: string;
   other_last_active_at?: string | null;
 };
 
