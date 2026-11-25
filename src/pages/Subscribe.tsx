@@ -27,6 +27,7 @@ export default function Subscribe() {
   const [walletBalance, setWalletBalance] = useState(0);
   const [methods, setMethods] = useState<MobileMoneyMethod[]>(['wallet']);
   const [subscriptionFee, setSubscriptionFee] = useState(3000);
+  const [subscriptionCurrency, setSubscriptionCurrency] = useState('XAF');
   const [paymentPhone, setPaymentPhone] = useState('');
   const [pendingPaymentId, setPendingPaymentId] = useState<string | null>(null);
   const idempotencyKey = useRef<string | null>(null);
@@ -41,13 +42,14 @@ export default function Subscribe() {
         supabaseWorkerRequest<{ data: { is_subscribed: boolean } }>('/api/v1/me/profile'),
         supabaseWorkerRequest<{ data: { available_funds: number } | null }>('/api/v1/wallet'),
         d1Request<{ data: { phone?: string; momo_number?: string } }>('/api/me/personal-details'),
-        supabaseWorkerRequest<{ data: { plan_price?: number; options?: Array<{ payment_method: string }> } }>('/api/v1/subscriptions/options').catch(() => ({ data: { plan_price: 3000, options: [] } })),
+        supabaseWorkerRequest<{ data: { plan_price?: number; currency?: string; options?: Array<{ payment_method: string }> } }>('/api/v1/subscriptions/options').catch(() => ({ data: { plan_price: 3000, options: [] } })),
       ]);
 
       if (userRes.data) setIsSubscribed(userRes.data.is_subscribed);
       if (walletRes.data) setWalletBalance(walletRes.data.available_funds);
       setPaymentPhone(profileRes.data?.momo_number || profileRes.data?.phone || '');
       setSubscriptionFee(Number(optionsRes.data?.plan_price) || 3000);
+      setSubscriptionCurrency(optionsRes.data?.currency || 'XAF');
       const methodMap: Record<string, MobileMoneyMethod> = { MTN_MOMO: 'mtn', ORANGE_MONEY: 'orange', AIRTEL_MONEY: 'airtel', MOOV_MONEY: 'moov' };
       const configured = (optionsRes.data?.options || []).map(option => methodMap[option.payment_method]).filter((method): method is MobileMoneyMethod => Boolean(method));
       setMethods([...new Set<MobileMoneyMethod>([...configured, 'wallet'])]);
@@ -154,7 +156,7 @@ export default function Subscribe() {
           <p className="text-[9px] font-bold text-accent-light uppercase tracking-widest">Premium Plan</p>
         </div>
         <p className="text-2xl font-black">
-          {subscriptionFee.toLocaleString()} <span className="text-sm">XAF</span>
+          {subscriptionFee.toLocaleString()} <span className="text-sm">{subscriptionCurrency}</span>
         </p>
         <p className="text-[10px] text-white/70 mt-1">One-time yearly payment</p>
       </div>
