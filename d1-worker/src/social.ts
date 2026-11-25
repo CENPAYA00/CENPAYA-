@@ -375,7 +375,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     }
     if (action === "like" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Unauthorized", 401);
-      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null }>();
+      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at,content FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null; content: string }>();
       if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
       if (method === "POST") {
         const result = await env.DB.prepare("INSERT OR IGNORE INTO post_reactions(post_id,user_id,reaction_type) VALUES(?,?,'like')").bind(postId, user.id).run();
