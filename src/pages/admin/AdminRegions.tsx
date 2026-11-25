@@ -11,7 +11,7 @@ export default function AdminRegions() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await supabaseWorkerRequest<{ data: any[] }>('/api/admin/countries');
+      const result = await supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/countries');
       setCountries(result.data || []);
     } catch (error) { console.warn('Could not load countries', error); setCountries([]); }
     setLoading(false);
@@ -21,7 +21,7 @@ export default function AdminRegions() {
 
   const toggleActive = async (c: any) => {
     try {
-      await supabaseWorkerRequest(`/api/admin/countries/${encodeURIComponent(c.code)}`, {
+      await supabaseWorkerRequest(`/api/v1/admin/countries/${encodeURIComponent(c.code)}`, {
         method: 'PATCH', body: JSON.stringify({ is_active: !c.is_active }),
       });
       load();
@@ -75,6 +75,7 @@ export default function AdminRegions() {
             </div>
           </div>
 
+          <p className="text-[10px] text-gray-500 mb-2">Membership: {Number(c.prices?.membership_yearly?.amount ?? 0).toLocaleString()} {c.currency_code} · Boost from: {Number(c.prices?.boost_3d?.amount ?? 0).toLocaleString()} {c.currency_code}</p>
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="bg-gray-50 dark:bg-darkbg p-2 rounded-lg">
               <p className="text-[9px] text-gray-500">1 {c.currency_code}</p>
@@ -117,6 +118,14 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
   const [baseFixed, setBaseFixed] = useState(String(existing?.fee_fixed_base ?? 50));
   const [premiumFixed, setPremiumFixed] = useState(String(existing?.fee_fixed_premium ?? 50));
   const [isActive, setIsActive] = useState(Boolean(existing?.is_active));
+  const [prices, setPrices] = useState<Record<string, string>>({
+    membership_yearly: String(existing?.prices?.membership_yearly?.amount ?? 3000),
+    boost_3d: String(existing?.prices?.boost_3d?.amount ?? 500),
+    boost_7d: String(existing?.prices?.boost_7d?.amount ?? 1100),
+    boost_14d: String(existing?.prices?.boost_14d?.amount ?? 2200),
+    boost_21d: String(existing?.prices?.boost_21d?.amount ?? 5000),
+    boost_40d: String(existing?.prices?.boost_40d?.amount ?? 10000),
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -139,6 +148,14 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
     setBaseFixed(String(found.fee_fixed_base ?? 50));
     setPremiumFixed(String(found.fee_fixed_premium ?? 50));
     setIsActive(Boolean(found.is_active));
+    setPrices({
+      membership_yearly: String(found.prices?.membership_yearly?.amount ?? 3000),
+      boost_3d: String(found.prices?.boost_3d?.amount ?? 500),
+      boost_7d: String(found.prices?.boost_7d?.amount ?? 1100),
+      boost_14d: String(found.prices?.boost_14d?.amount ?? 2200),
+      boost_21d: String(found.prices?.boost_21d?.amount ?? 5000),
+      boost_40d: String(found.prices?.boost_40d?.amount ?? 10000),
+    });
   };
 
   const toggleMethod = (m: string) => {
@@ -162,6 +179,7 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
           base_marketplace_fee_pct: Number(baseFee), premium_subscriber_fee_pct: Number(premiumFee),
           withdrawal_fee_pct: Number(withdrawalFee), fee_fixed_base: Number(baseFixed),
           fee_fixed_premium: Number(premiumFixed), is_active: isActive,
+          prices: Object.fromEntries(Object.entries(prices).map(([key, value]) => [key, Number(value)])),
         }),
       });
     } catch (error: any) { setErr(error.message || 'Could not save country'); setBusy(false); return; }
@@ -285,6 +303,25 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
               <input type="number" min="0" value={baseFixed} onChange={e=>setBaseFixed(e.target.value)} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-darkbg text-xs" /></div>
             <div><label className="text-[10px] font-bold block mb-1">Premium fixed fee</label>
               <input type="number" min="0" value={premiumFixed} onChange={e=>setPremiumFixed(e.target.value)} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-darkbg text-xs" /></div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold text-navy dark:text-white">Country-specific prices ({currency})</p>
+            <p className="text-[9px] text-gray-500">Changes apply to new purchases. Existing payments keep their saved amount.</p>
+            {[
+              ['membership_yearly','Yearly membership'],
+              ['boost_3d','3-day boost'],
+              ['boost_7d','7-day boost'],
+              ['boost_14d','14-day boost'],
+              ['boost_21d','21-day boost'],
+              ['boost_40d','40-day boost'],
+            ].map(([key,label]) => (
+              <div key={key} className="flex items-center gap-2">
+                <label className="flex-1 text-[10px] text-gray-600 dark:text-gray-300">{label}</label>
+                <input type="number" min="0" step="1" value={prices[key]} onChange={e=>setPrices(prev=>({...prev,[key]:e.target.value}))}
+                  className="w-28 p-2 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs text-right" />
+                <span className="text-[9px] text-gray-400">{currency}</span>
+              </div>
+            ))}
           </div>
           <label className="flex items-center gap-2 text-xs">
             <input type="checkbox" checked={isActive} onChange={e=>setIsActive(e.target.checked)} />
