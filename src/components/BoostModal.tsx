@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 
-type Tier = { id: number; price: number; duration_days: number; scope: string; label: string; description: string };
+type Tier = { id: number; price: number; currency_code?: string; duration_days: number; scope: string; label: string; description: string };
 
 export default function BoostModal({ 
   isOpen, onClose, targetType, targetId, targetTitle, initialPlanId
@@ -102,7 +102,7 @@ export default function BoostModal({
                     <span className="text-[11px] font-bold uppercase tracking-wider text-mute">{t.scope}</span>
                     {isFree && <span className="text-[10px] font-bold bg-[#12935a] text-white px-2 py-0.5 rounded-md">FREE</span>}
                   </div>
-                  <p className="text-[18px] font-bold text-[#0a3d2b] dark:text-white">{t.price.toLocaleString()} <span className="text-[12px] font-semibold text-mute">XAF</span></p>
+                  <p className="text-[18px] font-bold text-[#0a3d2b] dark:text-white">{t.price.toLocaleString()} <span className="text-[12px] font-semibold text-mute">{t.currency_code || "XAF"}</span></p>
                   <p className="text-[13px] font-semibold text-navy dark:text-gray-200 mt-1">{t.label}</p>
                   <p className="text-[12px] text-mute mt-0.5">{t.duration_days} days</p>
                 </button>
@@ -118,7 +118,7 @@ export default function BoostModal({
             </button>
           ) : (
             <button onClick={() => purchase(false)} disabled={busy || !selectedTier} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-[14px] text-[15px] disabled:opacity-50">
-              {busy ? 'Processing...' : selectedTier ? `Pay ${selectedTier.price.toLocaleString()} XAF from wallet` : 'Select a plan'}
+              {busy ? 'Processing...' : selectedTier ? `Pay ${selectedTier.price.toLocaleString()} ${selectedTier.currency_code || "XAF"} from wallet` : 'Select a plan'}
             </button>
           )}
         </div>
