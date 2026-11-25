@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { getD1ApiUrl, getD1Token, d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { getCachedUser, setCached } from '../lib/cache';
-import { ArrowLeft, Image as ImageIcon, X, Palette, Smile, Video, FileText } from 'lucide-react';
+import { ArrowLeft, Image as ImageIcon, X, Palette, Smile, Video, FileText, Zap } from 'lucide-react';
 import { compressImage } from '../utils/compressImage';
 import { BACKGROUNDS, getBackground } from '../lib/postBackgrounds';
 import { useI18n } from '../contexts/i18n';
@@ -35,6 +35,7 @@ export default function CreatePost() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [videoEnabled, setVideoEnabled] = useState(false);
+  const [boostAfterPublish, setBoostAfterPublish] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -136,9 +137,10 @@ export default function CreatePost() {
           if (status.data.status === 'failed') throw new Error('Video processing failed. Your original upload is retained.');
         }
         if (!ready) throw new Error('Video is still processing. Return to Reels later; do not upload it again.');
-        await d1Request('/api/videos/publish', { method: 'POST', body: JSON.stringify({ video_id: uploadedVideoId, content: content.trim() }) });
-        setCached('home_posts', null);
-        navigate('/reels');
+        const published = await d1Request<{ data: { post_id: string } }>('/api/videos/publish', { method: 'POST', body: JSON.stringify({ video_id: uploadedVideoId, content: content.trim() }) });
+        setCached('home_posts_for_you', null);
+        setCached('home_posts_following', null);
+        navigate(boostAfterPublish ? `/boosted?type=post&id=${encodeURIComponent(published.data.post_id)}` : '/reels');
         return;
       }
       const postType = urls.length > 0 ? 'image' : 'text';
@@ -158,8 +160,9 @@ export default function CreatePost() {
           tagged_user_ids: taggedUsers.map((tagged: any) => tagged.id),
         }),
       });
-      setCached('home_posts', null);
-      navigate('/home');
+      setCached('home_posts_for_you', null);
+      setCached('home_posts_following', null);
+      navigate(boostAfterPublish ? `/boosted?type=post&id=${encodeURIComponent(result.id)}` : '/home');
     } catch (e: any) {
       setErrorMsg(e.message);
     }
@@ -301,6 +304,13 @@ export default function CreatePost() {
       {videoFile && <div className="mt-3 rounded-lg bg-gray-100 dark:bg-darkbg p-3 text-xs flex items-center justify-between"><span className="truncate">{videoFile.name} · {(videoFile.size/1048576).toFixed(1)} MB</span><button onClick={() => setVideoFile(null)} className="text-red-500"><X size={14}/></button></div>}
 
       {errorMsg && <div className="bg-red-50 border border-red-200 text-red-600 text-[11px] p-3 rounded-lg mt-3">{errorMsg}</div>}
+
+      <label className="mt-4 flex items-center gap-2 rounded-xl border border-gray-200 dark:border-darkline bg-white dark:bg-darkcard p-3 cursor-pointer">
+        <input type="checkbox" checked={boostAfterPublish} onChange={e => setBoostAfterPublish(e.target.checked)} className="accent-[#12935a]" />
+        <span className="flex-1 text-[11px] font-semibold text-navy dark:text-white">Boost this post after publishing</span>
+        <Zap size={15} className="text-accent" />
+      </label>
+      <p className="text-[9px] text-gray-400 mt-1">You will choose a boost plan and confirm payment on the next screen.</p>
 
       <button onClick={handlePost} disabled={loading || (!content.trim() && images.length === 0 && documents.length===0 && !videoFile)} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-xl text-[14px] mt-4 disabled:opacity-50 uppercase tracking-wide cursor-pointer">
         {loading ? t('posting') : t('post')}
