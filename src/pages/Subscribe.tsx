@@ -28,6 +28,7 @@ export default function Subscribe() {
   const [methods, setMethods] = useState<MobileMoneyMethod[]>(['wallet']);
   const [subscriptionFee, setSubscriptionFee] = useState(3000);
   const [subscriptionCurrency, setSubscriptionCurrency] = useState('XAF');
+  const [paymentOptions, setPaymentOptions] = useState<Array<{ provider: string; payment_method: string; gross_amount: number; gateway_fee: number }>>([]);
   const [paymentPhone, setPaymentPhone] = useState('');
   const [pendingPaymentId, setPendingPaymentId] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -57,8 +58,10 @@ export default function Subscribe() {
         setPaymentPhone(profile.momo_number || profile.phone || '');
         setSubscriptionFee(Number(optionsRes.data?.plan_price) || 3000);
         setSubscriptionCurrency(optionsRes.data?.currency || 'XAF');
+        const options = optionsRes.data?.options || [];
+        setPaymentOptions(options);
         const methodMap: Record<string, MobileMoneyMethod> = { MTN_MOMO: 'mtn', ORANGE_MONEY: 'orange', AIRTEL_MONEY: 'airtel', MOOV_MONEY: 'moov' };
-        const configured = (optionsRes.data?.options || []).map(option => methodMap[option.payment_method]).filter((method): method is MobileMoneyMethod => Boolean(method));
+        const configured = options.map(option => methodMap[option.payment_method]).filter((method): method is MobileMoneyMethod => Boolean(method));
         setMethods([...new Set<MobileMoneyMethod>([...configured, 'wallet'])]);
       } catch (error:any) {
         if (active) setPageError(error.message || 'Could not load subscription options.');
@@ -261,7 +264,7 @@ export default function Subscribe() {
                   )}
                 </div>
               </div>
-              <p className="w-16 text-right text-[11px] font-bold text-gray-600 dark:text-gray-300">0%</p>
+              <div className="w-20 text-right"><p className="text-[11px] font-bold text-gray-600 dark:text-gray-300">{gatewayFee.toLocaleString()} XAF</p><p className="text-[8px] text-gray-400">Total {grossAmount.toLocaleString()}</p></div>
               <p className="w-8 text-right text-accent font-bold">
                 {loading === m ? '…' : '→'}
               </p>
