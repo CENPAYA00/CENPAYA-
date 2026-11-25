@@ -21,7 +21,8 @@ type Props = {
   onLike?: (postId: string) => void;
   onComment?: (postId: string) => void;
   onShare?: (postId: string) => void;
-  onSave?: (postId: string) => void;\n  onSaveToFolder?: (postId: string, folderId: string) => void;
+  onSave?: (postId: string) => void;
+  onSaveToFolder?: (postId: string, folderId: string) => void;
   onHide?: (postId: string) => void;
   onFollowToggle?: (isNowFollowing: boolean) => void;
   readOnly?: boolean;
@@ -47,7 +48,10 @@ export default function FeedPostCard({
   const { play } = useSound();
   
   const [hidden, setHidden] = useState(false);
-  const [showShareSheet, setShowShareSheet] = useState(false);\n  const [showSaveFolders, setShowSaveFolders] = useState(false);\n  const [saveFolders, setSaveFolders] = useState<Array<{id:string;name:string}>>([]);\n  const [saveFoldersLoading, setSaveFoldersLoading] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
+  const [showSaveFolders, setShowSaveFolders] = useState(false);
+  const [saveFolders, setSaveFolders] = useState<Array<{id:string;name:string}>>([]);
+  const [saveFoldersLoading, setSaveFoldersLoading] = useState(false);
   const [showPostMenu, setShowPostMenu] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [isInterested, setIsInterested] = useState(false);
