@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { d1Request } from '../lib/d1Api';
 import { Play, Pause } from 'lucide-react';
 
 export const VoiceBubble = ({ src, duration }: { src: string; duration: number }) => {
@@ -30,6 +31,33 @@ export const VoiceBubble = ({ src, duration }: { src: string; duration: number }
       <audio ref={a} src={src} preload="metadata"
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setP(0); setT(0); }}
         onTimeUpdate={(e) => { const el = e.currentTarget; setT(el.currentTime); setP(el.currentTime / (duration || el.duration || 1)); }} />
+    </div>
+  );
+};
+
+export const ChatVideoBubble = ({ videoId, duration, mine, onDeleteForMe, onDeleteForEveryone }: {
+  videoId: string; duration?: number; mine: boolean; onDeleteForMe: () => void; onDeleteForEveryone: () => void;
+}) => {
+  const [src, setSrc] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    d1Request<{ data: { url: string } }>(`/api/chat/videos/${encodeURIComponent(videoId)}/download`)
+      .then(result => { if (active) setSrc(result.data.url); })
+      .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : 'Video unavailable'); });
+    return () => { active = false; };
+  }, [videoId]);
+  const fmt = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+  return (
+    <div className="w-[min(68vw,320px)] rounded-xl overflow-hidden bg-black/10" onClick={e => e.stopPropagation()}>
+      {src ? <video src={src} controls playsInline preload="metadata" className="w-full max-h-64 bg-black" /> :
+        <div className="p-4 text-xs text-current">{error || 'Preparing video…'}</div>}
+      <div className="flex flex-wrap items-center gap-2 p-2 text-[10px]">
+        <span className="opacity-70">{duration ? fmt(duration) : 'Video'}</span>
+        {src && <a href={src} download="cenpaya-chat-video.mp4" target="_blank" rel="noreferrer" className="underline font-semibold">Save to phone</a>}
+        <button type="button" onClick={onDeleteForMe} className="underline">Delete for me</button>
+        {mine && <button type="button" onClick={onDeleteForEveryone} className="underline text-red-600">Delete for everyone</button>}
+      </div>
     </div>
   );
 };

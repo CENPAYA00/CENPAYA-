@@ -268,7 +268,8 @@ export default function ChatThread() {
   const deleteMsg = async () => {
     if (!actionMessage) return;
     if (!window.confirm('Delete this message?')) return;
-    await d1Request(`/api/chat/threads/${encodeURIComponent(id || '')}/messages/${encodeURIComponent(actionMessage.id)}`, { method: 'DELETE' });
+    const deleteMode = actionMessage.sender_id === userId ? 'everyone' : 'me';
+    await d1Request(`/api/chat/threads/${encodeURIComponent(id || '')}/messages/${encodeURIComponent(actionMessage.id)}?for=${deleteMode}`, { method: 'DELETE' });
     setMessages(prev => prev.filter(x => x.id !== actionMessage.id));
     setActionMessage(null);
   };
