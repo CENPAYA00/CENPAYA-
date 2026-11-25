@@ -28,6 +28,14 @@ async function notify(env: Env, recipientId: string, actorId: string, type: stri
   } catch { /* A notification failure must not roll back the primary social action. */ }
 }
 
+
+const INTEREST_STOP_WORDS = new Set(["about","after","again","also","because","been","before","being","between","could","from","have","here","into","just","more","most","much","only","other","over","same","some","such","than","that","their","them","then","there","these","they","this","those","through","under","very","what","when","where","which","while","with","would","your","you","the","and","for","are","was","were","has","had","but","not","you","our","out","all","can","will","who","how","why","its","it's","his","her","she","him","they","them","una","les","des","dans","pour","avec","sur","est","sont","une","que","qui","pas","plus","tout","vous","nous","aux","par","comme","mais","donc"]);
+function extractInterestTopics(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  return [...new Set(value.toLowerCase().normalize("NFKD").replace(/[^\\p{L}\\p{N}]+/gu, " ").split(/\\s+/)
+    .filter(token => token.length >= 3 && token.length <= 28 && !INTEREST_STOP_WORDS.has(token) && !/^\\d+$/.test(token)))].slice(0, 8);
+}
+
 const PROFILE_SELECT = "u.id,u.username,u.display_name,u.avatar_url,u.bio,u.location_city,u.occupation,u.created_at";
 
 async function canViewProfile(db: D1Database, viewerId: string | null, profileId: string, visibility: string): Promise<boolean> {
@@ -60,6 +68,101 @@ async function canViewPost(db: D1Database, viewerId: string | null, authorId: st
 
 export async function handleSocialRoutes(request: Request, env: Env, context: RouteContext): Promise<Response | null> {
   const { url, path, method, user } = context;
+
+
+  if (path === "/api/feed" && method === "GET") {
+    const viewerId = user?.id || null;
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 20), 1), 40);
+    const offset = Math.min(Math.max(Number(url.searchParams.get("offset") || 0), 0), 500);
+    const feedType = str(url.searchParams.get("type"), 12) || "all";
+    if (!["all", "videos", "posts"].includes(feedType)) return fail("Invalid feed type");
+    const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_premium,
+      (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id AND r.reaction_type='like') AS likes_count,
+      (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count,
+      (SELECT COUNT(*) FROM post_shares s WHERE s.post_id=p.id) AS shares_count,
+      CASE WHEN ? IS NULL THEN 0 WHEN p.author_id=? THEN 130
+        WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 100
+        WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)) THEN 82
+        WHEN EXISTS(SELECT 1 FROM user_follows f1 JOIN user_follows f2 ON f2.follower_id=f1.following_id WHERE f1.follower_id=? AND f2.following_id=p.author_id) THEN 48
+        ELSE 0 END AS relationship_score,
+      COALESCE((SELECT SUM(i.score) FROM user_interest_signals i
+        WHERE i.user_id=? AND i.score>0 AND instr(lower(COALESCE(p.content,'')),i.topic_key)>0),0) AS interest_score,
+      CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 'Following'
+        WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)) THEN 'Friend'
+        ELSE 'Suggested for you' END AS feed_reason,
+      CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 1 ELSE 0 END AS is_following_author,
+      CASE WHEN EXISTS(SELECT 1 FROM post_reactions r WHERE r.post_id=p.id AND r.user_id=? AND r.reaction_type='like') THEN 1 ELSE 0 END AS is_liked,
+      CASE WHEN EXISTS(SELECT 1 FROM post_bookmarks b WHERE b.post_id=p.id AND b.user_id=?) THEN 1 ELSE 0 END AS is_saved,
+      v.id AS video_id,v.duration_seconds,v.thumbnail_key,v.hls_key
+      FROM posts p JOIN users u ON u.id=p.author_id
+      LEFT JOIN video_assets v ON v.post_id=p.id AND v.status='ready'
+      WHERE p.status='published' AND p.deleted_at IS NULL
+        AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
+        AND (?='all' OR (?='videos' AND p.post_type='video' AND v.id IS NOT NULL) OR (?='posts' AND (p.post_type IS NULL OR p.post_type<>'video')))
+        AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id))
+          OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?))))
+        AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=?)))
+        AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_feed_post_preferences fp WHERE fp.user_id=? AND fp.post_id=p.id AND fp.preference='not_interested'))
+      ORDER BY (relationship_score + interest_score +
+        MIN(20,(SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id)*0.4 +
+          (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL)*0.8 +
+          (SELECT COUNT(*) FROM post_shares s WHERE s.post_id=p.id)*1.2)) DESC,
+        COALESCE(p.published_at,p.created_at) DESC
+      LIMIT ? OFFSET ?`)
+      .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,
+        feedType,feedType,feedType,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,limit,offset)
+      .all<Record<string, unknown>>();
+    const hydrated = await hydratePosts(env, url.origin, rows.results);
+    return json({ success: true, data: hydrated, pagination: { limit, offset, has_more: rows.results.length === limit } });
+  }
+
+  if (path === "/api/feed/events" && method === "POST") {
+    if (!user) return fail("Unauthorized", 401);
+    const b = await body(request);
+    if (!b) return fail("Valid JSON body required");
+    const postId = str(b.post_id, 64);
+    const eventType = str(b.event_type, 24);
+    const allowed = ["impression", "dwell", "video_watch", "video_complete", "skip", "like", "comment", "save", "share"];
+    if (!UUID.test(postId) || !allowed.includes(eventType)) return fail("Invalid feed event");
+    const dwellMs = Math.min(Math.max(Math.trunc(Number(b.dwell_ms) || 0), 0), 300000);
+    const watchMs = Math.min(Math.max(Math.trunc(Number(b.watch_ms) || 0), 0), 300000);
+    const post = await env.DB.prepare("SELECT author_id,visibility,content,post_type,status,deleted_at FROM posts WHERE id=?").bind(postId)
+      .first<{author_id:string;visibility:string;content:string;post_type:string;status:string;deleted_at:string|null}>();
+    if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB,user.id,post.author_id,post.visibility))) return fail("Post not found",404);
+    await env.DB.prepare("INSERT INTO post_engagement_events(id,user_id,post_id,event_type,dwell_ms,watch_ms,completed,source) VALUES(?,?,?,?,?,?,?,?)")
+      .bind(uuid(),user.id,postId,eventType,dwellMs,watchMs,b.completed===true?1:0,str(b.source,24)||"feed").run();
+    let weight = 0;
+    if (eventType === "dwell" && dwellMs >= 2500) weight = Math.min(8, 2 + dwellMs / 6000);
+    if (eventType === "video_watch" && watchMs >= 3000) weight = Math.min(10, 2 + watchMs / 10000);
+    if (eventType === "video_complete" || (eventType === "video_watch" && b.completed === true)) weight = 12;
+    if (eventType === "like") weight = 7;
+    if (eventType === "comment") weight = 9;
+    if (eventType === "save") weight = 12;
+    if (eventType === "share") weight = 14;
+    if (eventType === "skip") weight = -3;
+    if (eventType === "dwell" && dwellMs < 2500) weight = 0;
+    if (weight !== 0) {
+      const topics = extractInterestTopics(post.content);
+      for (const topic of topics) {
+        await env.DB.prepare("INSERT INTO user_interest_signals(user_id,topic_key,score) VALUES(?,?,?) ON CONFLICT(user_id,topic_key) DO UPDATE SET score=MAX(-100,MIN(100,user_interest_signals.score+excluded.score)),updated_at=" + NOW)
+          .bind(user.id,topic,weight / Math.max(1,topics.length)).run();
+      }
+    }
+    return json({success:true,recorded:true});
+  }
+
+  if (path === "/api/me/feed-interests" && (method === "GET" || method === "DELETE")) {
+    if (!user) return fail("Unauthorized",401);
+    if (method === "DELETE") {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM user_interest_signals WHERE user_id=?").bind(user.id),
+        env.DB.prepare("DELETE FROM post_engagement_events WHERE user_id=?").bind(user.id)
+      ]);
+      return json({success:true,reset:true});
+    }
+    const interests = await env.DB.prepare("SELECT topic_key,ROUND(score,2) AS score,updated_at FROM user_interest_signals WHERE user_id=? AND score>0 ORDER BY score DESC,updated_at DESC LIMIT 50").bind(user.id).all();
+    return json({success:true,data:interests.results});
+  }
 
   const profilePosts = path.match(/^\/api\/profiles\/([^/]+)\/posts$/);
   if (profilePosts && method === "GET") {
