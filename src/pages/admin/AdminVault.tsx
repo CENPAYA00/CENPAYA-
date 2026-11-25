@@ -8,7 +8,7 @@ function dateLabel(value:string|null){if(!value)return 'Never updated';const d=n
 export default function AdminVault(){
  const [providers,setProviders]=useState<Provider[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[editing,setEditing]=useState<Provider|null>(null),[busy,setBusy]=useState<string|null>(null);
  const [showAdd,setShowAdd]=useState(false),[code,setCode]=useState(''),[name,setName]=useState(''),[countries,setCountries]=useState('CM'),[priority,setPriority]=useState('100'),[adding,setAdding]=useState(false);
- const load=async()=>{setLoading(true);setError('');try{const r=await supabaseWorkerRequest<Provider[]>('/api/v1/admin/providers');setProviders(Array.isArray(r.data)?r.data:[]);}catch(e){setError(e instanceof Error?e.message:'Could not load providers.');}finally{setLoading(false);}};
+ const load=async()=>{setLoading(true);setError('');try{const r=await supabaseWorkerRequest<{ data: Provider[] }>('/api/v1/admin/providers');setProviders(Array.isArray(r.data)?r.data:[]);}catch(e){setError(e instanceof Error?e.message:'Could not load providers.');}finally{setLoading(false);}};
  useEffect(()=>{void load();},[]);
  const add=async()=>{const provider=code.trim().toUpperCase(),display=name.trim(),markets=countries.trim()?[...new Set(countries.split(',').map(x=>x.trim().toUpperCase()).filter(Boolean))]:null,p=Number(priority);
   if(!/^[A-Z][A-Z0-9_]{1,39}$/.test(provider)||!display||display.length>120||!Number.isSafeInteger(p)||p<1||p>10000||(markets&&(markets.length>30||markets.some(x=>!/^[A-Z]{2}$/.test(x))))){setError('Enter a valid provider code, display name, priority and ISO country codes.');return;}
