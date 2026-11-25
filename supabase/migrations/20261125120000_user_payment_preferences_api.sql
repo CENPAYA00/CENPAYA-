@@ -9,7 +9,7 @@ CREATE OR REPLACE FUNCTION public.update_my_payment_preferences(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $function$
 DECLARE
   v_user_id uuid := auth.uid();
