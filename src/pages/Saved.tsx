@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bookmark, FolderPlus, Folder, Pencil, Trash2, Video } from 'lucide-react';
+import { ArrowLeft, Bookmark, FolderPlus, Folder, Pencil, Trash2 } from 'lucide-react';
 import { useI18n } from '../contexts/i18n';
 import FeedPostCard from '../components/FeedPostCard';
 import { d1Request } from '../lib/d1Api';
