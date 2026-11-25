@@ -670,7 +670,7 @@ export async function handleAuthenticatedApi(
       const validMethods = ["mtn_momo", "orange_money", "airtel_money", "moov_money"];
       if (!body || !onlyKeys(body, ["code","name","phone_prefix","currency_code","currency_value_in_xaf","flag_emoji","regions","enabled_methods","is_active","base_marketplace_fee_pct","premium_subscriber_fee_pct","withdrawal_fee_pct","fee_fixed_base","fee_fixed_premium"]) ||
           body.code !== countryIso || !isText(body.name, 100, 2) ||
-          typeof body.phone_prefix !== "string" || !/^\\+[1-9][0-9]{0,6}$/.test(body.phone_prefix) ||
+          typeof body.phone_prefix !== "string" || !/^\x2B[1-9][0-9]{0,6}$/.test(body.phone_prefix) ||
           typeof body.currency_code !== "string" || !/^[A-Z]{3}$/.test(body.currency_code) ||
           typeof body.currency_value_in_xaf !== "number" || !Number.isFinite(body.currency_value_in_xaf) || body.currency_value_in_xaf <= 0 ||
           (body.flag_emoji !== null && body.flag_emoji !== undefined && !isText(body.flag_emoji, 32)) ||
