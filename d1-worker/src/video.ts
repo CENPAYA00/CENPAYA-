@@ -4,6 +4,9 @@ type C={url:URL;path:string;method:string;user:User|null};
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
 const fail=(error:string,status=400)=>json({success:false,error},status);
 const MAX_BYTES=500*1024*1024;
+export function normalizeVideoRating(value:unknown):number|null{
+ return typeof value==='number'&&Number.isInteger(value)&&value>=1&&value<=5?value:null;
+}
 async function processor(env:Env,path:string,data?:unknown,method="POST"){
  if(!env.VIDEO_PROCESSOR_TOKEN)return null;
  const headers={"Authorization":"Bearer "+env.VIDEO_PROCESSOR_TOKEN,...(data?{"Content-Type":"application/json"}:{})};
@@ -32,6 +35,26 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
   const data=await r.json() as {upload_url?:string;expires_at?:string};if(!data.upload_url)return fail("Invalid processor response",502);
   await env.DB.prepare("INSERT INTO video_assets(id,owner_id,status,source_key,source_bytes,mime_type) VALUES(?,?,'awaiting_upload',?,?,?)").bind(id,user.id,key,size,mime).run();
   return json({success:true,data:{video_id:id,filename,upload_url:data.upload_url,method:"PUT",headers:{"Content-Type":mime},expires_at:data.expires_at,max_duration_seconds:300}},201);
+ }
+ const ratingMatch=path.match(/^\\/api\\/videos\\/([0-9a-f-]{36})\\/rating$/i);
+ if(ratingMatch&&(method==='GET'||method==='POST')){
+  const videoId=ratingMatch[1];
+  const asset=await env.DB.prepare("SELECT v.id,v.owner_id,v.status,v.post_id,p.author_id,p.visibility,p.status AS post_status,p.deleted_at FROM video_assets v LEFT JOIN posts p ON p.id=v.post_id WHERE v.id=?").bind(videoId).first<Record<string,unknown>>();
+  const owner=!!user&&asset?.owner_id===user.id;
+  if(!asset||asset.status!=='ready'||!asset.post_id||asset.post_status!=='published'||asset.deleted_at||asset.visibility!=='public')return fail('Video not found',404);
+  if(user&&!owner){const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id,asset.author_id,asset.author_id,user.id).first();if(blocked)return fail('Video not found',404);}
+  if(method==='POST'){
+   if(!user)return fail('Authentication required',401);
+   const payload=await request.json().catch(()=>null) as Record<string,unknown>|null;
+   const stars=normalizeVideoRating(payload?.stars);
+   if(stars===null)return fail('Choose a whole-number rating from 1 to 5 stars');
+   await env.DB.prepare("INSERT INTO video_ratings(video_id,user_id,stars) VALUES(?,?,?) ON CONFLICT(video_id,user_id) DO UPDATE SET stars=excluded.stars,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')").bind(videoId,user.id,stars).run();
+  }
+  const [summary,mine]=await Promise.all([
+   env.DB.prepare("SELECT COUNT(*) AS ratings_count,ROUND(AVG(stars),2) AS average_rating FROM video_ratings WHERE video_id=?").bind(videoId).first<{ratings_count:number;average_rating:number|null}>(),
+   user?env.DB.prepare("SELECT stars FROM video_ratings WHERE video_id=? AND user_id=?").bind(videoId,user.id).first<{stars:number}>():Promise.resolve(null)
+  ]);
+  return json({success:true,data:{video_id:videoId,ratings_count:Number(summary?.ratings_count||0),average_rating:Number(summary?.average_rating||0),viewer_rating:mine?.stars||null}});
  }
  const m=path.match(/^\/api\/videos\/([0-9a-f-]{36})\/(complete|status|playlist)$/i);
  if(m){
@@ -86,7 +109,14 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
  }
  if(path==="/api/reels"&&method==="GET"){
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||10),1),20),cursor=url.searchParams.get("cursor")||"";
-  const rows=await env.DB.prepare(`SELECT v.id AS video_id,v.post_id,v.hls_key,v.thumbnail_key,v.duration_seconds,p.content,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url
+  const rows=await env.DB.prepare(`SELECT v.id AS video_id,v.post_id,v.hls_key,v.thumbnail_key,v.duration_seconds,p.content,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url,
+   (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id AND r.reaction_type='like') AS likes_count,
+   (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count,
+   (SELECT COUNT(*) FROM video_ratings vr WHERE vr.video_id=v.id) AS ratings_count,
+   (SELECT ROUND(AVG(vr.stars),2) FROM video_ratings vr WHERE vr.video_id=v.id) AS average_rating,
+   (SELECT vr.stars FROM video_ratings vr WHERE vr.video_id=v.id AND vr.user_id=?) AS viewer_rating,
+   CASE WHEN EXISTS(SELECT 1 FROM post_reactions r WHERE r.post_id=p.id AND r.user_id=? AND r.reaction_type='like') THEN 1 ELSE 0 END AS is_liked,
+   CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 1 ELSE 0 END AS is_following_author
    FROM video_assets v JOIN posts p ON p.id=v.post_id JOIN users u ON u.id=p.author_id
    WHERE v.status='ready' AND p.status='published' AND p.deleted_at IS NULL AND p.visibility='public'
    AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
@@ -94,7 +124,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
    AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=?)))
    ORDER BY CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 1 ELSE 0 END DESC,
      COALESCE((SELECT SUM(i.score) FROM user_interest_signals i WHERE i.user_id=? AND i.score>0 AND instr(lower(COALESCE(p.content,'')),i.topic_key)>0),0) DESC,
-     p.created_at DESC LIMIT ?`).bind(cursor,cursor,user?.id||null,user?.id||null,user?.id||null,user?.id||null,user?.id||null,limit).all<Record<string,unknown>>();
+     p.created_at DESC LIMIT ?`).bind(user?.id||'',user?.id||'',user?.id||'',cursor,cursor,user?.id||null,user?.id||null,user?.id||null,user?.id||null,user?.id||null,limit).all<Record<string,unknown>>();
   const data=rows.results.map(row=>({...row,playlist_url:"/api/videos/"+row.video_id+"/playlist",thumbnail_url:null,next_cursor:row.created_at}));
   return json({success:true,data,next_cursor:data.length?data[data.length-1].next_cursor:null});
  }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart, MessageCircle, Share2, X, MoreHorizontal,
@@ -53,6 +53,33 @@ export default function FeedPostCard({
   const [isInterested, setIsInterested] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const postElementRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const element = postElementRef.current;
+    if (!element || !currentUserId || !post?.id || typeof IntersectionObserver === 'undefined') return;
+    let impressionSent = false, visibleSince = 0, lastReportedAt = 0;
+    let dwellTimer: number | undefined;
+    const send = (event_type: string, dwell_ms = 0) => d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: post.id, event_type, dwell_ms, source: 'feed' }) }).catch(() => undefined);
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+          if (!impressionSent) { impressionSent = true; void send('impression'); }
+          if (!visibleSince) {
+            visibleSince = Date.now(); lastReportedAt = visibleSince;
+            dwellTimer = window.setInterval(() => { const now = Date.now(), elapsed = now - lastReportedAt; if (elapsed >= 2500) { void send('dwell', Math.min(300000, elapsed)); lastReportedAt = now; } }, 3000);
+          }
+        } else if (visibleSince) {
+          window.clearInterval(dwellTimer);
+          const now = Date.now(), elapsed = now - lastReportedAt;
+          if (now - visibleSince < 1500) void send('skip'); else if (elapsed >= 1000) void send('dwell', Math.min(300000, elapsed));
+          visibleSince = 0; lastReportedAt = 0;
+        }
+      }
+    }, { threshold: [0, 0.6, 1] });
+    observer.observe(element);
+    return () => { observer.disconnect(); window.clearInterval(dwellTimer); };
+  }, [post?.id, currentUserId]);
 
   if (hidden) return null;
 
@@ -239,7 +266,7 @@ export default function FeedPostCard({
 
     return (
       <>
-        <article className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 400px' }}>
+        <article ref={postElementRef} className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 400px' }}>
           {AuthorRow}
           <div onClick={() => navigate(`/post/${post.id}`)} style={inlineStyle} className="cursor-pointer py-16 px-6 flex items-center justify-center min-h-[220px]">
             <p data-no-translate className="text-xl font-bold text-center !text-white whitespace-pre-wrap leading-relaxed max-w-md">
@@ -259,7 +286,7 @@ export default function FeedPostCard({
 
   return (
     <>
-      <article className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 520px' }}>
+      <article ref={postElementRef} className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 520px' }}>
         {AuthorRow}
         {text && (
           <div data-no-translate className="px-3.5 pb-2.5 text-[15px] text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words leading-relaxed">

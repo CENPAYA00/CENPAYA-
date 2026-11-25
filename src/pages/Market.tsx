@@ -73,10 +73,12 @@ export default function Market() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && search.trim()) navigate('/search?context=market&q=' + encodeURIComponent(search.trim())); }}
           placeholder="Search products, sellers..."
           className="w-full pl-11 pr-4 py-3.5 border border-gray-200 dark:border-darkline rounded-pill bg-white dark:bg-darkcard text-[14px] text-ink outline-none"
         />
       </div>
+      <button onClick={() => search.trim() && navigate('/search?context=market&q=' + encodeURIComponent(search.trim()))} disabled={!search.trim()} className="w-full -mt-4 mb-4 rounded-xl bg-accent text-white py-2.5 text-xs font-bold disabled:opacity-40">Search with AI</button>
 
       {loading ? (
         <div className="grid grid-cols-2 gap-3">

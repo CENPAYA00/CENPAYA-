@@ -26,7 +26,7 @@ export default function Search() {
   const contextParam = (params.get('context') || 'home') as Context;
   const [context, setContext] = useState<Context>(contextParam);
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(params.get('q') || '');
   const [debounced, setDebounced] = useState('');
   const [results, setResults] = useState<Result[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
@@ -34,7 +34,7 @@ export default function Search() {
   const [loading, setLoading] = useState(false);
   const [meId, setMeId] = useState<string | null>(null);
 
-  useEffect(() => { setContext(contextParam); }, [contextParam]);
+  useEffect(() => { setContext(contextParam); setQuery(params.get('q') || ''); }, [contextParam, params]);
 
   useEffect(() => {
     try {
