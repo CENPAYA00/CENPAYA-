@@ -43,7 +43,7 @@ export function InlineBoostBar({
       >
         <span className="flex items-center gap-2"><Zap size={16} /> Boost this {kind}</span>
         <span className="text-[11px] font-medium opacity-90">
-          {hasFree ? 'FREE' : `from ${lowestPrice.toLocaleString()} ${tiers[0]?.currency_code || "XAF"}`} {open ? '▲' : '▼'}
+          {hasFree ? 'FREE' : `from ${lowestPrice.toLocaleString()} ${plans[0]?.currency_code || "XAF"}`} {open ? '▲' : '▼'}
         </span>
       </button>
 
