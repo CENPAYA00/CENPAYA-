@@ -143,7 +143,7 @@ export default function Subscribe() {
           <Crown size={30} className="mx-auto mb-2 text-accent-light" />
           <p className="text-base font-black">You're a Premium Member</p>
           <p className="text-[10px] text-white/80 mt-1">
-            Enjoy reduced fees, verified badge, referral earnings, and priority support.
+            Enjoy reduced fees, verified membership, free monthly boosts, and priority support.
           </p>
         </div>
 
@@ -152,7 +152,6 @@ export default function Subscribe() {
           {[
             'Reduced marketplace fees (3% + 25 XAF)',
             'Verified seller badge on your profile',
-            'Earn 1,000 XAF per referred subscriber (vs 500 XAF for free members)',
             'Free monthly listing boosts',
             'Priority customer support',
           ].map((b, i) => (
@@ -198,11 +197,6 @@ export default function Subscribe() {
         </div>
         <BenefitItem icon={<Store size={14} />} title="Reduced marketplace fees" desc="3% + 25 XAF instead of 5% + 50 XAF." />
         <BenefitItem icon={<Shield size={14} />} title="Verified seller badge" desc="Build buyer trust with a check mark on your profile." />
-        <BenefitItem
-          icon={<Link2 size={14} />}
-          title="Earn more from referrals"
-          desc="Premium members earn 1,000 XAF per referred subscriber. Free members earn 500 XAF."
-        />
         <BenefitItem icon={<Zap size={14} />} title="Free monthly boosts" desc="Promote one listing per month at no cost." />
       </div>
 
@@ -218,7 +212,6 @@ export default function Subscribe() {
         <ComparisonRow feature="List products" free={true} premium={true} />
         <ComparisonRow feature="Reduced fees (3%+25)" free={false} premium={true} />
         <ComparisonRow feature="Verified badge" free={false} premium={true} />
-        <ComparisonRow feature="Referral bonus" free={true} premium={true} note="500 vs 1,000 XAF" />
         <ComparisonRow feature="Free monthly boosts" free={false} premium={true} />
       </div>
 
