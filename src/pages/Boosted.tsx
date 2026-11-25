@@ -81,10 +81,10 @@ export default function Boosted() {
         return { type: 'listing' as const, id: l.id, title: `Service: ${l.title}`, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until };
       });
       const listingTargets = [...productTargets, ...serviceTargets];
-      const postTargets = (postsRes.data || []).filter((p: any) => p.moderation_status === 'approved').map((p: any) => {
+      const postTargets: Target[] = (postsRes.data || []).filter((p: any) => p.moderation_status === 'approved').map((p: any) => {
         let rawImg = p.image_url ? p.image_url.split(',')[0].trim() : null;
         return { 
-          type: 'post', 
+          type: 'post' as const, 
           id: p.id, 
           title: p.content || (p.post_type === 'colored' ? 'Colored Post' : 'Media Post'), 
           image: rawImg ? resolveUrl(rawImg) : null, 
