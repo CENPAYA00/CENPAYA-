@@ -9,6 +9,41 @@ const str=(v:unknown,max=500)=>typeof v==="string"?v.trim().slice(0,max):"";
 async function body(request:Request):Promise<Record<string,unknown>|null>{const type=request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();if(type!=="application/json")return null;const length=Number(request.headers.get("Content-Length")||0);if(length>64_000)return null;try{const raw=await request.text();if(new TextEncoder().encode(raw).byteLength>64_000)return null;const value:unknown=JSON.parse(raw);return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:null;}catch{return null;}}
 
 export async function handleInternalRoutes(request:Request,env:Env,url:URL,path:string,method:string):Promise<Response|null>{
+  if(path==="/internal/v1/countries/sync"&&method==="POST"){
+    const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
+    const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
+    if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
+    const b=await body(request);
+    if(!b)return fail("Valid JSON body required",400);
+    const countryCode=str(b.country_code,2).toUpperCase();
+    const name=str(b.name,100);
+    const phonePrefix=str(b.phone_prefix,8);
+    const currencyCode=str(b.currency_code,3).toUpperCase();
+    const currencyValue=Number(b.currency_value_in_xaf);
+    const flagEmoji=b.flag_emoji==null?null:str(b.flag_emoji,32);
+    const regions=Array.isArray(b.regions)?b.regions:[];
+    const methods=Array.isArray(b.enabled_methods)?b.enabled_methods:[];
+    const active=b.is_active===true;
+    if(!/^[A-Z]{2}$/.test(countryCode)||name.length<2||!/^\\+[1-9][0-9]{0,6}$/.test(phonePrefix)||
+       !/^[A-Z]{3}$/.test(currencyCode)||!Number.isFinite(currencyValue)||currencyValue<=0||
+       regions.length>200||!regions.every(v=>typeof v==="string"&&v.trim().length<=100)||
+       methods.length>10||!methods.every(v=>typeof v==="string"&&/^[a-z0-9_]{2,40}$/.test(v))||
+       typeof b.is_active!=="boolean")return fail("Invalid country configuration",400);
+    const status=active?"active":"coming_soon";
+    try{
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO country_configuration_projection(country_code,name,phone_prefix,currency_code,currency_value_in_xaf,flag_emoji,regions_json,enabled_methods_json,status,config_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,1,"+NOW+") ON CONFLICT(country_code) DO UPDATE SET name=excluded.name,phone_prefix=excluded.phone_prefix,currency_code=excluded.currency_code,currency_value_in_xaf=excluded.currency_value_in_xaf,flag_emoji=excluded.flag_emoji,regions_json=excluded.regions_json,enabled_methods_json=excluded.enabled_methods_json,status=excluded.status,config_version=country_configuration_projection.config_version+1,updated_at="+NOW)
+          .bind(countryCode,name,phonePrefix,currencyCode,currencyValue,flagEmoji,JSON.stringify(regions),JSON.stringify(methods),status),
+        env.DB.prepare("INSERT INTO supported_countries(country_code,name,currency_code,phone_prefix,status) VALUES(?,?,?,?,?) ON CONFLICT(country_code) DO UPDATE SET name=excluded.name,currency_code=excluded.currency_code,phone_prefix=excluded.phone_prefix,status=excluded.status")
+          .bind(countryCode,name,currencyCode,phonePrefix,status)
+      ]);
+      await env.CACHE?.delete("supported-countries");
+      return json({success:true,data:{country_code:countryCode,status}});
+    }catch(error){
+      console.error("country_projection_sync_failed",error instanceof Error?error.message:"unknown");
+      return fail("Country configuration projection unavailable. Apply D1 migration 0067 first.",503);
+    }
+  }
   if(path==="/internal/v1/staff/workspace/sync"&&method==="POST"){
     const configuredSecret=env.D1_INTERNAL_CALL_SECRET||"";
     const suppliedSecret=request.headers.get("X-CenPaya-Internal-Secret")||"";
