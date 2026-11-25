@@ -748,13 +748,13 @@ export async function handleAuthenticatedApi(
     if (body && body.credentials && typeof body.credentials === "object" && !Array.isArray(body.credentials)) {
       if (!onlyKeys(body, ["provider_name", "environment", "credentials"])) return failure("invalid_gateway_credentials_request", 400, headers);
       const entries = Object.entries(body.credentials as Record<string, unknown>);
-      if (entries.length < 1 || entries.length > 30 || entries.some(([key,value]) => !/^[a-z][a-z0-9_]{0,49}$/.test(key) || typeof value !== "string" || value.trim().length < 1 || value.length > 4096)) return failure("invalid_gateway_credentials_request", 400, headers);
+      if (entries.length < 1 || entries.length > 30 || entries.some(([key,value]) => !/^[a-z][a-z0-9_]{0,49}$/.test(key) || typeof value !== "string" || value.trim().length < 1 || value.length > 4000)) return failure("invalid_gateway_credentials_request", 400, headers);
       credentials = Object.fromEntries(entries.map(([key,value]) => [key,(value as string).trim()]));
     } else {
       const publicKey = typeof body?.api_public_key === "string" ? body.api_public_key.trim() : "";
       const secretKey = typeof body?.api_secret_key === "string" ? body.api_secret_key.trim() : "";
       const webhookSecret = typeof body?.webhook_secret === "string" ? body.webhook_secret.trim() : "";
-      if (!body || !onlyKeys(body, ["provider_name","api_public_key","api_secret_key","webhook_secret","environment"]) || (body.webhook_secret !== undefined && body.webhook_secret !== null && typeof body.webhook_secret !== "string") || !publicKey || publicKey.length > 2048 || !secretKey || secretKey.length > 4096 || (webhookSecret && webhookSecret.length > 4096)) return failure("invalid_gateway_credentials_request", 400, headers);
+      if (!body || !onlyKeys(body, ["provider_name","api_public_key","api_secret_key","webhook_secret","environment"]) || (body.webhook_secret !== undefined && body.webhook_secret !== null && typeof body.webhook_secret !== "string") || !publicKey || publicKey.length > 2048 || !secretKey || secretKey.length > 4000 || (webhookSecret && webhookSecret.length > 4000)) return failure("invalid_gateway_credentials_request", 400, headers);
       credentials = { api_public_key: publicKey, api_secret_key: secretKey };
       if (webhookSecret) credentials.webhook_secret = webhookSecret;
     }
