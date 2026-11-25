@@ -40,15 +40,15 @@ export default function AdminFinanceExtras({
     return (
       <div className="space-y-3">
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-3 text-[10px] text-yellow-800 dark:text-yellow-200">
-          Fee changes apply to <strong>new orders and purchases only</strong>. Existing escrow keeps its original fee.
+          These are default fallback fees. Country-specific fees in Regions take priority for new orders and purchases. Existing escrow keeps its original fee.
         </div>
         <SettingRow label="Marketplace fee — member (%)"             value={settings.fee_pct_member || ''}       onChange={(v: string) => setSetting('fee_pct_member', v)}       onSave={() => saveSetting('fee_pct_member')}       saving={savingKey === 'fee_pct_member'}       suffix="%" />
         <SettingRow label="Marketplace fixed fee — member (XAF)"     value={settings.fee_fixed_member || ''}     onChange={(v: string) => setSetting('fee_fixed_member', v)}     onSave={() => saveSetting('fee_fixed_member')}     saving={savingKey === 'fee_fixed_member'}     suffix="XAF" />
         <SettingRow label="Marketplace fee — non-member (%)"         value={settings.fee_pct_non_member || ''}   onChange={(v: string) => setSetting('fee_pct_non_member', v)}   onSave={() => saveSetting('fee_pct_non_member')}   saving={savingKey === 'fee_pct_non_member'}   suffix="%" />
         <SettingRow label="Marketplace fixed fee — non-member (XAF)" value={settings.fee_fixed_non_member || ''} onChange={(v: string) => setSetting('fee_fixed_non_member', v)} onSave={() => saveSetting('fee_fixed_non_member')} saving={savingKey === 'fee_fixed_non_member'} suffix="XAF" />
         <SettingRow label="Referral bonus — Premium (XAF)"           value={settings.referral_l1_points || ''}   onChange={(v: string) => setSetting('referral_l1_points', v)}   onSave={() => saveSetting('referral_l1_points')}   saving={savingKey === 'referral_l1_points'}   suffix="XAF" />
-        <SettingRow label="Membership price — yearly (XAF)"          value={settings.membership_fee || ''}       onChange={(v: string) => setSetting('membership_fee', v)}       onSave={() => saveSetting('membership_fee')}       saving={savingKey === 'membership_fee'}       suffix="XAF" />
-        <SettingRow label="Subscription fee — yearly (XAF)"          value={settings.subscription_fee || ''}     onChange={(v: string) => setSetting('subscription_fee', v)}     onSave={() => saveSetting('subscription_fee')}     saving={savingKey === 'subscription_fee'}     suffix="XAF" />
+        <SettingRow label="Default membership price — yearly (XAF)"          value={settings.membership_fee || ''}       onChange={(v: string) => setSetting('membership_fee', v)}       onSave={() => saveSetting('membership_fee')}       saving={savingKey === 'membership_fee'}       suffix="XAF" />
+        <SettingRow label="Default subscription price — yearly (XAF)"          value={settings.subscription_fee || ''}     onChange={(v: string) => setSetting('subscription_fee', v)}     onSave={() => saveSetting('subscription_fee')}     saving={savingKey === 'subscription_fee'}     suffix="XAF" />
       </div>
     );
   }
