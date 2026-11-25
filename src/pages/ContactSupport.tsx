@@ -10,15 +10,15 @@ export default function ContactSupport() {
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const load = async () => {
-    setLoading(true);
+    setLoading(true); setLoadError('');
     try {
       const { data } = await d1Request<{ data: any[] }>('/api/support/tickets');
-      setTickets(data || []);
-    } catch (error) {
-      console.error('Could not load support tickets:', error);
-      setTickets([]);
+      setTickets((data || []).filter(ticket => ticket.queue_type !== 'admin'));
+    } catch (error: any) {
+      setLoadError(error.message || 'Could not load support tickets.');
     } finally {
       setLoading(false);
     }
@@ -45,6 +45,7 @@ export default function ContactSupport() {
         </p>
       </div>
 
+      {loadError && <p className="text-[11px] text-red-600 bg-red-50 rounded-xl p-3 mb-3">{loadError}</p>}
       {loading && <p className="text-center text-xs text-gray-400 py-6">Loading...</p>}
 
       {!loading && tickets.length === 0 && (
@@ -118,7 +119,7 @@ function NewSupportSheet({ onClose, onSent }: { onClose: () => void; onSent: () 
     try {
       await d1Request<{ id: string; ticket_number: string }>('/api/support/tickets', {
         method: 'POST',
-        body: JSON.stringify({ subject: subject.trim(), description: message.trim(), category: normalizedCategory }),
+        body: JSON.stringify({ subject: subject.trim(), description: message.trim(), category: normalizedCategory, queue_type: 'support' }),
       });
       onSent();
     } catch (error) {
