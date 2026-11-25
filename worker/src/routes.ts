@@ -175,6 +175,23 @@ async function rpc(supabase: SupabaseClient, name: string, args: Record<string, 
   }
   return { data, error: null as string | null, status: 200 };
 }
+async function syncCountryToD1(env: Env, country: Record<string, unknown>): Promise<boolean> {
+  if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) return false;
+  try {
+    const response = await env.D1_IDENTITY.fetch("https://d1-identity.internal/internal/v1/countries/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET },
+      body: JSON.stringify({
+        country_code: country.country_iso, name: country.name, phone_prefix: country.phone_prefix,
+        currency_code: country.currency_code, currency_value_in_xaf: country.currency_value_in_xaf,
+        flag_emoji: country.flag_emoji ?? null, regions: country.regions || [],
+        enabled_methods: country.enabled_methods || [], is_active: country.is_active === true,
+      }),
+      signal: AbortSignal.timeout(4_000),
+    });
+    return response.ok;
+  } catch { return false; }
+}
 function success(data: unknown, headers: Headers) {
   return jsonResponse({ success: true, data }, 200, headers);
 }
@@ -637,40 +654,65 @@ export async function handleAuthenticatedApi(
   }
   if (path === "/api/v1/admin/countries" || path.startsWith("/api/v1/admin/countries/")) {
     const profile = await readUserProfile(supabase, userId);
-    if (!profile || !["owner", "super_admin"].includes(String(profile.role))) {
-      return failure("not_authorized", 403, headers);
-    }
+    if (!profile || !["owner", "super_admin"].includes(String(profile.role))) return failure("not_authorized", 403, headers);
     if (method === "GET" && path === "/api/v1/admin/countries") {
-      const [{ data: countries, error: countryError }, { data: configs, error: configError }] = await Promise.all([
+      const [{ data: countries, error: countryError }, { data: configs, error: configError }, { data: prices, error: priceError }] = await Promise.all([
         supabase.from("supported_countries").select("country_iso,name,phone_prefix,currency_code,currency_value_in_xaf,flag_emoji,regions,enabled_methods,is_active").order("name"),
         supabase.from("regional_market_configurations").select("country_iso,base_marketplace_fee_pct,premium_subscriber_fee_pct,withdrawal_fee_pct,fee_fixed_base,fee_fixed_premium"),
+        supabase.from("country_price_overrides").select("country_iso,price_key,amount,currency_code,is_active"),
       ]);
-      if (countryError || configError) return failure("countries_lookup_failed", 502, headers);
+      if (countryError || configError || priceError) return failure("countries_lookup_failed", 502, headers);
       const byCode = new Map((configs || []).map((row: Record<string, unknown>) => [row.country_iso, row]));
-      return success((countries || []).map((row: Record<string, unknown>) => {
-        const config = byCode.get(row.country_iso) || {};
-        return { ...row, code: row.country_iso, ...config };
-      }), headers);
+      const byPrice = new Map<string, Record<string, unknown>>();
+      for (const price of prices || []) {
+        const code = String((price as Record<string, unknown>).country_iso);
+        const key = String((price as Record<string, unknown>).price_key);
+        const map = byPrice.get(code) || {};
+        map[key] = { amount: Number((price as Record<string, unknown>).amount), currency_code: (price as Record<string, unknown>).currency_code, is_active: (price as Record<string, unknown>).is_active };
+        byPrice.set(code, map);
+      }
+      return success((countries || []).map((row: Record<string, unknown>) => ({
+        ...row, code: row.country_iso, ...(byCode.get(row.country_iso) || {}), prices: byPrice.get(String(row.country_iso)) || {},
+      })), headers);
     }
-    const countryPath = path.match(/^\/api\/v1\/admin\/countries\/([A-Z]{2})$/);
+    const countryPath = path.match(/^\\/api\\/v1\\/admin\\/countries\\/([A-Z]{2})$/);
     if (!countryPath) return failure("invalid_country_path", 400, headers);
     const countryIso = countryPath[1];
     if (method === "PATCH") {
       const body = await readJsonObject(request, 2048);
-      if (!body || !onlyKeys(body, ["is_active"]) || typeof body.is_active !== "boolean") {
-        return failure("invalid_country_activation_request", 400, headers);
+      if (!body || !onlyKeys(body, ["is_active"]) || typeof body.is_active !== "boolean") return failure("invalid_country_activation_request", 400, headers);
+      const { data: current } = await supabase.from("supported_countries").select("country_iso,name,phone_prefix,currency_code,currency_value_in_xaf,flag_emoji,regions,enabled_methods,is_active").eq("country_iso", countryIso).maybeSingle();
+      if (!current) return failure("country_not_found", 404, headers);
+      if (body.is_active) {
+        const { data: readyProviders, error: readinessError } = await supabase.from("system_providers")
+          .select("provider_name").eq("is_active", true).eq("provider_type", "PAYMENT_GATEWAY")
+          .or(`supported_countries.is.null,supported_countries.cs.{${countryIso}}`);
+        if (readinessError || !readyProviders?.length || !(current.enabled_methods as unknown[] || []).length) {
+          return failure("country_payment_setup_incomplete", 409, headers);
+        }
+        const { data: routes } = await supabase.from("aggregator_fees").select("provider_name")
+          .eq("country_iso", countryIso).eq("action", "topup").eq("is_active", true);
+        if (!routes?.some((route: Record<string, unknown>) => readyProviders.some((provider: Record<string, unknown>) => provider.provider_name === route.provider_name))) {
+          return failure("country_payment_setup_incomplete", 409, headers);
+        }
       }
-      const result = await rpc(supabase, "admin_set_supported_country_active", {
-        p_country_iso: countryIso, p_is_active: body.is_active,
-      });
-      return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+      const result = await rpc(supabase, "admin_set_supported_country_active", { p_country_iso: countryIso, p_is_active: body.is_active });
+      if (result.error) return failure(result.error, result.status, headers);
+      const next = { ...current, is_active: body.is_active };
+      if (!await syncCountryToD1(env, next)) {
+        await rpc(supabase, "admin_set_supported_country_active", { p_country_iso: countryIso, p_is_active: !body.is_active });
+        return failure("country_d1_sync_failed", 503, headers);
+      }
+      return success(result.data, headers);
     }
     if (method === "PUT" || method === "POST") {
-      const body = await readJsonObject(request, 12_000);
+      const body = await readJsonObject(request, 16_000);
       const validMethods = ["mtn_momo", "orange_money", "airtel_money", "moov_money"];
-      if (!body || !onlyKeys(body, ["code","name","phone_prefix","currency_code","currency_value_in_xaf","flag_emoji","regions","enabled_methods","is_active","base_marketplace_fee_pct","premium_subscriber_fee_pct","withdrawal_fee_pct","fee_fixed_base","fee_fixed_premium"]) ||
+      const priceKeys = ["membership_yearly", "boost_3d", "boost_7d", "boost_14d", "boost_21d", "boost_40d"];
+      const prices = body?.prices && typeof body.prices === "object" && !Array.isArray(body.prices) ? body.prices as Record<string, unknown> : null;
+      if (!body || !onlyKeys(body, ["code","name","phone_prefix","currency_code","currency_value_in_xaf","flag_emoji","regions","enabled_methods","is_active","base_marketplace_fee_pct","premium_subscriber_fee_pct","withdrawal_fee_pct","fee_fixed_base","fee_fixed_premium","prices"]) ||
           body.code !== countryIso || !isText(body.name, 100, 2) ||
-          typeof body.phone_prefix !== "string" || !/^\x2B[1-9][0-9]{0,6}$/.test(body.phone_prefix) ||
+          typeof body.phone_prefix !== "string" || !/^\\+[1-9][0-9]{0,6}$/.test(body.phone_prefix) ||
           typeof body.currency_code !== "string" || !/^[A-Z]{3}$/.test(body.currency_code) ||
           typeof body.currency_value_in_xaf !== "number" || !Number.isFinite(body.currency_value_in_xaf) || body.currency_value_in_xaf <= 0 ||
           (body.flag_emoji !== null && body.flag_emoji !== undefined && !isText(body.flag_emoji, 32)) ||
@@ -678,9 +720,12 @@ export async function handleAuthenticatedApi(
           !Array.isArray(body.enabled_methods) || body.enabled_methods.length > 4 || !body.enabled_methods.every((v) => validMethods.includes(v)) ||
           typeof body.is_active !== "boolean" || !isPercent(body.base_marketplace_fee_pct) ||
           !isPercent(body.premium_subscriber_fee_pct) || !isPercent(body.withdrawal_fee_pct) ||
-          !integerIn(body.fee_fixed_base, 0, 1_000_000_000) || !integerIn(body.fee_fixed_premium, 0, 1_000_000_000)) {
+          !integerIn(body.fee_fixed_base, 0, 1_000_000_000) || !integerIn(body.fee_fixed_premium, 0, 1_000_000_000) ||
+          !prices || Object.keys(prices).some(key => !priceKeys.includes(key)) ||
+          Object.values(prices).some(value => !integerIn(value, 0, 1_000_000_000_000))) {
         return failure("invalid_country_configuration", 400, headers);
       }
+      if (body.is_active && body.enabled_methods.length === 0) return failure("country_payment_setup_incomplete", 409, headers);
       const result = await rpc(supabase, "admin_upsert_supported_country", {
         p_country_iso: countryIso, p_name: body.name.trim(), p_phone_prefix: body.phone_prefix,
         p_currency_code: body.currency_code, p_currency_value_in_xaf: body.currency_value_in_xaf,
@@ -689,18 +734,29 @@ export async function handleAuthenticatedApi(
         p_withdrawal_fee_pct: body.withdrawal_fee_pct, p_fee_fixed_base: body.fee_fixed_base,
         p_fee_fixed_premium: body.fee_fixed_premium, p_is_active: body.is_active,
       });
-      return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
+      if (result.error) return failure(result.error, result.status, headers);
+      for (const [priceKey, amount] of Object.entries(prices)) {
+        const savedPrice = await rpc(supabase, "admin_upsert_country_price", {
+          p_country_iso: countryIso, p_price_key: priceKey, p_amount: amount,
+          p_currency_code: body.currency_code, p_is_active: true,
+        });
+        if (savedPrice.error) return failure("country_price_update_failed", savedPrice.status, headers);
+      }
+      const countryForSync = {
+        country_iso: countryIso, name: body.name, phone_prefix: body.phone_prefix,
+        currency_code: body.currency_code, currency_value_in_xaf: body.currency_value_in_xaf,
+        flag_emoji: body.flag_emoji ?? null, regions: body.regions, enabled_methods: body.enabled_methods,
+        is_active: body.is_active,
+      };
+      if (!await syncCountryToD1(env, countryForSync)) {
+        if (body.is_active) await rpc(supabase, "admin_set_supported_country_active", { p_country_iso: countryIso, p_is_active: false });
+        return failure("country_d1_sync_failed", 503, headers);
+      }
+      return success({ ...(result.data as Record<string, unknown>), d1_synced: true }, headers);
     }
     return failure("method_not_allowed", 405, headers);
   }
 
-  if (method === "GET" && (path === "/api/v1/admin/regions" || path === "/api/v1/admin/countries")) {
-    const { data, error } = await supabase.from("regional_market_configurations")
-      .select("country_iso,currency_code,base_marketplace_fee_pct,premium_subscriber_fee_pct,withdrawal_fee_pct,is_operational,fee_fixed_premium,fee_fixed_base")
-      .order("country_iso", { ascending: true }).abortSignal(AbortSignal.timeout(5_000));
-    if (error) return failure("regions_lookup_failed", 502, headers);
-    return success(data || [], headers);
-  }
   if (method === "GET" && path === "/api/v1/admin/payment-adapter") {
     const provider = (url.searchParams.get("provider") || "").trim().toUpperCase();
     if (!/^[A-Z][A-Z0-9_]{1,39}$/.test(provider)) return failure("invalid_payment_provider",400,headers);
