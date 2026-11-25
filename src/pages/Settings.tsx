@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Moon, Sun, Languages, Lock, User, Eye, Tag,
   Ban, Shield, FileText, Bell, Search, ChevronRight, LogOut, Flag,
-  Activity, UserX
+  Activity, UserX, SlidersHorizontal
 } from 'lucide-react';
 import { d1Logout } from '../lib/d1Api';
 import { useI18n } from '../contexts/i18n';
@@ -39,6 +39,7 @@ export default function Settings() {
         { icon: <Eye size={16} />, label: 'Profile details', sub: 'Who can see your info', path: '/settings/details' },
         { icon: <Tag size={16} />, label: 'Profile and tagging', sub: 'Who can tag you', path: '/settings/tagging' },
         { icon: <Ban size={16} />, label: 'Blocking', sub: 'Manage blocked users', path: '/settings/blocking' },
+        { icon: <SlidersHorizontal size={16} />, label: 'Feed preferences', sub: 'Manage topics and recommendations', path: '/settings/feed' },
       ],
     },
     {
