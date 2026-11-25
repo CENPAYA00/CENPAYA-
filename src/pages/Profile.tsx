@@ -81,7 +81,7 @@ export default function Profile() {
 
   const handleShare = async () => {
     if (!user) return;
-    const url = `${window.location.origin}/profile/${user.id}`;
+    const url = `${window.location.origin}/seller/${user.id}`;
     if (navigator.share) {
       try { await navigator.share({ title: `@${user.username} on CenPaya`, url }); } catch {}
     } else {
