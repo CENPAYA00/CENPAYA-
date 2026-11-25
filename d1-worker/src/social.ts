@@ -45,6 +45,10 @@ async function canViewProfile(db: D1Database, viewerId: string | null, profileId
   if (blocked) return false;
   if (visibility === "public") return true;
   if (visibility === "followers") return !!(await db.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(viewerId, profileId).first());
+  if (visibility === "private") {
+    const [a,b] = [viewerId,profileId].sort();
+    return !!(await db.prepare("SELECT 1 FROM friendships WHERE user_a_id=? AND user_b_id=?").bind(a,b).first());
+  }
   return false;
 }
 
@@ -203,8 +207,12 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     if (!UUID.test(targetId)) return fail("Invalid user id", 400);
     if (suffix === "follow-status" && method === "GET") {
       if (!user) return fail("Unauthorized", 401);
-      const row = await env.DB.prepare("SELECT 1 AS following FROM user_follows WHERE follower_id=? AND following_id=?").bind(user.id, targetId).first();
-      return json({ success: true, following: !!row });
+      const [row,pending,friend] = await Promise.all([
+        env.DB.prepare("SELECT 1 AS following FROM user_follows WHERE follower_id=? AND following_id=?").bind(user.id,targetId).first(),
+        env.DB.prepare("SELECT 1 AS pending FROM friend_requests WHERE requester_id=? AND recipient_id=? AND status='pending'").bind(user.id,targetId).first(),
+        env.DB.prepare("SELECT 1 AS friend FROM friendships WHERE user_a_id=? AND user_b_id=?").bind(...[user.id,targetId].sort()).first()
+      ]);
+      return json({ success: true, following: !!row, request_sent: !!pending, friends: !!friend });
     }
     if (suffix === "count" && method === "GET") {
       const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM user_follows WHERE following_id=?").bind(targetId).first<{ count: number }>();
@@ -223,9 +231,20 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       if (targetId === user.id) return fail("You cannot follow yourself", 400);
       const target = await env.DB.prepare("SELECT id,profile_visibility FROM users WHERE id=? AND account_status='active' AND banned=0 AND deleted_at IS NULL").bind(targetId).first<{ id: string; profile_visibility: string }>();
       if (!target) return fail("Profile not found", 404);
-      if (target.profile_visibility === "private") return fail("This profile is private", 403);
       const blocked = await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id, targetId, targetId, user.id).first();
       if (blocked) return fail("This follow is unavailable", 403);
+      if (target.profile_visibility === "private") {
+        if (method === "DELETE") {
+          await env.DB.prepare("UPDATE friend_requests SET status='cancelled',responded_at="+NOW+",updated_at="+NOW+" WHERE requester_id=? AND recipient_id=? AND status='pending'").bind(user.id,targetId).run();
+          return json({success:true,following:false,request_sent:false});
+        }
+        const existing = await env.DB.prepare("SELECT id FROM friend_requests WHERE requester_id=? AND recipient_id=? AND status='pending'").bind(user.id,targetId).first();
+        if (existing) return json({success:true,following:false,request_sent:true});
+        const requestId=uuid();
+        await env.DB.prepare("INSERT INTO friend_requests(id,requester_id,recipient_id,status) VALUES(?,?,?,'pending')").bind(requestId,user.id,targetId).run();
+        await notify(env,targetId,user.id,"friend_request","user",user.id,"Follow request",user.display_name+" requested to follow your private profile.");
+        return json({success:true,following:false,request_sent:true},201);
+      }
       if (method === "POST") {
         const result = await env.DB.prepare("INSERT OR IGNORE INTO user_follows(follower_id,following_id) VALUES(?,?)").bind(user.id, targetId).run();
         const reverse = await env.DB.prepare("SELECT 1 FROM user_follows WHERE follower_id=? AND following_id=?").bind(targetId,user.id).first();
