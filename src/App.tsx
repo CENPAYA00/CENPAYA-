@@ -47,6 +47,7 @@ const SettingsDetails = lazy(() => import('./pages/SettingsDetails'));
 const SettingsTagging = lazy(() => import('./pages/SettingsTagging'));
 const SettingsBlocking = lazy(() => import('./pages/SettingsBlocking'));
 const SettingsAccount = lazy(() => import('./pages/SettingsAccount'));
+const SettingsFeed = lazy(() => import('./pages/SettingsFeed'));
 const ContactSupport = lazy(() => import('./pages/ContactSupport'));
 const MyPosts = lazy(() => import('./pages/MyPosts'));
 const MyListings = lazy(() => import('./pages/MyListings'));
@@ -135,6 +136,7 @@ export default function App() {
             <Route path="/settings/tagging" element={<SettingsTagging />} />
             <Route path="/settings/blocking" element={<SettingsBlocking />} />
             <Route path="/settings/account" element={<SettingsAccount />} />
+            <Route path="/settings/feed" element={<SettingsFeed />} />
 
             <Route path="/contact-support" element={<ContactSupport />} />
             <Route path="/contact-support/:id" element={<ContactThread />} />
