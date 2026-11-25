@@ -24,7 +24,7 @@ type Dashboard = {
 };
 
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
-const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
+const METHODS: Method[] = ['mtn_momo', 'orange_money'];
 
 export default function Referrals() {
   const navigate = useNavigate();
@@ -64,8 +64,8 @@ export default function Referrals() {
         const profile = prefsRes.data?.profile || {};
         const iso = profile.country_iso || 'CM';
         setSelectedCountry(iso);
-        if (profile.momo_number) setPhone(String(profile.momo_number).replace(/^\\+\\d+\\s?/, ''));
-        else if (profile.phone) setPhone(String(profile.phone).replace(/^\\+\\d+\\s?/, ''));
+        if (profile.momo_number) setPhone(String(profile.momo_number).replace(/^\+\d+\s?/, ''));
+        else if (profile.phone) setPhone(String(profile.phone).replace(/^\+\d+\s?/, ''));
         if (profile.momo_provider && METHODS.includes(profile.momo_provider as Method)) setProvider(profile.momo_provider as Method);
         setDashboard({
           direct_referrals_count: Number(refRes.data?.direct_referrals_count || 0),
