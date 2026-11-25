@@ -675,7 +675,7 @@ export async function handleAuthenticatedApi(
         ...row, code: row.country_iso, ...(byCode.get(row.country_iso) || {}), prices: byPrice.get(String(row.country_iso)) || {},
       })), headers);
     }
-    const countryPath = path.match(/^\\/api\\/v1\\/admin\\/countries\\/([A-Z]{2})$/);
+    const countryPath = path.match(/^\/api\/v1\/admin\/countries\/([A-Z]{2})$/);
     if (!countryPath) return failure("invalid_country_path", 400, headers);
     const countryIso = countryPath[1];
     if (method === "PATCH") {
@@ -712,7 +712,7 @@ export async function handleAuthenticatedApi(
       const prices = body?.prices && typeof body.prices === "object" && !Array.isArray(body.prices) ? body.prices as Record<string, unknown> : null;
       if (!body || !onlyKeys(body, ["code","name","phone_prefix","currency_code","currency_value_in_xaf","flag_emoji","regions","enabled_methods","is_active","base_marketplace_fee_pct","premium_subscriber_fee_pct","withdrawal_fee_pct","fee_fixed_base","fee_fixed_premium","prices"]) ||
           body.code !== countryIso || !isText(body.name, 100, 2) ||
-          typeof body.phone_prefix !== "string" || !/^\\+[1-9][0-9]{0,6}$/.test(body.phone_prefix) ||
+          typeof body.phone_prefix !== "string" || !(body.phone_prefix.startsWith("+") && /^[1-9][0-9]{0,6}$/.test(body.phone_prefix.slice(1))) ||
           typeof body.currency_code !== "string" || !/^[A-Z]{3}$/.test(body.currency_code) ||
           typeof body.currency_value_in_xaf !== "number" || !Number.isFinite(body.currency_value_in_xaf) || body.currency_value_in_xaf <= 0 ||
           (body.flag_emoji !== null && body.flag_emoji !== undefined && !isText(body.flag_emoji, 32)) ||
