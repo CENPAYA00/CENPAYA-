@@ -178,16 +178,21 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
   }
   if(path==="/api/market/search"&&method==="GET"){
     const q=str(url.searchParams.get("q"),100).replace(/[%_]/g,""),category=str(url.searchParams.get("category_id"),64),country=str(url.searchParams.get("country"),2).toUpperCase(),listingType=str(url.searchParams.get("type"),20)||"product";
-    const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||24),1),50),offset=Math.max(Number(url.searchParams.get("offset")||0),0);
-    const where:string[]=["l.status='active'","l.deleted_at IS NULL","l.moderation_status='approved'","u.account_status='active'","u.banned=0","u.deleted_at IS NULL"];const values:unknown[]=[];
-    if(q){where.push("s.product_title LIKE ?");values.push("%"+q+"%");}
+    const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||24),1),50),offset=Math.min(Math.max(Number(url.searchParams.get("offset")||0),0),500);
+    const viewerId=user?.id||null;
+    const where:string[]=["l.status='active'","l.deleted_at IS NULL","l.moderation_status='approved'","u.account_status='active'","u.banned=0","u.deleted_at IS NULL"];const values:unknown[]=[viewerId,viewerId,viewerId,viewerId];
+    if(q){where.push("(s.product_title LIKE ? OR l.description LIKE ? OR u.username LIKE ? OR COALESCE(l.city,'') LIKE ?)");values.push("%"+q+"%","%"+q+"%","%"+q+"%","%"+q+"%");}
     if(category){where.push("s.category_id=?");values.push(category);}
     if(country){where.push("s.country_code=?");values.push(country);}
     if(listingType==="product"||listingType==="service"){where.push("s.listing_type=?");values.push(listingType);}
-    const viewerId=user?.id||null;
     where.push("(l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))");values.push(viewerId,viewerId,viewerId);
     where.push("(? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=l.seller_id) OR (b.blocker_id=l.seller_id AND b.blocked_id=?)))");values.push(viewerId,viewerId,viewerId);
-    const rows=await env.DB.prepare("SELECT s.*,l.seller_id,l.description,l.price_type,l.price_is_range,l.price_min,l.price_max,l.images_json,l.documents_json,l.estimated_delivery_days,l.is_demo AS is_demo,l.status,l.availability,l.delivery_required,l.region,l.city,l.country_code,l.hide_from_friends,u.avatar_url AS seller_avatar_url,u.is_premium AS seller_is_premium,(SELECT AVG(r.rating) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS rating,(SELECT COUNT(*) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS reviews_count FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_id WHERE "+where.join(" AND ")+" ORDER BY s.is_boosted DESC,s.published_date DESC LIMIT ? OFFSET ?").bind(...values,limit,offset).all();
+    const rows=await env.DB.prepare("SELECT s.*,l.seller_id,l.description,l.price_type,l.price_is_range,l.price_min,l.price_max,l.images_json,l.documents_json,l.estimated_delivery_days,l.is_demo AS is_demo,l.status,l.availability,l.delivery_required,l.region,l.city,l.country_code,l.hide_from_friends,u.avatar_url AS seller_avatar_url,u.is_premium AS seller_is_premium,(SELECT AVG(r.rating) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS rating,(SELECT COUNT(*) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS reviews_count,
+        CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=l.seller_id) THEN 18
+          WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=l.seller_id AND f.following_id=?) THEN 12
+          WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)) THEN 10 ELSE 0 END AS relationship_score,
+        COALESCE((SELECT SUM(i.score) FROM user_interest_signals i WHERE i.user_id=? AND i.score>0 AND instr(lower(s.product_title||' '||COALESCE(l.description,'')),i.topic_key)>0),0) AS interest_score
+        FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_id WHERE "+where.join(" AND ")+" ORDER BY s.is_boosted DESC,(relationship_score+interest_score) DESC,s.published_date DESC LIMIT ? OFFSET ?").bind(...values,viewerId,viewerId,viewerId,viewerId,viewerId,limit,offset).all();
     const data=await Promise.all(rows.results.map(async(row:any)=>{
       const images=(await Promise.all(jsonArray(row.images_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
       const documents=(await Promise.all(jsonArray(row.documents_json).map(value=>resolveMediaUrl(value,env,url.origin)))).filter((value):value is string=>!!value);
