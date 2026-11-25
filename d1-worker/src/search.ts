@@ -78,12 +78,15 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,
 export async function handleSearchRoute(request:Request,env:Env,viewerId:string|null=null):Promise<Response|null>{
   const url=new URL(request.url);
   if(url.pathname.replace(/\/$/,"")!=="/api/search"||request.method.toUpperCase()!=="GET")return null;
-  const q=str(url.searchParams.get("q"),200),kind=str(url.searchParams.get("type"),20)||"all";
+  const q=str(url.searchParams.get("q"),200),requestedKind=str(url.searchParams.get("type"),20)||"all";
+  const kind=["all","home","market","services"].includes(requestedKind)?requestedKind:"all";
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||30),1),50);
   if(!q)return json({success:true,data:[]});
   if(viewerId){
+    // Debounced searches can fire repeatedly while a user types. Count a topic
+    // at most once per six hours so typing does not overwhelm real interests.
     for(const topic of searchTopics(q)){
-      await env.DB.prepare("INSERT INTO user_interest_signals(user_id,topic_key,score) VALUES(?,?,1.5) ON CONFLICT(user_id,topic_key) DO UPDATE SET score=MIN(100,user_interest_signals.score+1.5),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')")
+      await env.DB.prepare("INSERT INTO user_interest_signals(user_id,topic_key,score) VALUES(?,?,1.5) ON CONFLICT(user_id,topic_key) DO UPDATE SET score=CASE WHEN user_interest_signals.updated_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 hours') THEN MIN(100,user_interest_signals.score+1.5) ELSE user_interest_signals.score END,updated_at=CASE WHEN user_interest_signals.updated_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 hours') THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE user_interest_signals.updated_at END")
         .bind(viewerId,topic).run();
     }
   }
@@ -168,6 +171,10 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
       (kind==="listing"&&item.kind==="listing")||(kind==="service"&&item.kind==="service"));
   }
   if(!verified.length){const fallback=await fallbackSearch(env,url,q,kind,limit,viewerId);await cachePut(env,cacheKey,fallback,60);return json({success:true,data:fallback,source:"d1-fallback"});}
+  // D1 does not guarantee the same row order as AutoRAG. Restore semantic
+  // relevance order after authorization and visibility checks.
+  const relevanceOrder=new Map(ids.map((id,index)=>[id,index]));
+  verified.sort((a,b)=>(relevanceOrder.get(a.id)??Number.MAX_SAFE_INTEGER)-(relevanceOrder.get(b.id)??Number.MAX_SAFE_INTEGER));
   await cachePut(env,cacheKey,verified,60);
   return json({success:true,data:verified,source:"ai-search"});
 }
