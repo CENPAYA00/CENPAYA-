@@ -63,7 +63,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
   if((path==="/api/market/my-listings"||path==="/api/market/my-services")&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const type=path.endsWith("my-services")?"service":"product";
-    const rows=await env.DB.prepare(`SELECT l.id,l.seller_id,l.category_id,l.title,l.description,l.listing_type,l.condition,l.price_type,l.price_amount,l.currency_code,l.country_code,l.region,l.city,l.status,l.sale_state,l.sold_at,l.purge_after,l.published_at,l.created_at,l.updated_at,l.price_is_range,l.price_min,l.price_max,l.estimated_delivery_days,l.images_json,l.documents_json,c.name AS category
+    const rows=await env.DB.prepare(`SELECT l.id,l.seller_id,l.category_id,l.title,l.description,l.listing_type,l.condition,l.price_type,l.price_amount,l.currency_code,l.country_code,l.region,l.city,l.status,l.moderation_status,l.sale_state,l.sold_at,l.purge_after,l.published_at,l.created_at,l.updated_at,l.price_is_range,l.price_min,l.price_max,l.estimated_delivery_days,l.images_json,l.documents_json,c.name AS category
       FROM marketplace_listings l JOIN marketplace_categories c ON c.id=l.category_id
       WHERE l.seller_id=? AND l.listing_type=? AND l.deleted_at IS NULL ORDER BY l.created_at DESC LIMIT 100`).bind(user.id,type).all();
     const data=await Promise.all(rows.results.map(async(row:any)=>{
