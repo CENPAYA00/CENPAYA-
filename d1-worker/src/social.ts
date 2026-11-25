@@ -360,8 +360,8 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     const folder = await env.DB.prepare("SELECT id,name FROM post_saved_folders WHERE id=? AND user_id=?").bind(folderId,user.id).first<{id:string;name:string}>();
     if (!folder) return fail("Saved folder not found", 404);
     if (savedFolder[2] === "posts" && method === "GET") {
-      const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url
-        FROM post_saved_folder_items i JOIN posts p ON p.id=i.post_id JOIN users u ON u.id=p.author_id
+      const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,v.id AS video_id,v.duration_seconds
+        FROM post_saved_folder_items i JOIN posts p ON p.id=i.post_id JOIN users u ON u.id=p.author_id LEFT JOIN video_assets v ON v.post_id=p.id AND v.status='ready'
         WHERE i.folder_id=? AND i.user_id=? AND p.status='published' AND p.deleted_at IS NULL
         AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id))
           OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?))))
@@ -505,7 +505,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
 
   if (path === "/api/posts/saved" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
-    const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url FROM post_bookmarks b JOIN posts p ON p.id=b.post_id JOIN users u ON u.id=p.author_id WHERE b.user_id=? AND p.status='published' AND p.deleted_at IS NULL AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id)) OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)))) AND NOT EXISTS(SELECT 1 FROM user_blocks bl WHERE (bl.blocker_id=? AND bl.blocked_id=p.author_id) OR (bl.blocker_id=p.author_id AND bl.blocked_id=?)) ORDER BY b.created_at DESC LIMIT 100`).bind(user.id,user.id,user.id,user.id,user.id,user.id,user.id).all();
+    const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,v.id AS video_id,v.duration_seconds FROM post_bookmarks b JOIN posts p ON p.id=b.post_id JOIN users u ON u.id=p.author_id LEFT JOIN video_assets v ON v.post_id=p.id AND v.status='ready' WHERE b.user_id=? AND p.status='published' AND p.deleted_at IS NULL AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id)) OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)))) AND NOT EXISTS(SELECT 1 FROM user_blocks bl WHERE (bl.blocker_id=? AND bl.blocked_id=p.author_id) OR (bl.blocker_id=p.author_id AND bl.blocked_id=?)) ORDER BY b.created_at DESC LIMIT 100`).bind(user.id,user.id,user.id,user.id,user.id,user.id,user.id).all();
     return json({ success: true, data: await hydratePosts(env,url.origin,rows.results as Array<Record<string,unknown>>) });
   }
   if (path === "/api/posts/mine" && method === "GET") {
