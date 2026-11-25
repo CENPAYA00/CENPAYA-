@@ -331,7 +331,7 @@ export default function FeedPostCard({
         <MetricsRow likes={post.likes_count} comments={post.comments_count} shares={post.shares_count} onComment={() => onComment?.(post.id)} />
         
         {/* EXACTLY AS CLAUDE SPECIFIED */}
-        {!readOnly && <ActionBar post={post} isLiked={isLiked} isSaved={isSaved} onLike={() => onLike?.(post.id)} onComment={() => onComment?.(post.id)} onShare={openShareSheet} onSave={() => onSave?.(post.id)} />}
+        {!readOnly && <ActionBar post={post} isLiked={isLiked} isSaved={isSaved} onLike={() => onLike?.(post.id)} onComment={() => onComment?.(post.id)} onShare={openShareSheet} onSave={openSaveFolders} />}
       </article>
       {menus}
     </>
