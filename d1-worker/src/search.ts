@@ -25,11 +25,12 @@ function searchTopics(value:string):string[]{
 
 async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,viewerId:string|null):Promise<SearchHit[]>{
   if(kind==="all"){
-    const [posts,listings]=await Promise.all([
+    const [posts,listings,services]=await Promise.all([
       fallbackSearch(env,url,q,"home",limit,viewerId),
       fallbackSearch(env,url,q,"market",limit,viewerId),
+      fallbackSearch(env,url,q,"services",limit,viewerId),
     ]);
-    return [...posts,...listings].slice(0,limit);
+    return [...posts,...listings,...services].slice(0,limit);
   }
   const term="%"+q.replace(/[%_]/g,"")+"%",results:SearchHit[]=[];
   if(kind==="home"){
