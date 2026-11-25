@@ -36,6 +36,14 @@ function extractInterestTopics(value: unknown): string[] {
     .filter(token => token.length >= 3 && token.length <= 28 && !INTEREST_STOP_WORDS.has(token) && !/^\\d+$/.test(token)))].slice(0, 8);
 }
 
+async function applyInterestSignal(db: D1Database, userId: string, content: unknown, weight: number): Promise<void> {
+  const topics = extractInterestTopics(content);
+  for (const topic of topics) {
+    await db.prepare("INSERT INTO user_interest_signals(user_id,topic_key,score) VALUES(?,?,?) ON CONFLICT(user_id,topic_key) DO UPDATE SET score=MAX(-100,MIN(100,user_interest_signals.score+excluded.score)),updated_at=" + NOW)
+      .bind(userId,topic,weight/Math.max(1,topics.length)).run();
+  }
+}
+
 const PROFILE_SELECT = "u.id,u.username,u.display_name,u.avatar_url,u.bio,u.location_city,u.occupation,u.created_at";
 
 async function canViewProfile(db: D1Database, viewerId: string | null, profileId: string, visibility: string): Promise<boolean> {
@@ -147,10 +155,6 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     if (eventType === "dwell" && dwellMs >= 2500) weight = Math.min(8, 2 + dwellMs / 6000);
     if (eventType === "video_watch" && watchMs >= 3000) weight = Math.min(10, 2 + watchMs / 10000);
     if (eventType === "video_complete" || (eventType === "video_watch" && b.completed === true)) weight = 12;
-    if (eventType === "like") weight = 7;
-    if (eventType === "comment") weight = 9;
-    if (eventType === "save") weight = 12;
-    if (eventType === "share") weight = 14;
     if (eventType === "skip") weight = -3;
     if (eventType === "dwell" && dwellMs < 2500) weight = 0;
     if (weight !== 0) {
@@ -329,7 +333,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       return json({ success: true, data: hydrated });
     }
     if (action === "comments" && method === "GET") {
-      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null }>();
+      const post = await env.DB.prepare("SELECT author_id,visibility,status,deleted_at,content FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; status: string; deleted_at: string | null; content: string }>();
       if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB, user?.id || null, post.author_id, post.visibility))) return fail("Post not found", 404);
       const rows = await env.DB.prepare(`SELECT c.id,c.post_id,c.content AS body,c.author_id AS user_id,c.created_at,c.status AS moderation_status,u.username,u.avatar_url FROM post_comments c JOIN users u ON u.id=c.author_id WHERE c.post_id=? AND c.status='published' AND c.deleted_at IS NULL ORDER BY c.created_at ASC LIMIT 200`).bind(postId).all();
       return json({ success: true, data: rows.results });
@@ -339,10 +343,11 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const b = await body(request); if (!b) return fail("Valid JSON body required");
       const content = str(b.body, 2000);
       if (!content) return fail("Comment cannot be empty");
-      const post = await env.DB.prepare("SELECT author_id,visibility,comments_enabled,status,deleted_at FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; comments_enabled: number; status: string; deleted_at: string | null }>();
+      const post = await env.DB.prepare("SELECT author_id,visibility,comments_enabled,status,deleted_at,content FROM posts WHERE id=?").bind(postId).first<{ author_id: string; visibility: string; comments_enabled: number; status: string; deleted_at: string | null; content: string }>();
       if (!post || post.status !== "published" || post.deleted_at || !post.comments_enabled || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Comments are unavailable", 404);
       const id = uuid();
       await env.DB.prepare("INSERT INTO post_comments(id,post_id,author_id,content) VALUES(?,?,?,?)").bind(id, postId, user.id, content).run();
+      await applyInterestSignal(env.DB,user.id,post.content,9);
       if (post.author_id !== user.id) await notify(env, post.author_id, user.id, "post_comment", "post", postId, "New comment", user.display_name + " commented on your post.");
       return json({ success: true, id }, 201);
     }
@@ -351,10 +356,11 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const b = await body(request);
       const preference = str(b?.preference, 30) || "not_interested";
       if (!["interested", "not_interested"].includes(preference)) return fail("Invalid feed preference");
-      const post = await env.DB.prepare("SELECT author_id,visibility FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string }>();
+      const post = await env.DB.prepare("SELECT author_id,visibility,content FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string; content: string }>();
       if (!post || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
       await env.DB.prepare("INSERT INTO user_feed_post_preferences(user_id,post_id,preference) VALUES(?,?,?) ON CONFLICT(user_id,post_id) DO UPDATE SET preference=excluded.preference,updated_at=" + NOW)
         .bind(user.id, postId, preference).run();
+      await applyInterestSignal(env.DB,user.id,post.content,preference==="not_interested"?-10:4);
       return json({ success: true, preference });
     }
     if (action === "my-state" && method === "GET") {
@@ -373,18 +379,25 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       if (!post || post.status !== "published" || post.deleted_at || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
       if (method === "POST") {
         const result = await env.DB.prepare("INSERT OR IGNORE INTO post_reactions(post_id,user_id,reaction_type) VALUES(?,?,'like')").bind(postId, user.id).run();
+        if (result.meta.changes) await applyInterestSignal(env.DB,user.id,post.content,7);
         if (result.meta.changes && post.author_id !== user.id) await notify(env, post.author_id, user.id, "post_reaction", "post", postId, "New like", user.display_name + " liked your post.");
       } else {
-        await env.DB.prepare("DELETE FROM post_reactions WHERE post_id=? AND user_id=?").bind(postId, user.id).run();
+        const result = await env.DB.prepare("DELETE FROM post_reactions WHERE post_id=? AND user_id=?").bind(postId, user.id).run();
+        if (result.meta.changes) await applyInterestSignal(env.DB,user.id,post.content,-4);
       }
       return json({ success: true, liked: method === "POST" });
     }
     if (action === "save" && (method === "POST" || method === "DELETE")) {
       if (!user) return fail("Unauthorized", 401);
-      const post = await env.DB.prepare("SELECT author_id,visibility FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string }>();
+      const post = await env.DB.prepare("SELECT author_id,visibility,content FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string; content: string }>();
       if (!post || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
-      if (method === "POST") await env.DB.prepare("INSERT OR IGNORE INTO post_bookmarks(user_id,post_id) VALUES(?,?)").bind(user.id, postId).run();
-      else await env.DB.prepare("DELETE FROM post_bookmarks WHERE user_id=? AND post_id=?").bind(user.id, postId).run();
+      if (method === "POST") {
+        const result = await env.DB.prepare("INSERT OR IGNORE INTO post_bookmarks(user_id,post_id) VALUES(?,?)").bind(user.id, postId).run();
+        if (result.meta.changes) await applyInterestSignal(env.DB,user.id,post.content,12);
+      } else {
+        const result = await env.DB.prepare("DELETE FROM post_bookmarks WHERE user_id=? AND post_id=?").bind(user.id, postId).run();
+        if (result.meta.changes) await applyInterestSignal(env.DB,user.id,post.content,-5);
+      }
       return json({ success: true, saved: method === "POST" });
     }
     if (action === "share" && method === "POST") {
@@ -392,9 +405,10 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const b = await body(request);
       const visibility = str(b?.visibility, 20) || "public";
       if (!["public", "followers", "friends", "private"].includes(visibility)) return fail("Invalid share visibility");
-      const post = await env.DB.prepare("SELECT author_id,visibility FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string }>();
+      const post = await env.DB.prepare("SELECT author_id,visibility,content FROM posts WHERE id=? AND status='published' AND deleted_at IS NULL").bind(postId).first<{ author_id: string; visibility: string; content: string }>();
       if (!post || !(await canViewPost(env.DB, user.id, post.author_id, post.visibility))) return fail("Post not found", 404);
-      await env.DB.prepare("INSERT OR IGNORE INTO post_shares(id,post_id,user_id,share_message,visibility) VALUES(?,?,?,?,?)").bind(uuid(), postId, user.id, str(b?.message, 500) || null, visibility).run();
+      const result = await env.DB.prepare("INSERT OR IGNORE INTO post_shares(id,post_id,user_id,share_message,visibility) VALUES(?,?,?,?,?)").bind(uuid(), postId, user.id, str(b?.message, 500) || null, visibility).run();
+      if (result.meta.changes) await applyInterestSignal(env.DB,user.id,post.content,14);
       return json({ success: true });
     }
     if (action === "archive" && method === "POST") {
