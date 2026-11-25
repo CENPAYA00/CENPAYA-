@@ -516,7 +516,7 @@ export async function handleAuthenticatedPaymentApi(
     if (typeof withdrawalId !== "string") return jsonResponse({ success: false, error: "withdrawal_request_failed" }, 400, headers);
 
     const { data: current, error: lookupError } = await db.from("user_withdrawals")
-      .select("id,status,gateway_reference,net_disbursement")
+      .select("id,status,gateway_reference,requested_amount,fee_charged,net_disbursement,currency_code")
       .eq("id", withdrawalId).eq("user_id", userId).maybeSingle();
     if (lookupError || !current) return jsonResponse({ success: false, error: "withdrawal_status_unavailable" }, 502, headers);
     if (current.status !== "pending" || current.gateway_reference) {
@@ -540,7 +540,7 @@ export async function handleAuthenticatedPaymentApi(
       ? userInfo.username.trim() : "CenPaya user";
 
     try {
-      const reference = await startPayout(gateway, creds, env, withdrawalId, value, mobile, destination, recipientName);
+      const reference = await startPayout(gateway, creds, env, withdrawalId, Number(current.net_disbursement), mobile, destination, recipientName);
       const recorded = await retryRpcTrue(db, "record_withdrawal_provider_reference", {
         p_withdrawal_id: withdrawalId, p_gateway_provider: gateway, p_gateway_reference: reference,
       }, String(withdrawalId));
