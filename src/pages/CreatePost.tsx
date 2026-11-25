@@ -18,6 +18,7 @@ export default function CreatePost() {
   const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
 
   const [user, setUser] = useState<any>(null);
   const [content, setContent] = useState('');
@@ -31,6 +32,9 @@ export default function CreatePost() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [videoEnabled, setVideoEnabled] = useState(false);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -41,6 +45,19 @@ export default function CreatePost() {
 
   useEffect(() => {
     return () => { previews.forEach(p => URL.revokeObjectURL(p)); };
+  }, [previews]);
+
+  useEffect(() => () => { if (videoPreview) URL.revokeObjectURL(videoPreview); }, [videoPreview]);
+
+  const chooseVideo = (file?: File) => {
+    if (!file) return;
+    if (!['video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska'].includes(file.type.toLowerCase())) return setErrorMsg('Choose an MP4, MOV, WebM or MKV video.');
+    if (file.size > 500 * 1024 * 1024) return setErrorMsg('Videos must be 500 MB or smaller.');
+    if (images.length) return setErrorMsg('Remove selected photos before adding a video.');
+    setErrorMsg('');
+    setVideoFile(file);
+    setVideoPreview(URL.createObjectURL(file));
+  };
   }, [previews]);
 
   const hasImages = images.length > 0;
@@ -66,6 +83,7 @@ export default function CreatePost() {
 
   const handleFilePick = (files: FileList) => {
     const arr = Array.from(files);
+    if (videoFile) { setErrorMsg('Remove the selected video before adding photos.'); return; }
     const next = [...images, ...arr].slice(0, 10);
     setImages(next);
     setPreviews(next.map(f => URL.createObjectURL(f)));
@@ -81,7 +99,7 @@ export default function CreatePost() {
 
   const handlePost = async () => {
     setErrorMsg('');
-    if (!content.trim() && images.length === 0) {
+    if (!content.trim() && images.length === 0 && !videoFile) {
       setSwatchId('default');
       return setErrorMsg('Write something or add a photo.');
     }
@@ -90,6 +108,30 @@ export default function CreatePost() {
 
     setLoading(true);
     try {
+      if (videoFile) {
+        setUploadProgress('Preparing secure video upload…');
+        const intent = await d1Request<{ data: { video_id: string; upload_url: string; method: string; headers?: Record<string, string> } }>('/api/videos/upload-intent', {
+          method: 'POST', body: JSON.stringify({ filename: videoFile.name, mime_type: videoFile.type, size_bytes: videoFile.size }),
+        });
+        const upload = await fetch(intent.data.upload_url, { method: intent.data.method || 'PUT', headers: intent.data.headers || { 'Content-Type': videoFile.type }, body: videoFile });
+        if (!upload.ok) throw new Error('The video could not be uploaded. Please try again.');
+        setUploadProgress('Video uploaded. Preparing playback…');
+        await d1Request(`/api/videos/${encodeURIComponent(intent.data.video_id)}/complete`, { method: 'POST', body: JSON.stringify({}) });
+        let status = 'processing';
+        for (let attempt = 0; attempt < 90; attempt += 1) {
+          await new Promise(resolve => window.setTimeout(resolve, 2000));
+          const result = await d1Request<{ data: { status: string } }>(`/api/videos/${encodeURIComponent(intent.data.video_id)}/status`);
+          status = result.data.status;
+          if (status === 'ready' || status === 'failed') break;
+          setUploadProgress('Processing video… ' + Math.min(99, Math.round((attempt + 1) / 90 * 100)) + '%');
+        }
+        if (status !== 'ready') throw new Error(status === 'failed' ? 'Video processing failed. Please try another file.' : 'Video is still processing. Please try publishing again shortly.');
+        setUploadProgress('Publishing video…');
+        await d1Request('/api/videos/publish', { method: 'POST', body: JSON.stringify({ video_id: intent.data.video_id, content: content.trim() }) });
+        setCached('home_posts', null);
+        navigate('/home');
+        return;
+      }
       const urls: string[] = [];
       for (const img of images) {
         const compressed = await compressImage(img);
@@ -184,7 +226,13 @@ export default function CreatePost() {
             }`}
           />
 
-          {previews.length > 0 && (
+          {videoPreview && (
+          <div className="p-3 bg-black relative">
+            <video src={videoPreview} controls playsInline className="w-full max-h-72 rounded-xl" />
+            <button type="button" onClick={() => { setVideoFile(null); setVideoPreview(null); }} className="absolute top-5 right-5 w-8 h-8 rounded-full bg-black/70 text-white grid place-items-center"><X size={16}/></button>
+          </div>
+        )}
+        {previews.length > 0 && (
             <div className="p-3 bg-white dark:bg-darkcard">
               <div className={`grid gap-1.5 ${previews.length === 1 ? 'grid-cols-1' : previews.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 {previews.map((src, i) => (
@@ -235,7 +283,7 @@ export default function CreatePost() {
           </button>
           
           {videoEnabled && (
-            <button onClick={() => alert('Video upload coming soon')} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold text-gray-600 dark:text-gray-300 rounded-lg shrink-0 cursor-pointer">
+            <button onClick={() => videoRef.current?.click()} disabled={images.length > 0 || loading} className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-bold text-gray-600 dark:text-gray-300 rounded-lg shrink-0 cursor-pointer disabled:opacity-40">
               <Video size={16} /> Video
             </button>
           )}
@@ -257,11 +305,13 @@ export default function CreatePost() {
       </div>
 
       <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e: React.ChangeEvent<HTMLInputElement>) => e.target.files && handleFilePick(e.target.files)} />
+      <input ref={videoRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" className="hidden" onChange={e => chooseVideo(e.target.files?.[0])} />
 
+      {uploadProgress && <div className="mt-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-200 p-3 text-xs font-semibold">{uploadProgress}</div>}
       {errorMsg && <div className="bg-red-50 border border-red-200 text-red-600 text-[11px] p-3 rounded-lg mt-3">{errorMsg}</div>}
 
-      <button onClick={handlePost} disabled={loading || (!content.trim() && images.length === 0)} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-xl text-[14px] mt-4 disabled:opacity-50 uppercase tracking-wide cursor-pointer">
-        {loading ? t('posting') : t('post')}
+      <button onClick={handlePost} disabled={loading || (!content.trim() && images.length === 0 && !videoFile)} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-xl text-[14px] mt-4 disabled:opacity-50 uppercase tracking-wide cursor-pointer">
+        {loading ? (uploadProgress || t('posting')) : t('post')}
       </button>
 
       {showFeeling && <FeelingPicker onClose={() => setShowFeeling(false)} onPick={(kind, option) => { setFeeling({ kind, option }); setShowFeeling(false); }} />}
