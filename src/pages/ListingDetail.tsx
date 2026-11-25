@@ -40,6 +40,10 @@ export default function ListingDetail() {
 
   const handleBuy = () => {
     if (!listing) return;
+    if (listing.price_is_range) {
+      void handleChat();
+      return;
+    }
     navigate(`/checkout?listing=${listing.id}`);
   };
 
@@ -203,7 +207,7 @@ export default function ListingDetail() {
               onClick={handleBuy}
               className="flex-1 bg-accent text-white font-bold py-3 rounded-xl text-[12px] flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer"
             >
-              <ShoppingCart size={15} /> Buy Now
+              <ShoppingCart size={15} /> {listing.price_is_range ? 'Discuss price' : 'Buy Now'}
             </button>
             <button
               onClick={handleChat}
