@@ -290,7 +290,7 @@ export default function ChatThread() {
 
                     {mine && (
                       <div className="flex justify-end mt-1">
-                        {isFailed ? <span className="text-[9px] text-red-300">Failed</span> : isPending ? <span className="w-2 h-2 rounded-full bg-white/50 animate-pulse" /> : <ReadReceipt delivered={!!m.delivered_at || true} read={!!m.read_at} />}
+                        {isFailed ? <span className="text-[9px] text-red-300">Failed</span> : isPending ? <span className="w-2 h-2 rounded-full bg-white/50 animate-pulse" /> : <ReadReceipt delivered={!!m.delivered_at} read={!!m.read_at} />}
                       </div>
                     )}
                   </div>
