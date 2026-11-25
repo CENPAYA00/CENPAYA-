@@ -11,11 +11,12 @@ export default function ContactAdmin() {
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const load = async () => {
-    setLoading(true);
-    try { const result = await d1Request<{ data: any[] }>('/api/support/tickets'); setTickets(result.data || []); }
-    catch (error: any) { alert(error.message || 'Could not load admin messages'); }
+    setLoading(true); setLoadError('');
+    try { const result = await d1Request<{ data: any[] }>('/api/support/tickets'); setTickets((result.data || []).filter(ticket => ticket.queue_type === 'admin')); }
+    catch (error: any) { setLoadError(error.message || 'Could not load admin messages'); }
     finally { setLoading(false); }
   };
 
@@ -42,6 +43,7 @@ export default function ContactAdmin() {
         </p>
       </div>
 
+      {loadError && <p className="text-[11px] text-red-600 bg-red-50 rounded-xl p-3 mb-3">{loadError}</p>}
       {loading && <p className="text-center text-xs text-gray-400 py-6">Loading...</p>}
 
       {!loading && tickets.length === 0 && (
@@ -110,7 +112,7 @@ function NewMessageSheet({ onClose, onSent }: { onClose: () => void; onSent: () 
 
     try {
       const normalizedCategory = ['general','account','technical','marketplace','payments','security','privacy','other'].includes(category) ? category : 'other';
-      await d1Request('/api/support/tickets', { method: 'POST', body: JSON.stringify({ category: normalizedCategory, subject: subject.trim(), description: message.trim() }) });
+      await d1Request('/api/support/tickets', { method: 'POST', body: JSON.stringify({ category: normalizedCategory, subject: subject.trim(), description: message.trim(), queue_type: 'admin' }) });
       setBusy(false);
       onSent();
       return;
