@@ -13,8 +13,6 @@ const METHODS: Method[] = ['mtn_momo', 'orange_money'];
 const METHOD_LABELS: Record<Method, string> = {
   mtn_momo: 'MTN MoMo',
   orange_money: 'Orange Money',
-  airtel_money: 'Airtel Money',
-  moov_money: 'Moov Money',
 };
 
 export default function Wallet() {
