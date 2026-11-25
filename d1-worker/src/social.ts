@@ -32,7 +32,7 @@ async function notify(env: Env, recipientId: string, actorId: string, type: stri
 const INTEREST_STOP_WORDS = new Set(["about","after","again","also","because","been","before","being","between","could","from","have","here","into","just","more","most","much","only","other","over","same","some","such","than","that","their","them","then","there","these","they","this","those","through","under","very","what","when","where","which","while","with","would","your","you","the","and","for","are","was","were","has","had","but","not","you","our","out","all","can","will","who","how","why","its","it's","his","her","she","him","they","them","una","les","des","dans","pour","avec","sur","est","sont","une","que","qui","pas","plus","tout","vous","nous","aux","par","comme","mais","donc"]);
 function extractInterestTopics(value: unknown): string[] {
   if (typeof value !== "string") return [];
-  return [...new Set(value.toLowerCase().normalize("NFKD").replace(/[^\\p{L}\\p{N}]+/gu, " ").split(/\\s+/)
+  return [...new Set(value.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").split(/\s+/)
     .filter(token => token.length >= 3 && token.length <= 28 && !INTEREST_STOP_WORDS.has(token) && !/^\\d+$/.test(token)))].slice(0, 8);
 }
 
@@ -82,15 +82,18 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       (SELECT COUNT(*) FROM post_shares s WHERE s.post_id=p.id) AS shares_count,
       CASE WHEN ? IS NULL THEN 0 WHEN p.author_id=? THEN 130
         WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 100
+        WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=p.author_id AND f.following_id=?) THEN 76
         WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)) THEN 82
         WHEN EXISTS(SELECT 1 FROM user_follows f1 JOIN user_follows f2 ON f2.follower_id=f1.following_id WHERE f1.follower_id=? AND f2.following_id=p.author_id) THEN 48
         ELSE 0 END AS relationship_score,
       COALESCE((SELECT SUM(i.score) FROM user_interest_signals i
         WHERE i.user_id=? AND i.score>0 AND instr(lower(COALESCE(p.content,'')),i.topic_key)>0),0) AS interest_score,
       CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 'Following'
+        WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=p.author_id AND f.following_id=?) THEN 'Follows you'
         WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)) THEN 'Friend'
         ELSE 'Suggested for you' END AS feed_reason,
       CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 1 ELSE 0 END AS is_following_author,
+      CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=p.author_id AND f.following_id=?) THEN 1 ELSE 0 END AS is_followed_by_author,
       CASE WHEN EXISTS(SELECT 1 FROM post_reactions r WHERE r.post_id=p.id AND r.user_id=? AND r.reaction_type='like') THEN 1 ELSE 0 END AS is_liked,
       CASE WHEN EXISTS(SELECT 1 FROM post_bookmarks b WHERE b.post_id=p.id AND b.user_id=?) THEN 1 ELSE 0 END AS is_saved,
       v.id AS video_id,v.duration_seconds,v.thumbnail_key,v.hls_key
@@ -109,7 +112,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
           (SELECT COUNT(*) FROM post_shares s WHERE s.post_id=p.id)*1.2)) DESC,
         COALESCE(p.published_at,p.created_at) DESC
       LIMIT ? OFFSET ?`)
-      .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,
+      .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,
         feedType,feedType,feedType,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,limit,offset)
       .all<Record<string, unknown>>();
     const hydrated = await hydratePosts(env, url.origin, rows.results);
