@@ -17,7 +17,7 @@ Canonical migrations 52–55 reconcile the Worker with the 2026-11-21 export and
 
 The export's views (`public_profiles`, `public_marketplace_search`, `stale_unverified_otps`) are present in the snapshot and used by the Worker. Backup tables are archival copies, not live application tables.
 
-Do not import the export's CSV/JSON/SQL row data into Git. It includes personal user data. This is the single canonical D1 migration directory for both the Worker and the main application. Wrangler is configured to read it through `migrations_dir = "../database/d1/migrations"`. Do not add parallel migration files under `d1-worker/migrations/`. Apply migrations 52–56 in order only after verifying the target D1 migration tracker. The supplied export is at version 51; do not reapply migrations if the live tracker has already advanced.
+Do not import the export's CSV/JSON/SQL row data into Git. It includes personal user data. This is the single canonical D1 migration directory for both the Worker and the main application. Wrangler is configured to read it through `migrations_dir = "../database/d1/migrations"`. Do not add parallel migration files under `d1-worker/migrations/`. Apply migrations 52–67 in order only after verifying the target D1 migration tracker. The supplied export is at version 51; do not apply these incremental migrations to an empty database, and do not reapply migrations if the live tracker has already advanced. See [the Cloudflare country configuration rollout](../docs/CLOUDFLARE_COUNTRY_CONFIGURATION_ROLLOUT.md) for the safe deployment sequence.
 
 ## Worker module layout and internal services
 
@@ -57,3 +57,8 @@ npm run build
 ```
 
 The test command compiles the security module and runs the built-in Node tests for identity assertion signing, claim contents, expiry, signature validity, and internal-secret comparison. The Wrangler build is a dry run; it does not deploy.
+
+
+## Country configuration rollout
+
+The D1 country projection is migration 0067. Supabase is the source of truth for country configuration, financial prices, fees, and payment readiness. The D1 Worker accepts updates only through the private `/internal/v1/countries/sync` endpoint. See [the Cloudflare country configuration rollout](../docs/CLOUDFLARE_COUNTRY_CONFIGURATION_ROLLOUT.md) before applying migrations or deploying either Worker.
