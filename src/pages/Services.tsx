@@ -107,7 +107,9 @@ export default function Services() {
                 </button>
                 <div className="p-3 flex-1 flex flex-col">
                   <p className="text-[14px] font-bold text-navy dark:text-white line-clamp-1">{s.title}</p>
-                  <p className="text-[15px] font-black text-[#12935a] mt-1">From {Number(s.starting_price || 0).toLocaleString()} XAF</p>
+                  <p className="text-[15px] font-black text-[#12935a] mt-1">{s.price_is_range && s.price_min != null
+                    ? `${Number(s.price_min).toLocaleString()} – ${Number(s.price_max).toLocaleString()} XAF`
+                    : `From ${Number(s.starting_price || 0).toLocaleString()} XAF`}</p>
                   
                   <InlineBoostBar 
                     itemId={s.id} 
