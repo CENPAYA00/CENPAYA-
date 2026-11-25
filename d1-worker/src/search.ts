@@ -138,7 +138,7 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
     const item=asRecord(rawItem),metadata=asRecord(item.metadata??item.attributes??item.meta??item._source);
     const content=firstString(item.content,item.text,item.snippet,metadata.content);
     const rawKind=firstString(metadata.kind,metadata.entity_type,metadata.type,"post").toLowerCase();
-    const entityKind=rawKind.includes("listing")?"listing":rawKind.includes("service")?"service":rawKind.includes("post")?"post":rawKind;
+    const entityKind=rawKind.includes("service")?"service":rawKind.includes("listing")||rawKind.includes("product")||rawKind.includes("marketplace")?"listing":rawKind.includes("post")?"post":rawKind;
     const cover=firstString(metadata.cover_url,metadata.image_url,metadata.thumbnail_url)||null;
     return {
       id:firstString(metadata.id,metadata.entity_id,item.id,item._id),kind:entityKind,
@@ -147,9 +147,11 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
       meta:firstString(metadata.meta),is_demo:metadata.is_demo===true||metadata.is_demo===1,
       score:item.score??item._score??null,snippet:content.slice(0,320),
     };
-  }).filter(item=>item.id.length>0&&(kind==="all"||item.kind===kind||
-    (kind==="market"&&item.kind==="listing")||(kind==="services"&&item.kind==="service")||
-    (kind==="home"&&item.kind==="post")));
+  }).filter(item=>item.id.length>0&&(
+    (kind==="home"&&item.kind==="post")||
+    (kind==="market"&&item.kind==="listing")||
+    (kind==="services"&&item.kind==="service")
+  ));
   const ids=[...new Set(normalized.map(item=>item.id))].slice(0,limit);
   if(!ids.length){const fallback=await fallbackSearch(env,url,q,kind,limit,viewerId);await cachePut(env,cacheKey,fallback,60);return json({success:true,data:fallback,source:"d1-fallback"});}
   const placeholders=ids.map(()=>"?").join(",");
@@ -159,7 +161,8 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
     const rows=await env.DB.prepare(`SELECT p.id,p.content,p.post_type,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url
       FROM posts p JOIN users u ON u.id=p.author_id
       WHERE p.id IN (${placeholders}) AND p.status='published' AND p.deleted_at IS NULL AND p.visibility='public'
-      AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL`).bind(...ids).all();
+      AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
+      AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=?)))`).bind(...ids,viewerId,viewerId,viewerId).all();
     verified=(rows.results as Array<Record<string,unknown>>).map(row=>{
       const hit=hitMap.get(String(row.id)),content=firstString(row.content,hit?.title,"Post");
       return {id:String(row.id),kind:"post",title:content.slice(0,100),
@@ -168,7 +171,12 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
         is_demo:hit?.is_demo??false,score:hit?.score??null,snippet:hit?.snippet??""};
     });
   }else{
-    const rows=await env.DB.prepare(`SELECT s.* FROM public_marketplace_search s JOIN marketplace_listings l ON l.id=s.listing_id WHERE s.listing_id IN (${placeholders}) AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?))) AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=l.seller_id) OR (b.blocker_id=l.seller_id AND b.blocked_id=?)))`).bind(...ids,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId).all();
+    const rows=await env.DB.prepare(`SELECT s.* FROM public_marketplace_search s
+      JOIN marketplace_listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_id
+      WHERE s.listing_id IN (${placeholders}) AND l.status='active' AND l.deleted_at IS NULL
+      AND l.moderation_status='approved' AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
+      AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))
+      AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=l.seller_id) OR (b.blocker_id=l.seller_id AND b.blocked_id=?)))`).bind(...ids,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId).all();
     verified=(rows.results as Array<Record<string,unknown>>).map(row=>{
       const hit=hitMap.get(String(row.listing_id)),listingType=firstString(row.listing_type,hit?.kind,"listing").toLowerCase();
       const entityKind=listingType.includes("service")?"service":"listing";
