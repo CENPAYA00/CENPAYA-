@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Smartphone, AlertCircle, Check, Clock, RefreshCw } from 'lucide-react';
 import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
 import Select from '../components/Select';
@@ -11,6 +11,7 @@ const MIN_WITHDRAWAL = 500;
 
 export default function Withdraw() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const idempotencyKey = useRef<string | null>(null);
   const [wallet, setWallet] = useState<any>(null);
   const [countries, setCountries] = useState<any[]>([]);
@@ -18,7 +19,7 @@ export default function Withdraw() {
   const [provider, setProvider] = useState<Method>('mtn_momo');
   const [phone, setPhone] = useState('');
   const [amount, setAmount] = useState('');
-  const [walletSource, setWalletSource] = useState<'funds' | 'referral'>('funds');
+  const [walletSource, setWalletSource] = useState<'funds' | 'referral'>(() => searchParams.get('source') === 'referral' ? 'referral' : 'funds');
   const [busy, setBusy] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
