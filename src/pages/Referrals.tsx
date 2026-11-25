@@ -160,7 +160,7 @@ export default function Referrals() {
           </p>
 
           <button
-            onClick={() => navigate('/referral-withdraw')}
+            onClick={() => navigate('/withdraw?source=referral')}
             disabled={available < 2000}
             className="mt-3 bg-white text-brand font-bold text-[11px] px-4 py-2 rounded-lg flex items-center gap-1.5 disabled:opacity-50 active:scale-[0.98] cursor-pointer"
           >
