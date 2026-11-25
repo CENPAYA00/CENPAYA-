@@ -72,8 +72,9 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   if(path==="/api/chat/threads"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
     const rows=await env.DB.prepare(`SELECT t.id,t.thread_type,t.title,t.created_by,t.last_message_at,t.created_at,
-      otherUser.username AS other_username,otherUser.avatar_url AS other_avatar,
+      otherUser.id AS other_user_id,otherUser.username AS other_username,otherUser.avatar_url AS other_avatar,otherUser.is_demo AS is_demo,otherUser.last_active_at AS other_last_active_at,
       (SELECT m.message_text FROM chat_messages m WHERE m.thread_id=t.id ORDER BY m.created_at DESC LIMIT 1) AS last_message,
+       (SELECT m.sender_id FROM chat_messages m WHERE m.thread_id=t.id ORDER BY m.created_at DESC LIMIT 1) AS last_sender_id,
       (SELECT COUNT(*) FROM chat_messages m WHERE m.thread_id=t.id AND m.sender_id<>? AND m.created_at>COALESCE(tm.last_read_at,'1970-01-01T00:00:00.000Z')) AS unread_count
       FROM chat_thread_members tm JOIN chat_threads t ON t.id=tm.thread_id
       LEFT JOIN chat_thread_members other ON other.thread_id=t.id AND other.user_id<>tm.user_id
