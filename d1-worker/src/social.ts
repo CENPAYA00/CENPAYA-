@@ -87,7 +87,9 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 20), 1), 40);
     const offset = Math.min(Math.max(Number(url.searchParams.get("offset") || 0), 0), 500);
     const feedType = str(url.searchParams.get("type"), 12) || "all";
+    const feedScope = str(url.searchParams.get("scope"), 16) || "for_you";
     if (!["all", "videos", "posts"].includes(feedType)) return fail("Invalid feed type");
+    if (!["for_you", "following"].includes(feedScope)) return fail("Invalid feed scope");
     const rows = await env.DB.prepare(`SELECT p.*,u.username,u.display_name,u.avatar_url,u.is_premium,
       (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id AND r.reaction_type='like') AS likes_count,
       (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count,
@@ -114,6 +116,8 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       WHERE p.status='published' AND p.deleted_at IS NULL
         AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
         AND (?='all' OR (?='videos' AND p.post_type='video' AND v.id IS NOT NULL) OR (?='posts' AND (p.post_type IS NULL OR p.post_type<>'video')))
+        AND (?<>'following' OR p.author_id=? OR EXISTS(SELECT 1 FROM user_follows ff WHERE ff.follower_id=? AND ff.following_id=p.author_id)
+          OR EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?)))
         AND (p.visibility='public' OR p.author_id=? OR (p.visibility='followers' AND EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id))
           OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=p.author_id) OR (fr.user_a_id=p.author_id AND fr.user_b_id=?))))
         AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=?)))
@@ -125,7 +129,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
         COALESCE(p.published_at,p.created_at) DESC
       LIMIT ? OFFSET ?`)
       .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,
-        feedType,feedType,feedType,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,limit,offset)
+        feedType,feedType,feedType,feedScope,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,limit,offset)
       .all<Record<string, unknown>>();
     const hydrated = await hydratePosts(env, url.origin, rows.results);
     return json({ success: true, data: hydrated, pagination: { limit, offset, has_more: rows.results.length === limit } });
