@@ -21,8 +21,10 @@ async function processor(env:Env,path:string,data?:unknown,method="POST"){
 }
 export async function handleVideoRoutes(request:Request,env:Env,{url,path,method,user}:C):Promise<Response|null>{
  if(path==="/api/videos/upload-intent"||path==="/api/videos/publish"||path==="/api/reels"||path.startsWith("/api/videos/")){
+  const master=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_global'").first<{enabled:number}>();
+  if(Number(master?.enabled||0)!==1)return fail("All video features are disabled by the platform administrator",503);
   const flag=await env.DB.prepare("SELECT enabled FROM feature_flags WHERE key='video_posts'").first<{enabled:number}>();
-  if(Number(flag?.enabled||0)!==1)return fail("Video features are disabled by the platform administrator",503);
+  if(Number(flag?.enabled||0)!==1)return fail("Video publishing is disabled by the platform administrator",503);
  }
  if(path==="/api/videos/upload-intent"&&method==="POST"){
   if(!user)return fail("Authentication required",401);

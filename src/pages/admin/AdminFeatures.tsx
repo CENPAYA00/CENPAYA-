@@ -23,6 +23,7 @@ type AssistanceStatus = {
 };
 
 const icons: Record<string, typeof Phone> = {
+  video_global: Video,
   voice_calls: Phone,
   video_posts: Video,
   ai_assistant: Bot,
@@ -205,7 +206,7 @@ export default function AdminFeatures() {
       {flags.map(flag => {
         const Icon = icons[flag.feature_key] || Phone;
         const isSaving = saving === flag.id;
-        const canEnable = flag.feature_key === "voice_calls" || (flag.feature_key === "video_posts" && flag.ready);
+        const canEnable = flag.feature_key === "voice_calls" || flag.feature_key === "video_global" || (flag.feature_key === "video_posts" && flag.ready);
         const canToggle = canEnable || flag.is_enabled_globally;
         return (
           <section key={flag.id} className="bg-white dark:bg-darkcard border border-gray-100 dark:border-darkline p-4 rounded-2xl shadow-sm flex items-center gap-3">

@@ -20,6 +20,13 @@ function definitions(env: Env): FeatureDefinition[] {
   const videoReady = !!env.VIDEO_PROCESSOR_TOKEN && (!!env.VIDEO_PROCESSOR || !!env.VIDEO_PROCESSOR_URL);
   return [
     {
+      key: "video_global",
+      display_name: "All video features",
+      description: "Master switch for video uploads, chat videos, delivery evidence, marketplace videos, posts, and playback.",
+      ready: true,
+      blocked_reason: null,
+    },
+    {
       key: "voice_calls",
       display_name: "Voice calls",
       description: "In-app voice calling.",
