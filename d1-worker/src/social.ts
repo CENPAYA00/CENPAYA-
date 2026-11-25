@@ -129,7 +129,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
         COALESCE(p.published_at,p.created_at) DESC
       LIMIT ? OFFSET ?`)
       .bind(viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,
-        feedType,feedType,feedType,feedScope,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,limit,offset)
+        feedType,feedType,feedType,feedScope,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,limit,offset)
       .all<Record<string, unknown>>();
     const hydrated = await hydratePosts(env, url.origin, rows.results);
     return json({ success: true, data: hydrated, pagination: { limit, offset, has_more: rows.results.length === limit } });
