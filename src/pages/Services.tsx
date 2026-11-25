@@ -11,6 +11,7 @@ export default function Services() {
   const [services, setServices] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [meId, setMeId] = useState<string | null>(null);
   
   const [boostTarget, setBoostTarget] = useState<any>(null);
@@ -18,32 +19,41 @@ export default function Services() {
   const [showDemo, setShowDemo] = useState(true);
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
-      try {
-        const me = await getCachedUser();
-        setMeId(me?.id || null);
-        const result = await d1Request<{ data: any[] }>('/api/market/search?type=service&limit=50');
-        setServices((result.data || []).map((row: any) => ({
-          ...row, id: row.listing_id || row.id, title: row.product_title || row.title,
-          price: row.product_price ?? row.price_amount ?? row.price, seller_id: row.seller_id || row.merchant_id,
-          is_active: row.status === 'published' || row.status === 'active',
-        })));
-      } catch (error: any) { alert(error.message || 'Could not load services'); }
-      finally { setLoading(false); }
+      try { const me = await getCachedUser(); if (active) setMeId(me?.id || null); } catch {}
     };
     void load();
   }, []);
 
-  const filtered = services.filter(s => 
-    (showDemo || !s.is_demo) && s.title.toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const query = search.trim() ? '&q=' + encodeURIComponent(search.trim()) : '';
+        const result = await d1Request<{ data: any[] }>('/api/market/search?type=service&limit=50'+query);
+        if (active) setServices((result.data || []).map((row: any) => ({
+          ...row, id: row.listing_id || row.id, title: row.product_title || row.title,
+          price: row.product_price ?? row.price_amount ?? row.price, currency_code: row.currency_code || 'XAF',
+          location_city: row.city || row.location_city, seller_id: row.seller_id || row.merchant_id,
+          images: row.images || (row.image_url ? [row.image_url] : []),
+        })));
+      } catch (error: any) { if (active) setLoadError(error.message || 'Could not load search results.'); }
+      finally { if (active) setLoading(false); }
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [search]);
+
+  const filtered = services.filter(item => showDemo || !item.is_demo);
 
   return (
     <div className="px-4 py-4 pb-24 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-4 px-1">
         <div>
           <h1 className="text-[20px] font-bold text-navy dark:text-white">Freelance Services</h1>
-          <p className="text-[11px] text-mute mt-0.5">Available everywhere — no country limits</p>
+          <p className="text-[11px] text-mute mt-0.5">Boosted first · relevant freelance services</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setShowDemo(v => !v)} className="text-[11px] font-semibold text-mute flex items-center gap-1 cursor-pointer">
@@ -77,6 +87,7 @@ export default function Services() {
         />
       </div>
 
+      {loadError && <div className="mb-3 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-200 text-[11px]">{loadError}</div>}
       {loading ? (
         <div className="grid grid-cols-2 gap-3">
           {[1,2,3,4].map(i => <div key={i} className="aspect-square bg-gray-200 dark:bg-darkcard rounded-2xl animate-pulse" />)}
@@ -84,7 +95,7 @@ export default function Services() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-10">
           <Briefcase size={32} className="mx-auto text-gray-400 mb-3" />
-          <p className="text-[15px] font-bold text-navy dark:text-white">No services found</p>
+          <p className="text-[15px] font-bold text-navy dark:text-white">{search.trim() ? 'No matching services found' : 'No services found'}</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">
