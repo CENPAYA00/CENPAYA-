@@ -9,7 +9,7 @@ import Select from '../components/Select';
 type PaymentMethod = 'wallet' | 'momo';
 type CheckoutItem = {
   id: string; title?: string; seller_id?: string; price?: number | string;
-  price_min?: number | string; price_is_range?: boolean; starting_price?: number | string;
+  price_min?: number | string; price_max?: number | string; price_is_range?: boolean; starting_price?: number | string;
   images?: string[]; thumbnail_url?: string; _kind?: 'listing' | 'service';
 };
 type ServicePackage = { id: string; title?: string; price?: number | string };
@@ -89,7 +89,7 @@ export default function Checkout() {
         setWalletFunds(Number(walletResponse.data?.available_funds || 0));
       } catch { setWalletFunds(0); }
 
-      if (listingId) {
+      if (listingId && !loadedItem?.price_is_range) {
         try {
           const quoteResponse = await supabaseWorkerRequest<{ data: { amount: number; fee_pct: number; fee_fixed: number; platform_fee: number; total: number } }>(`/api/v1/checkout/quote?listing_id=${encodeURIComponent(listingId)}`);
           setServerAmount(Number(quoteResponse.data.amount));
@@ -100,7 +100,7 @@ export default function Checkout() {
           setMilestones([{ title: 'Project delivery', amount: Number(quoteResponse.data.amount) }]);
           setQuoteReady(true);
         } catch { setQuoteReady(false); }
-      } else if (serviceId) {
+      } else if (serviceId && (!loadedItem?.price_is_range || !!packageId)) {
         try {
           const quoteResponse = await supabaseWorkerRequest<{ data: {
             seller_id: string; amount: number; fee_pct: number; fee_fixed: number;
@@ -160,6 +160,7 @@ export default function Checkout() {
     ? Number(pkg?.price || item?.starting_price || 0)
     : (item?.price_is_range ? Number(item?.price_min || 0) : Number(item?.price || 0)));
 
+  const requiresPriceAgreement = !!item?.price_is_range && !(item._kind === 'service' && !!pkg);
   const feePctAmount = serverPlatformFee;
   const total = serverTotal ?? amount;
 
@@ -167,6 +168,7 @@ export default function Checkout() {
   const handleConfirmOrder = async () => {
     setErr('');
     if (!item) return setErr('Item not found.');
+    if (requiresPriceAgreement) return setErr('This listing has a negotiable price range. Please agree on the final price with the seller in chat before placing an order.');
 
     if (method === 'wallet' && walletFunds < total) {
       return setErr(`Insufficient wallet balance. You need ${total.toLocaleString()} XAF. Top up first.`);
@@ -241,6 +243,11 @@ export default function Checkout() {
       </div>
 
       <div className="p-3">
+        {requiresPriceAgreement && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] p-3 rounded-xl mb-3">
+            This item has a negotiable price range ({Number(item?.price_min || 0).toLocaleString()}–{Number(item?.price_max || 0).toLocaleString()} XAF). Contact the seller and agree on the final amount before checkout. The minimum price will not be charged automatically.
+          </div>
+        )}
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 flex gap-3 mb-3">
           {item.images?.[0] || item.thumbnail_url ? (
             <img
@@ -401,10 +408,10 @@ export default function Checkout() {
         <div className="max-w-[600px] mx-auto">
           <button
             onClick={handleConfirmOrder}
-            disabled={processing || !quoteReady}
+            disabled={processing || !quoteReady || requiresPriceAgreement}
             className="w-full bg-accent text-white font-bold py-3 rounded-xl text-[13px] disabled:opacity-50 cursor-pointer"
           >
-            {processing ? 'Processing…' : !quoteReady ? 'Checkout quote unavailable' : `Pay ${total.toLocaleString()} XAF`}
+            {processing ? 'Processing…' : requiresPriceAgreement ? 'Agree price with seller first' : !quoteReady ? 'Checkout quote unavailable' : `Pay ${total.toLocaleString()} XAF`}
           </button>
         </div>
       </div>
