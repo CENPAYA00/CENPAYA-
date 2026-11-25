@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Zap, Store, FileText, Check, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { d1Request } from '../lib/d1Api';
@@ -39,6 +39,7 @@ function getColoredStyle(id: string): React.CSSProperties {
 
 export default function Boosted() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [listings, setListings] = useState<Target[]>([]);
   const [posts, setPosts] = useState<Target[]>([]);
   const [tiers, setTiers] = useState<Tier[]>([]);
@@ -60,22 +61,27 @@ export default function Boosted() {
       const me = await getCachedUser();
       if (!me) { setLoading(false); return; }
 
-      const [tiersRes, eligRes, listingsRes, postsRes] = await Promise.all([
+      const [tiersRes, eligRes, listingsRes, servicesRes, postsRes] = await Promise.all([
         supabase.rpc('list_boost_tiers'),
         supabase.rpc('get_boost_eligibility'),
         d1Request<{ data: any[] }>('/api/market/my-listings?limit=50'),
+        d1Request<{ data: any[] }>('/api/market/my-services?limit=50'),
         d1Request<{ data: any[] }>('/api/posts/mine?limit=50'),
       ]);
 
       setTiers(tiersRes.data || []);
       setElig(eligRes.data);
 
-      setListings((listingsRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
-        let rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
-        return { type: 'listing', id: l.id, title: l.title, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until };
-      }));
-
-      setPosts((postsRes.data || []).filter((p: any) => p.moderation_status === 'approved').map((p: any) => {
+      const productTargets = (listingsRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
+        const rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
+        return { type: 'listing' as const, id: l.id, title: l.title, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until };
+      });
+      const serviceTargets = (servicesRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
+        const rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
+        return { type: 'listing' as const, id: l.id, title: `Service: ${l.title}`, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until };
+      });
+      const listingTargets = [...productTargets, ...serviceTargets];
+      const postTargets = (postsRes.data || []).filter((p: any) => p.moderation_status === 'approved').map((p: any) => {
         let rawImg = p.image_url ? p.image_url.split(',')[0].trim() : null;
         return { 
           type: 'post', 
@@ -86,7 +92,18 @@ export default function Boosted() {
           post_type: p.post_type,
           bg_color: p.bg_color
         };
-      }));
+      });
+      setListings(listingTargets);
+      setPosts(postTargets);
+      const requestedId = searchParams.get('id');
+      const requestedType = searchParams.get('type');
+      if (requestedId && requestedType) {
+        const requested = requestedType === 'post'
+          ? postTargets.find((item: Target) => item.id === requestedId)
+          : listingTargets.find((item: Target) => item.id === requestedId);
+        if (requested) setSelected(requested);
+        else setToast({ kind: 'error', message: 'This content is not approved for boosting yet. You can boost it after approval.' });
+      }
 
       setLoading(false);
     };
