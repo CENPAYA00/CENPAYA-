@@ -191,6 +191,7 @@ export default function Home() {
             onComment={() => setOpenPost(post.id)}
             onShare={() => handleShare(post.id)}
             onSave={() => handleSave(post.id)}
+            onSaveToFolder={() => setSavedPosts(prev => new Set(prev).add(post.id))}
             onFollowToggle={(nowFollowing) => handleFollowToggle(post.user_id, nowFollowing)}
           />
         ))}
