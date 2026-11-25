@@ -39,6 +39,69 @@ void describe("CenPaya financial API routes", () => {
     assert.ok(filteredUsers.every((value) => value === userId));
   });
 
+  void it("rejects marketplace checkout quotes for negotiable price ranges", async () => {
+    const supabase = {
+      rpc: async () => { throw new Error("fee calculation must not run for an unagreed range"); },
+    };
+    const env = {
+      D1_INTERNAL_CALL_SECRET: "test-secret",
+      D1_IDENTITY: {
+        fetch: async () => new Response(JSON.stringify({
+          success: true,
+          data: {
+            price_is_range: true,
+            price_min: 20000,
+            price_max: 50000,
+            price: 20000,
+            currency_code: "XAF",
+            seller_id: "9d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c12",
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } }),
+      },
+    };
+    const response = await handleAuthenticatedApi(
+      new Request("https://worker.test/api/v1/checkout/quote?listing_id=listing-1"),
+      "8d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c11",
+      supabase,
+      new Headers(),
+      env,
+    );
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error, "negotiable_price_requires_seller_agreement");
+  });
+
+  void it("rejects freelance checkout quotes for negotiable price ranges", async () => {
+    const supabase = {
+      rpc: async () => { throw new Error("fee calculation must not run for an unagreed range"); },
+    };
+    const env = {
+      D1_INTERNAL_CALL_SECRET: "test-secret",
+      D1_IDENTITY: {
+        fetch: async () => new Response(JSON.stringify({
+          success: true,
+          data: {
+            price_is_range: 1,
+            price: 20000,
+            price_min: 20000,
+            price_max: 50000,
+            currency_code: "XAF",
+            listing_type: "service",
+            seller_id: "9d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c12",
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } }),
+      },
+    };
+    const response = await handleAuthenticatedApi(
+      new Request("https://worker.test/api/v1/checkout/service-quote?service_id=9d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c12"),
+      "8d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c11",
+      supabase,
+      new Headers(),
+      env,
+    );
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error, "negotiable_price_requires_seller_agreement");
+  });
+
   void it("allows only explicitly approved financial/admin RPC names", async () => {
     let invoked = null;
     const supabase = {
