@@ -101,12 +101,16 @@ export default function SettingsPersonal() {
     setSaving(true);
     setErrorMsg('');
     setSuccessMsg('');
+    const normalizedUsername = username.trim();
+    if (!normalizedUsername || normalizedUsername.length < 3 || normalizedUsername.length > 30) {
+      setSaving(false); setErrorMsg('Username must be between 3 and 30 characters.'); return;
+    }
     const fullPhone = phoneNumber.trim() ? `${phonePrefix} ${phoneNumber.trim()}` : null;
     try {
       await d1Request('/api/me/personal-details', {
         method: 'PATCH',
         body: JSON.stringify({
-          username: username !== details?.username ? username : undefined,
+          username: normalizedUsername !== details?.username ? normalizedUsername : undefined,
           phone: fullPhone !== details?.phone ? fullPhone : undefined,
           bio: bio !== details?.bio ? bio : undefined,
           country_code: country !== (details?.country_code || details?.country_iso) ? country : undefined,
@@ -116,6 +120,7 @@ export default function SettingsPersonal() {
           date_of_birth: dob !== details?.date_of_birth ? (dob || null) : undefined,
         }),
       });
+      setDetails((current:any) => ({ ...current, username: normalizedUsername, phone: fullPhone, bio, country_code: country, location_region: region, location_city: city, occupation, date_of_birth: dob || null }));
       setSuccessMsg('✓ Saved');
       setTimeout(() => setSuccessMsg(''), 2000);
     } catch (error: any) { setErrorMsg(error.message || 'Save failed'); }
