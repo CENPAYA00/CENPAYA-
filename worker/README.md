@@ -140,3 +140,8 @@ Wrangler build is a dry run; it does not deploy. Run typecheck, tests, and the d
 11. Deploy only after all checks pass and the user explicitly approves deployment.
 
 The staff invitation and role-sync routes depend on the D1 Worker's private `/internal/v1/staff/workspace/sync` endpoint and the matching `D1_INTERNAL_CALL_SECRET`. Before deployment, apply Supabase migration 0006 and D1 migrations 0063–0065 in order after checking each migration tracker. No Worker or frontend deployment is part of this change.
+
+
+## Country management and D1 synchronization
+
+Owner and Super Admin country changes are handled by the typed `/api/v1/admin/countries` routes. Supabase stores country-specific prices and fees; the Worker synchronizes only country metadata and activation to the D1 Worker over the private `D1_IDENTITY` service binding. D1 must be deployed and migration 0067 applied before enabling this integration in production. See [the Cloudflare country configuration rollout](../docs/CLOUDFLARE_COUNTRY_CONFIGURATION_ROLLOUT.md).
