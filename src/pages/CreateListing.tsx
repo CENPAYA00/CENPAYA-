@@ -144,8 +144,12 @@ export default function CreateListing() {
     if (!usePriceRange && (!finalPrice || finalPrice <= 0)) {
       return setErrorMsg('Enter a valid price, or enable price range.');
     }
-    if (usePriceRange && (!priceMin || Number(priceMin) <= 0)) {
-      return setErrorMsg('Enter a valid minimum price.');
+    if (usePriceRange) {
+      const min = Number(priceMin);
+      const max = Number(priceMax);
+      if (!priceMin || !Number.isSafeInteger(min) || min <= 0) return setErrorMsg('Enter a valid positive minimum price in whole XAF.');
+      if (!priceMax || !Number.isSafeInteger(max) || max <= 0) return setErrorMsg('Enter a maximum price to complete the range.');
+      if (max <= min) return setErrorMsg('Maximum price must be greater than the minimum price.');
     }
 
     const me = user || await getCachedUser();
@@ -186,7 +190,7 @@ export default function CreateListing() {
           availability: availability === 'in_stock' ? 'in_stock' : 'single',
           images_json: imageUrls, documents_json: docUrls,
           price_is_range: usePriceRange, price_min: usePriceRange ? Number(priceMin) : Number(finalPrice),
-          price_max: usePriceRange ? (priceMax ? Number(priceMax) : Number(priceMin)) : Number(finalPrice),
+          price_max: usePriceRange ? Number(priceMax) : Number(finalPrice),
           hide_from_friends: hideFromFriends,
         }),
       });
@@ -272,7 +276,7 @@ export default function CreateListing() {
                 type="number"
                 value={priceMax}
                 onChange={e => setPriceMax(e.target.value)}
-                placeholder="Max"
+                placeholder="Max (required)"
                 className="flex-1 p-3 rounded-xl border border-gray-200 dark:border-darkline bg-white dark:bg-darkcard text-[13px]"
               />
             </div>
