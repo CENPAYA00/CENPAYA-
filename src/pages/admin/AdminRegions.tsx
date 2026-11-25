@@ -170,7 +170,7 @@ function CountryEditor({ existing, onClose, onSaved, countries }: any) {
 
     setBusy(true);
     try {
-      await supabaseWorkerRequest(`/api/admin/countries/${encodeURIComponent(code.toUpperCase())}`, {
+      await supabaseWorkerRequest(`/api/v1/admin/countries/${encodeURIComponent(code.toUpperCase())}`, {
         method: 'PUT', body: JSON.stringify({
           code: code.toUpperCase(), name: name.trim(), phone_prefix: phonePrefix.trim(),
           currency_code: currency.trim().toUpperCase(), currency_value_in_xaf: Number(currencyValue) || 1,
