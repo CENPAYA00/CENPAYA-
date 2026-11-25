@@ -160,7 +160,7 @@ export async function processVideoQueue(env:Env):Promise<void>{
    const terminal=Number(current?.attempts||0)>=3;
    await env.DB.batch([
     env.DB.prepare("UPDATE video_processing_jobs SET status=?,last_error=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(terminal?"failed":"queued",String(error instanceof Error?error.message:"processing_failed").slice(0,500),job.job_id),
-    ...(terminal?[env.DB.prepare("UPDATE video_assets SET status='failed',failure_code='processing_failed',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(job.video_id)]:[])
+    ...(terminal?[env.DB.prepare("UPDATE video_assets SET status='failed',failure_code='processing_failed',retention_expires_at=CASE WHEN purpose IN ('delivery','listing') THEN strftime('%Y-%m-%dT%H:%M:%fZ','now','+7 days') ELSE retention_expires_at END,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(job.video_id)]:[])
    ]);
   }
  }

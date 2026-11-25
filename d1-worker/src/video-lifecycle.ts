@@ -127,7 +127,7 @@ export async function handleVideoLifecycleRoutes(req:Request,env:Env,ctx:Context
 export async function processVideoLifecycleCleanupQueue(env:Env):Promise<void>{
  const now=await env.DB.prepare("SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now') AS value").first<{value:string}>();
  await env.DB.prepare("INSERT OR IGNORE INTO video_cleanup_jobs(id,video_id,status) SELECT lower(hex(randomblob(16))),id,'queued' FROM video_assets WHERE deleted_at IS NULL AND retention_expires_at IS NOT NULL AND retention_expires_at<=?").bind(now?.value||"").run();
- const jobs=await env.DB.prepare("SELECT j.id AS job_id,v.id AS video_id,v.source_key,v.hls_key,v.purpose FROM video_cleanup_jobs j JOIN video_assets v ON v.id=j.video_id WHERE j.status IN ('queued','failed') AND j.attempts<50 AND j.updated_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 minute') ORDER BY j.created_at LIMIT 5").all<Record<string,unknown>>();
+ const jobs=await env.DB.prepare("SELECT j.id AS job_id,v.id AS video_id,v.source_key,v.hls_key,v.purpose FROM video_cleanup_jobs j JOIN video_assets v ON v.id=j.video_id WHERE j.status IN ('queued','failed') AND j.updated_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 minute') ORDER BY j.created_at LIMIT 5").all<Record<string,unknown>>();
  for(const job of jobs.results){
   const claim=await env.DB.prepare("UPDATE video_cleanup_jobs SET status='processing',attempts=attempts+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status IN ('queued','failed')").bind(job.job_id).run();
   if(!claim.meta.changes)continue;
