@@ -1,0 +1,12 @@
+# Copy to .dev.vars locally and replace placeholders. Never commit .dev.vars.
+CENPAYA_ORIGINS=https://your-deployed-cenpaya-frontend.example
+SUPABASE_URL=https://vtfwglrjjznxxujrlcnb.supabase.co
+SUPABASE_ANON_KEY=replace-with-project-anon-or-publishable-key
+SUPABASE_JWT_ALGORITHM=HS256
+SUPABASE_JWT_SECRET=replace-with-the-projects-active-hs256-jwt-secret
+D1_INTERNAL_CALL_SECRET=replace-with-a-long-random-shared-secret
+D1_TO_SUPABASE_HMAC_SECRET=replace-with-a-different-long-random-shared-secret
+PAYMENT_ENVIRONMENT=sandbox
+
+# If the Supabase project uses RS256 or ES256, remove SUPABASE_JWT_SECRET and
+# configure SUPABASE_JWT_PRIVATE_JWK with the matching active private JWK JSON.

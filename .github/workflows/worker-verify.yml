@@ -1,0 +1,47 @@
+name: worker-verify
+
+on:
+  push:
+    branches:
+      - migration/supabase-worker-api
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-verify.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-verify.yml'
+  workflow_dispatch:
+
+jobs:
+  worker-checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm install --no-audit --no-fund
+
+      - name: Type-check Worker
+        working-directory: worker
+        run: npm run typecheck
+
+      - name: Test Worker and database helpers
+        working-directory: worker
+        run: npm test
+
+      - name: Build Worker without deploying
+        working-directory: worker
+        run: npm run build

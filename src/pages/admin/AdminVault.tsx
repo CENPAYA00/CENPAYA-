@@ -1,258 +1,56 @@
 import { useEffect, useState } from 'react';
 import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
-import { CreditCard, MessageSquare, Mail, X, Check, Lock } from 'lucide-react';
-
-type Provider = {
-  id: string;
-  provider_name: string;
-  display_name: string;
-  provider_type: string;
-  is_active: boolean;
-  priority: number;
-  has_key: boolean;
-  environment: string | null;
-  updated_at: string | null;
-};
-
-const SECTIONS: { key: string; title: string; icon: any; subtitle: string }[] = [
-  { key: 'PAYMENT_GATEWAY', title: 'Payment gateways', icon: CreditCard, subtitle: 'Mobile money & card aggregators' },
-  { key: 'SMS_SERVICE',     title: 'SMS providers',    icon: MessageSquare, subtitle: 'OTP and transactional SMS' },
-  { key: 'EMAIL_SERVICE',   title: 'Email providers',  icon: Mail, subtitle: 'Transactional email' },
-];
-
-export default function AdminVault() {
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<Provider | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-
-    try {
-      const result = await supabaseWorkerRequest<{ data: Provider[] }>('/api/v1/admin/providers');
-      setProviders(result.data || []);
-    } catch (error) {
-      console.error(error);
-      setProviders([]);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const toggleActive = async (p: Provider) => {
-    await supabaseWorkerRequest('/api/v1/admin/rpc/admin_set_provider_active', { method: 'POST', body: JSON.stringify({ args: { p_provider_name: p.provider_name, p_active: !p.is_active } }) });
-    load();
-  };
-
-  if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
-
-  return (
-    <div>
-      <h2 className="text-2xl font-bold text-navy dark:text-white mb-2">🔐 API Vault</h2>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        Keys are encrypted and only accessible from the backend. Tap a provider to add or update its keys.
-      </p>
-
-      {SECTIONS.map(section => {
-        const list = providers.filter(p => p.provider_type === section.key);
-        const Icon = section.icon;
-        return (
-          <div key={section.key} className="mb-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Icon size={15} className="text-navy dark:text-white" />
-              <p className="text-[13px] font-bold text-navy dark:text-white">{section.title}</p>
-              <span className="text-[10px] text-gray-500">· {list.length}</span>
-            </div>
-            <p className="text-[10px] text-gray-500 mb-2">{section.subtitle}</p>
-
-            <div className="bg-white dark:bg-darkcard rounded-xl shadow-sm overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center px-3 py-2 bg-gray-50 dark:bg-darkbg border-b border-gray-100 dark:border-darkline">
-                <p className="flex-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider">Provider</p>
-                <p className="w-20 text-center text-[9px] font-bold text-gray-500 uppercase tracking-wider">Status</p>
-                <p className="w-20 text-center text-[9px] font-bold text-gray-500 uppercase tracking-wider">Keys</p>
-                <p className="w-10"></p>
-              </div>
-
-              {list.length === 0 && (
-                <p className="p-4 text-[11px] text-gray-400 text-center">No providers in this category.</p>
-              )}
-
-              {list.map(p => (
-                <div key={p.id} className="flex items-center px-3 py-3 border-b border-gray-100 dark:border-darkline last:border-b-0">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-bold text-navy dark:text-white truncate">
-                      {p.display_name || p.provider_name}
-                    </p>
-                    {p.updated_at && (
-                      <p className="text-[9px] text-gray-400">
-                        Updated {new Date(p.updated_at).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="w-20 flex justify-center">
-                    <button
-                      onClick={() => toggleActive(p)}
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                        p.is_active
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 dark:bg-darkline text-gray-500'
-                      }`}
-                    >
-                      {p.is_active ? 'Active' : 'Off'}
-                    </button>
-                  </div>
-
-                  <div className="w-20 flex justify-center">
-                    {p.has_key ? (
-                      <span className="text-[9px] font-bold text-green-700 flex items-center gap-1">
-                        <Check size={10} /> Set
-                      </span>
-                    ) : (
-                      <span className="text-[9px] font-bold text-gray-400">Not set</span>
-                    )}
-                  </div>
-
-                  <div className="w-10 flex justify-end">
-                    <button
-                      onClick={() => setEditing(p)}
-                      className="text-[10px] font-bold text-accent"
-                    >
-                      Edit
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-
-      {editing && (
-        <KeyEditor
-          provider={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); load(); }}
-        />
-      )}
-    </div>
-  );
+import { CreditCard, X, Check, Lock, AlertTriangle, RefreshCw, Plus, Trash2 } from 'lucide-react';
+type Environment = 'sandbox' | 'production';
+type Provider = { id:string; provider_name:string; display_name:string|null; provider_type:string; is_active:boolean; priority:number; supported_countries:string[]|null; has_sandbox_key:boolean; has_production_key:boolean; sandbox_updated_at:string|null; production_updated_at:string|null; worker_supported:boolean; adapter_configured?:boolean };
+type CredentialField = {key:string;value:string};
+function dateLabel(value:string|null){if(!value)return 'Never updated';const d=new Date(value);return Number.isNaN(d.getTime())?'Date unavailable':d.toLocaleString();}
+export default function AdminVault(){
+ const [providers,setProviders]=useState<Provider[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[editing,setEditing]=useState<Provider|null>(null),[busy,setBusy]=useState<string|null>(null);
+ const [showAdd,setShowAdd]=useState(false),[code,setCode]=useState(''),[name,setName]=useState(''),[countries,setCountries]=useState('CM'),[priority,setPriority]=useState('100'),[adding,setAdding]=useState(false),[adapterProvider,setAdapterProvider]=useState<Provider|null>(null);
+ const load=async()=>{setLoading(true);setError('');try{const r=await supabaseWorkerRequest<{ data: Provider[] }>('/api/v1/admin/providers');setProviders(Array.isArray(r.data)?r.data:[]);}catch(e){setError(e instanceof Error?e.message:'Could not load providers.');}finally{setLoading(false);}};
+ useEffect(()=>{void load();},[]);
+ const add=async()=>{const provider=code.trim().toUpperCase(),display=name.trim(),markets=countries.trim()?[...new Set(countries.split(',').map(x=>x.trim().toUpperCase()).filter(Boolean))]:null,p=Number(priority);
+  if(!/^[A-Z][A-Z0-9_]{1,39}$/.test(provider)||!display||display.length>120||!Number.isSafeInteger(p)||p<1||p>10000||(markets&&(markets.length>30||markets.some(x=>!/^[A-Z]{2}$/.test(x))))){setError('Enter a valid provider code, display name, priority and ISO country codes.');return;}
+  setAdding(true);setError('');try{await supabaseWorkerRequest('/api/v1/admin/providers',{method:'POST',body:JSON.stringify({provider_name:provider,display_name:display,supported_countries:markets,priority:p})});setCode('');setName('');setCountries('CM');setPriority('100');setShowAdd(false);await load();}catch(e){setError(e instanceof Error?e.message:'Could not add provider.');}finally{setAdding(false);}};
+ const toggle=async(p:Provider)=>{setBusy(p.id);setError('');try{await supabaseWorkerRequest('/api/v1/admin/rpc/admin_set_provider_active',{method:'POST',body:JSON.stringify({args:{p_provider_name:p.provider_name,p_active:!p.is_active}})});await load();}catch(e){setError(e instanceof Error?e.message:'Could not update provider.');}finally{setBusy(null);}};
+ return <div className="space-y-4">
+  <div className="flex items-start justify-between gap-3"><div><h2 className="text-2xl font-bold text-navy dark:text-white mb-1">🔐 Platform API Vault</h2><p className="text-sm text-gray-500 dark:text-gray-400">Manage payment gateway credentials. Secrets are encrypted in Supabase Vault and never returned to this screen.</p></div><button type="button" onClick={()=>setShowAdd(v=>!v)} className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-navy dark:bg-accent px-3 py-2 text-[11px] font-bold text-white"><Plus size={14}/> Add provider</button></div>
+  {error&&<div role="alert" className="flex items-start gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 p-3 text-xs text-red-700 dark:text-red-300"><AlertTriangle size={15}/><span className="flex-1">{error}</span><button type="button" onClick={()=>void load()} aria-label="Retry"><RefreshCw size={14}/></button></div>}
+  {showAdd&&<section className="rounded-xl bg-white dark:bg-darkcard p-4 shadow-sm space-y-3"><div className="flex justify-between"><b className="text-[13px]">Register payment provider</b><button type="button" onClick={()=>setShowAdd(false)} aria-label="Close"><X size={16}/></button></div>
+   <label className="block text-[10px] font-bold">Provider code<input value={code} onChange={e=>setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g,''))} placeholder="EXAMPLE_GATEWAY" maxLength={40} className="mt-1 w-full p-3 border rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono"/></label>
+   <label className="block text-[10px] font-bold">Display name<input value={name} onChange={e=>setName(e.target.value)} placeholder="Provider display name" maxLength={120} className="mt-1 w-full p-3 border rounded-xl bg-gray-50 dark:bg-darkbg text-[12px]"/></label>
+   <label className="block text-[10px] font-bold">Supported countries (ISO-2, comma-separated)<input value={countries} onChange={e=>setCountries(e.target.value)} placeholder="CM, GA, TD" className="mt-1 w-full p-3 border rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono"/></label>
+   <label className="block text-[10px] font-bold">Priority (lower runs first)<input type="number" min="1" max="10000" value={priority} onChange={e=>setPriority(e.target.value)} className="mt-1 w-full p-3 border rounded-xl bg-gray-50 dark:bg-darkbg text-[12px]"/></label>
+   <p className="text-[9px] text-gray-400">New providers are created disabled. Only providers with an installed and tested payment adapter can be activated.</p><button type="button" disabled={adding} onClick={()=>void add()} className="w-full rounded-xl bg-navy dark:bg-accent py-3 text-[12px] font-bold text-white">{adding?'Adding…':'Add payment provider'}</button></section>}
+  {loading?<div className="p-6 text-center text-xs text-gray-500">Loading payment providers…</div>:providers.length===0?<div className="p-6 text-center text-xs">No payment providers registered.</div>:<div className="space-y-3"><div className="flex items-center gap-2"><CreditCard size={15}/><b className="text-[13px]">Payment gateways · {providers.length}</b></div>
+   {providers.map(p=><section key={p.id} className="rounded-xl bg-white dark:bg-darkcard shadow-sm overflow-hidden"><div className="p-3 flex items-start gap-3"><div className="flex-1 min-w-0"><b className="text-[13px]">{p.display_name||p.provider_name}</b><p className="text-[10px] text-gray-500 font-mono">{p.provider_name}</p><p className="mt-1 text-[10px] text-gray-500">Markets: {p.supported_countries?.length?p.supported_countries.join(' · '):'Not restricted'}</p><p className="mt-1 text-[9px] text-gray-500">{p.adapter_configured?'Custom REST adapter configured':(p.provider_name==='FAPSHI'||p.provider_name==='CAMPAY')?'Built-in Worker adapter installed':'Credentials can be stored; configure a REST adapter below'}</p></div><button type="button" onClick={()=>void toggle(p)} disabled={busy===p.id||!p.worker_supported} className={`text-[10px] font-bold px-3 py-1.5 rounded-full disabled:opacity-50 ${p.is_active?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500'}`}>{busy===p.id?'Saving…':!p.worker_supported?'Adapter unavailable':p.is_active?'Active':'Disabled'}</button></div>
+    <div className="grid grid-cols-2 gap-2 px-3 pb-3">{(['sandbox','production'] as const).map(env=><div key={env} className="rounded-lg bg-gray-50 dark:bg-darkbg p-2.5"><div className="flex justify-between gap-2"><b className="text-[9px] uppercase text-gray-500">{env}</b>{(env==='sandbox'?p.has_sandbox_key:p.has_production_key)?<span className="text-[9px] text-green-700"><Check size={10} className="inline"/> Configured</span>:<span className="text-[9px] text-amber-600">Not configured</span>}</div><p className="mt-1 text-[9px] text-gray-400">{dateLabel(env==='sandbox'?p.sandbox_updated_at:p.production_updated_at)}</p></div>)}</div>
+    <div className="border-t px-3 py-2 flex justify-between"><span className="text-[9px] text-gray-400">Priority {p.priority}</span><div className="flex gap-3"><button type="button" onClick={()=>setAdapterProvider(p)} className="text-[11px] font-bold text-accent">Configure adapter</button><button type="button" onClick={()=>setEditing(p)} className="text-[11px] font-bold text-accent">Manage credentials</button></div></div></section>)}</div>}
+  {editing&&<CredentialEditor provider={editing} onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null);void load();}}/>}{adapterProvider&&<AdapterEditor provider={adapterProvider} onClose={()=>setAdapterProvider(null)} onSaved={()=>{setAdapterProvider(null);void load();}}/>}
+ </div>;
+}
+function CredentialEditor({provider,onClose,onSaved}:{provider:Provider;onClose:()=>void;onSaved:()=>void}){
+ const [environment,setEnvironment]=useState<Environment>('sandbox'),[fields,setFields]=useState<CredentialField[]>([{key:'api_public_key',value:''},{key:'api_secret_key',value:''},{key:'webhook_secret',value:''}]),[saving,setSaving]=useState(false),[removing,setRemoving]=useState(false),[error,setError]=useState('');
+ const configured=environment==='sandbox'?provider.has_sandbox_key:provider.has_production_key;
+ const patch=(i:number,p:Partial<CredentialField>)=>setFields(old=>old.map((f,n)=>n===i?{...f,...p}:f));
+ const save=async()=>{setError('');const credentials:Record<string,string>={};for(const f of fields){const k=f.key.trim().toLowerCase(),v=f.value.trim();if(!k&&!v)continue;if(!/^[a-z][a-z0-9_]{0,49}$/.test(k)||!v||v.length>4000||credentials[k]){setError('Use unique lowercase credential keys and non-empty values up to 4,096 characters.');return;}credentials[k]=v;}if(!Object.keys(credentials).length||Object.keys(credentials).length>30){setError('Add between 1 and 30 credential fields.');return;}setSaving(true);try{await supabaseWorkerRequest('/api/v1/admin/gateway-credentials',{method:'POST',body:JSON.stringify({provider_name:provider.provider_name,environment,credentials})});onSaved();}catch(e){setError(e instanceof Error?e.message:'Could not save credentials.');}finally{setSaving(false);}};
+ const remove=async()=>{if(!configured||!window.confirm(`Remove all ${environment} credentials for ${provider.provider_name}?`))return;setRemoving(true);setError('');try{await supabaseWorkerRequest('/api/v1/admin/gateway-credentials/remove',{method:'POST',body:JSON.stringify({provider_name:provider.provider_name,environment})});onSaved();}catch(e){setError(e instanceof Error?e.message:'Could not remove credentials.');}finally{setRemoving(false);}};
+ return <div className="fixed inset-0 z-[200] bg-black/50 flex items-end sm:items-center sm:justify-center" onClick={onClose}><div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} className="w-full sm:max-w-lg max-h-[90vh] bg-white dark:bg-darkcard rounded-t-2xl sm:rounded-2xl overflow-y-auto"><div className="p-3 border-b flex justify-between"><div><b className="text-[12px]">{provider.display_name||provider.provider_name}</b><p className="text-[9px] text-gray-500">Encrypted payment gateway credentials</p></div><button type="button" onClick={onClose} aria-label="Close"><X size={18}/></button></div><div className="p-4 space-y-3">
+  <label className="block text-[10px] font-bold">Environment<select value={environment} onChange={e=>setEnvironment(e.target.value as Environment)} className="mt-1 w-full p-3 border rounded-xl bg-gray-50 dark:bg-darkbg text-[12px]"><option value="sandbox">Sandbox / test</option><option value="production">Production / live</option></select></label>
+  {configured&&<p className="text-[10px] text-green-700 bg-green-50 rounded-lg p-2">Credentials already exist. Their values cannot be viewed; saving adds or rotates only the fields entered.</p>}
+  <div className="space-y-2">{fields.map((f,i)=><div key={i} className="grid grid-cols-[0.9fr_1.1fr_32px] gap-2"><input value={f.key} onChange={e=>patch(i,{key:e.target.value})} placeholder="credential_key" aria-label="Credential key" className="min-w-0 p-2 border rounded-lg bg-gray-50 dark:bg-darkbg text-[10px] font-mono"/><input type="password" autoComplete="new-password" value={f.value} onChange={e=>patch(i,{value:e.target.value})} placeholder="Secret value" aria-label="Credential value" className="min-w-0 p-2 border rounded-lg bg-gray-50 dark:bg-darkbg text-[10px] font-mono"/><button type="button" onClick={()=>setFields(old=>old.filter((_,n)=>n!==i))} disabled={fields.length===1} aria-label="Remove field" className="text-gray-400 disabled:opacity-30"><Trash2 size={14}/></button></div>)}</div>
+  <button type="button" onClick={()=>setFields(old=>old.length<30?[...old,{key:'',value:''}]:old)} disabled={fields.length>=30} className="inline-flex items-center gap-1 text-[10px] font-bold text-accent"><Plus size={13}/> Add credential field</button>
+  <p className="text-[9px] text-gray-400 flex gap-1"><Lock size={10}/> Provider-specific key names; values are encrypted and never returned or logged.</p>{error&&<p role="alert" className="text-[11px] text-red-600">{error}</p>}
+  <button type="button" onClick={()=>void save()} disabled={saving||removing} className="w-full bg-navy dark:bg-accent text-white font-bold py-3 rounded-xl text-[12px]">{saving?'Saving…':'Save credentials'}</button>
+  {configured&&<button type="button" onClick={()=>void remove()} disabled={saving||removing} className="w-full bg-red-50 text-red-600 font-bold py-2.5 rounded-xl text-[11px]">{removing?'Removing…':`Remove all ${environment} credentials`}</button>}
+ </div></div></div>;
 }
 
-function KeyEditor({
-  provider, onClose, onSaved,
-}: { provider: Provider; onClose: () => void; onSaved: () => void }) {
-  const [publicKey, setPublicKey] = useState('');
-  const [secretKey, setSecretKey] = useState('');
-  const [webhookSecret, setWebhookSecret] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    if (!publicKey.trim() || !secretKey.trim()) {
-      return alert('Public key and secret key are required.');
-    }
-    setSaving(true);
-    try {
-      await supabaseWorkerRequest('/api/v1/admin/gateway-credentials', { method: 'POST', body: JSON.stringify({
-        provider_name: provider.provider_name, api_public_key: publicKey.trim(), api_secret_key: secretKey.trim(),
-        webhook_secret: webhookSecret.trim() || null, environment: 'production',
-      }) });
-    } catch (error: unknown) {
-      alert('Error: ' + (error instanceof Error ? error.message : 'Could not save credentials.'));
-      setSaving(false);
-      return;
-    }
-    setSaving(false);
-    onSaved();
-  };
-
-  const removeKeys = async () => {
-    if (!window.confirm(`Remove keys for ${provider.provider_name}?`)) return;
-    try {
-      await supabaseWorkerRequest('/api/v1/admin/gateway-credentials/remove', { method: 'POST', body: JSON.stringify({ provider_name: provider.provider_name, environment: 'production' }) });
-      onSaved();
-    } catch (error: unknown) { alert(error instanceof Error ? error.message : 'Could not remove credentials.'); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[200] bg-black/50 flex items-end" onClick={onClose}>
-      <div
-        onClick={e => e.stopPropagation()}
-        className="w-full max-h-[90vh] bg-white dark:bg-darkcard rounded-t-2xl overflow-y-auto animate-slide-up"
-      >
-        <div className="p-3 border-b border-gray-100 dark:border-darkline flex items-center justify-between sticky top-0 bg-white dark:bg-darkcard z-10">
-          <div>
-            <p className="text-[12px] font-bold text-navy dark:text-white">
-              {provider.display_name || provider.provider_name}
-            </p>
-            <p className="text-[9px] text-gray-500 uppercase tracking-widest">{provider.provider_type}</p>
-          </div>
-          <button onClick={onClose}><X size={18} /></button>
-        </div>
-
-        <div className="p-4 space-y-3">
-          <div>
-            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
-              Public / API key
-            </label>
-            <input
-              value={publicKey}
-              onChange={e => setPublicKey(e.target.value)}
-              placeholder="pk_live_..."
-              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
-              Secret key
-            </label>
-            <input
-              type="password"
-              value={secretKey}
-              onChange={e => setSecretKey(e.target.value)}
-              placeholder="sk_live_..."
-              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
-              Webhook secret (optional)
-            </label>
-            <input
-              type="password"
-              value={webhookSecret}
-              onChange={e => setWebhookSecret(e.target.value)}
-              placeholder="whsec_..."
-              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono"
-            />
-          </div>
-
-          <p className="text-[9px] text-gray-400 flex items-center gap-1">
-            <Lock size={10} /> Keys are stored in the platform_api_vault table and never shown to regular users.
-          </p>
-
-          <button
-            onClick={save}
-            disabled={saving}
-            className="w-full bg-navy dark:bg-accent text-white font-bold py-3 rounded-xl text-[12px] disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save keys'}
-          </button>
-
-          {provider.has_key && (
-            <button
-              onClick={removeKeys}
-              className="w-full bg-red-50 dark:bg-red-900/20 text-red-600 font-bold py-2.5 rounded-xl text-[11px]"
-            >
-              Remove keys
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-      }
+function AdapterEditor({provider,onClose,onSaved}:{provider:Provider;onClose:()=>void;onSaved:()=>void}){
+ const example={base_url:"https://api.example.com",topup:{method:"POST",path:"/payments",headers:{Authorization:"Bearer {{credential_api_key}}"},body:{amount:"{{amount}}",currency:"{{currency}}",external_reference:"{{external_reference}}",phone:"{{phone}}"},reference_path:"data.reference",checkout_url_path:"data.checkout_url"},status:{method:"GET",path:"/payments/{{reference}}",headers:{Authorization:"Bearer {{credential_api_key}}"},status_path:"data.status",amount_path:"data.amount",currency_path:"data.currency",status_map:{success:["SUCCESS","PAID","SUCCESSFUL"],failed:["FAILED","CANCELLED"],pending:["PENDING","PROCESSING"]}},payout:{method:"POST",path:"/payouts",headers:{Authorization:"Bearer {{credential_api_key}}"},body:{amount:"{{amount}}",currency:"{{currency}}",phone:"{{phone}}",external_reference:"{{external_reference}}"},reference_path:"data.reference"}};
+ const [raw,setRaw]=useState(JSON.stringify(example,null,2)),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState("");
+ useEffect(()=>{let live=true;void supabaseWorkerRequest<{data:{config:unknown}}>('/api/v1/admin/payment-adapter?provider='+encodeURIComponent(provider.provider_name)).then(r=>{if(live&&r.data?.config)setRaw(JSON.stringify(r.data.config,null,2));}).catch(e=>{if(live)setError(e instanceof Error?e.message:"Could not load adapter.");}).finally(()=>{if(live)setLoading(false);});return()=>{live=false;};},[provider.provider_name]);
+ const save=async()=>{setError("");let config:unknown;try{config=JSON.parse(raw);}catch{setError("Adapter configuration must be valid JSON.");return;}setSaving(true);try{const result=await supabaseWorkerRequest<{data?:{ok?:boolean;error?:string}}>("/api/v1/admin/payment-adapter",{method:"POST",body:JSON.stringify({provider_name:provider.provider_name,config})});if(result.data?.ok!==true)throw new Error(result.data?.error||"Could not save adapter.");onSaved();}catch(e){setError(e instanceof Error?e.message:"Could not save adapter.");}finally{setSaving(false);}};
+ return <div className="fixed inset-0 z-[210] bg-black/50 flex items-end sm:items-center sm:justify-center" onClick={onClose}><div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} className="w-full sm:max-w-2xl max-h-[92vh] bg-white dark:bg-darkcard rounded-t-2xl sm:rounded-2xl overflow-y-auto"><div className="p-3 border-b flex justify-between"><div><b className="text-[12px]">REST adapter · {provider.display_name||provider.provider_name}</b><p className="text-[9px] text-gray-500">Define request and response mappings; keep credentials in the Vault</p></div><button type="button" onClick={onClose} aria-label="Close"><X size={18}/></button></div><div className="p-4 space-y-3"><p className="text-[10px] text-gray-500">Placeholders: amount, currency, reference, phone, email, description, external_reference, destination_provider, recipient_name and credential_key. Configure status success/failed/pending mappings. HTTPS on port 443 only.</p><textarea value={raw} onChange={e=>setRaw(e.target.value)} rows={20} spellCheck={false} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-darkbg font-mono text-[10px] whitespace-pre overflow-x-auto"/>{error&&<p role="alert" className="text-[11px] text-red-600">{error}</p>}<button type="button" disabled={loading||saving} onClick={()=>void save()} className="w-full bg-navy dark:bg-accent text-white font-bold py-3 rounded-xl text-[12px]">{loading?"Loading…":saving?"Saving…":"Save adapter configuration"}</button></div></div></div>;
+}

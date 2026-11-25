@@ -5,11 +5,8 @@ import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Shield, Upload, Check, AlertTriangle, Wallet, Clock } from 'lucide-react';
 import { getCachedUser } from '../lib/cache';
-import { PaymentMethodLogo, METHOD_LABELS } from '../components/PaymentMethodLogo';
 import { compressImage } from '../utils/compressImage';
 
-type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
-const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
 
 export default function ServiceOrder() {
   const { id } = useParams();
@@ -28,10 +25,12 @@ export default function ServiceOrder() {
   const [me, setMe] = useState<any>(null);
 
   const [requirements, setRequirements] = useState('');
-  const [payMethod, setPayMethod] = useState<'wallet' | Method>('wallet');
+  const [milestones, setMilestones] = useState<{ title: string; amount: number }[]>([]);
+  const payMethod = 'wallet' as const;
   const [walletBalance, setWalletBalance] = useState(0);
 
   const [deliveryNote, setDeliveryNote] = useState('');
+  const [confirmedDeadline, setConfirmedDeadline] = useState('');
   const [deliveryFile, setDeliveryFile] = useState<File | null>(null);
 
   useEffect(() => {
@@ -49,9 +48,14 @@ export default function ServiceOrder() {
           d1Request<{ data: any[] }>(`/api/market/listings/${encodeURIComponent(serviceId)}/packages`),
           supabaseWorkerRequest<{ data: { available_funds?: number } }>('/api/v1/wallet'),
         ]);
-        const selectedPackage = (packagesRes.data || []).find((row: any) => row.id === packageId) || null;
+        const selectedPackage = (packagesRes.data || []).find((row: any) => row.id === packageId) ||
+          ((packagesRes.data || []).length === 0 && svcRes.data ? {
+            id: null, title: 'Standard service', price: svcRes.data.price,
+            delivery_days: svcRes.data.delivery_days || 7,
+          } : null);
         setService(svcRes.data);
         setPkg(selectedPackage);
+        if (selectedPackage) setMilestones([{ title: 'Project delivery', amount: Number(selectedPackage.price) }]);
         setWalletBalance(walletRes.data?.available_funds || 0);
 
         if (svcRes.data?.seller_id) {
@@ -64,6 +68,7 @@ export default function ServiceOrder() {
           const result = await supabaseWorkerRequest<{ data: any }>(`/api/v1/service-orders/${encodeURIComponent(id)}`);
           existingOrder = result.data;
           setOrder(existingOrder);
+          setConfirmedDeadline(existingOrder.proposed_delivery_at ? new Date(existingOrder.proposed_delivery_at).toISOString().slice(0, 10) : '');
         } catch (error: unknown) {
           setErrorMsg(error instanceof Error ? error.message : 'Service orders are unavailable until the financial schema is migrated.');
           setLoading(false);
@@ -93,10 +98,22 @@ export default function ServiceOrder() {
     setBusy(true);
 
     try {
-      await supabaseWorkerRequest('/api/v1/checkout/service-orders', {
+      if (payMethod !== 'wallet') throw new Error('Freelance escrow checkout currently supports wallet payment only.');
+      if (milestones.length === 0 || milestones.some(m => !m.title.trim() || !Number.isSafeInteger(m.amount) || m.amount <= 0) ||
+          milestones.reduce((sum, m) => sum + m.amount, 0) !== Number(pkg.price)) {
+        throw new Error('Milestone amounts must be positive and add up exactly to the package price.');
+      }
+      const due = new Date(Date.now() + Math.max(1, Number(pkg.delivery_days) || 7) * 86400000);
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/checkout/service-orders', {
         method: 'POST',
-        body: JSON.stringify({ service_id: service.id, package_id: pkg.id, requirements: requirements.trim(), payment_method: payMethod }),
+        body: JSON.stringify({
+          seller_id: service.seller_id, service_id: service.id, package_id: pkg.id,
+          amount: Number(pkg.price), requirements: requirements.trim(),
+          due_at: due.toISOString(), payment_method: 'wallet',
+          milestones: milestones.map(m => ({ title: m.title.trim(), amount: m.amount, due_at: due.toISOString() })),
+        }),
       });
+      navigate(`/service-order/${result.data.id}`, { replace: true });
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Service order checkout is unavailable.');
     }
@@ -122,14 +139,14 @@ export default function ServiceOrder() {
     }
 
     try {
-      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/delivery`, { method: 'POST', body: JSON.stringify({ delivery_note: deliveryNote.trim(), delivery_file_url: fileUrl }) });
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/milestones/submit`, { method: 'POST', body: JSON.stringify({ milestone_id: order.service_order_milestones?.[0]?.id, delivery_note: deliveryNote.trim(), delivery_file_url: fileUrl }) });
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Service delivery is unavailable.');
       setBusy(false);
       return;
     }
 
-    alert('Delivered! Buyer has 72 hours to review.');
+    alert('Milestone submitted. The buyer can review and accept it or request revisions.');
     window.location.reload();
   };
 
@@ -137,7 +154,7 @@ export default function ServiceOrder() {
     if (!window.confirm('Approve this delivery and release funds?')) return;
     setBusy(true);
     try {
-      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/approve`, { method: 'POST', body: JSON.stringify({}) });
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/milestones/approve`, { method: 'POST', body: JSON.stringify({ milestone_id: order.service_order_milestones?.find((m: any) => m.status === 'submitted')?.id }) });
     } catch (error: unknown) {
       setErrorMsg(error instanceof Error ? error.message : 'Service order approval is unavailable.');
       setBusy(false);
@@ -162,6 +179,40 @@ export default function ServiceOrder() {
     window.location.reload();
   };
 
+  const requestRevision = async (milestoneId: string) => {
+    const note = window.prompt('What needs to be revised?');
+    if (!note || note.trim().length < 3) return;
+    setBusy(true);
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/milestones/revision`, {
+        method: 'POST', body: JSON.stringify({ milestone_id: milestoneId, note: note.trim() })
+      });
+      window.location.reload();
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not request revision.'); setBusy(false); }
+  };
+
+  const requestDeadlineChange = async () => {
+    const proposed = window.prompt('Enter the new delivery date (YYYY-MM-DD). The other party must approve it.');
+    if (!proposed || !/^\d{4}-\d{2}-\d{2}$/.test(proposed)) return;
+    setBusy(true);
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/deadline`, {
+        method: 'POST', body: JSON.stringify({ new_deadline: new Date(proposed + 'T23:59:59').toISOString() })
+      });
+      window.location.reload();
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not request deadline change.'); setBusy(false); }
+  };
+
+  const approveDeadlineChange = async (changeId: string) => {
+    setBusy(true);
+    try {
+      await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/deadline/approve`, {
+        method: 'POST', body: JSON.stringify({ change_id: changeId })
+      });
+      window.location.reload();
+    } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not approve deadline change.'); setBusy(false); }
+  };
+
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
 
   // ---------- NEW ORDER ----------
@@ -182,6 +233,24 @@ export default function ServiceOrder() {
         </div>
 
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400">Project milestones</p>
+            <button type="button" onClick={() => setMilestones(rows => [...rows, { title: '', amount: 0 }])}
+              className="text-[10px] text-accent font-bold">+ Add milestone</button>
+          </div>
+          {milestones.map((milestone, index) => (
+            <div key={index} className="flex gap-2 mb-2">
+              <input value={milestone.title} onChange={e => setMilestones(rows => rows.map((m,i) => i === index ? { ...m, title: e.target.value } : m))}
+                placeholder={`Milestone ${index + 1}`} className="min-w-0 flex-1 p-2 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+              <input type="number" min="1" value={milestone.amount || ''} onChange={e => setMilestones(rows => rows.map((m,i) => i === index ? { ...m, amount: Number(e.target.value) } : m))}
+                placeholder="XAF" className="w-24 p-2 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+              {milestones.length > 1 && <button type="button" onClick={() => setMilestones(rows => rows.filter((_,i) => i !== index))} className="text-red-500 text-xs">×</button>}
+            </div>
+          ))}
+          <p className="text-[10px] text-gray-500">Allocated: {milestones.reduce((sum,m) => sum + (Number(m.amount)||0),0).toLocaleString()} / {amount.toLocaleString()} XAF</p>
+        </div>
+
+        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
           <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">What do you need?</p>
           <textarea
             value={requirements}
@@ -193,43 +262,26 @@ export default function ServiceOrder() {
         </div>
 
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
-          <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-2">Pay with</p>
+          <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-2">Payment method</p>
 
           <button
-            onClick={() => setPayMethod('wallet')}
-            className={`w-full p-3 rounded-xl border-2 mb-2 flex items-center gap-3 ${
-              payMethod === 'wallet' ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-darkline'
-            }`}
+            className="w-full p-3 rounded-xl border-2 mb-2 flex items-center gap-3 border-accent bg-accent/5"
           >
             <div className="w-8 h-8 rounded-lg bg-gray-700 flex items-center justify-center text-white">
               <Wallet size={16} />
             </div>
             <div className="flex-1 text-left">
               <p className="text-[12px] font-bold text-navy dark:text-white">Pay from Wallet</p>
-              <p className="text-[10px] text-gray-500">Balance: {walletBalance.toLocaleString()} XAF</p>
+              <p className="text-[10px] text-gray-500">Available balance: {walletBalance.toLocaleString()} XAF · platform fee is shown in checkout response</p>
             </div>
             {payMethod === 'wallet' && <Check size={16} className="text-accent" />}
           </button>
 
-          {METHODS.map(m => (
-            <button
-              key={m}
-              onClick={() => setPayMethod(m)}
-              className={`w-full p-3 rounded-xl border-2 mb-2 flex items-center gap-3 ${
-                payMethod === m ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-darkline'
-              }`}
-            >
-              <PaymentMethodLogo method={m} size={32} />
-              <p className="flex-1 text-left text-[12px] font-bold text-navy dark:text-white">
-                {METHOD_LABELS[m]}
-              </p>
-              {payMethod === m && <Check size={16} className="text-accent" />}
-            </button>
-          ))}
+
         </div>
 
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] p-3 rounded-xl mb-3">
-          Service-order checkout is paused. Its financial tables and atomic payment settlement are not present in the current Supabase schema; fees will not be estimated or charged in the browser.
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-[11px] p-3 rounded-xl mb-3">
+          Funds are held securely in escrow. The seller must accept the project and confirm the delivery deadline before work begins.
         </div>
 
         {errorMsg && (
@@ -240,10 +292,10 @@ export default function ServiceOrder() {
 
         <button
           onClick={createOrder}
-          disabled={true}
+          disabled={busy || payMethod !== 'wallet'}
           className="w-full bg-accent text-white font-bold py-3 rounded-xl text-[12px] disabled:opacity-50"
         >
-          {busy ? 'Processing...' : 'Service orders unavailable'}
+          {busy ? 'Processing...' : 'Fund escrow'}
         </button>
       </div>
     );
@@ -256,8 +308,12 @@ export default function ServiceOrder() {
   const isBuyer = me?.id === order.buyer_id;
 
   const statusColor: Record<string, string> = {
+    awaiting_acceptance: 'bg-yellow-100 text-yellow-700',
     hold: 'bg-yellow-100 text-yellow-700',
+    in_progress: 'bg-blue-100 text-blue-700',
+    revision_requested: 'bg-amber-100 text-amber-700',
     delivered: 'bg-blue-100 text-blue-700',
+    deadline_refunded: 'bg-gray-100 text-gray-700',
     released: 'bg-green-100 text-green-700',
     auto_released_72h: 'bg-green-100 text-green-700',
     disputed: 'bg-red-100 text-red-700',
@@ -284,12 +340,35 @@ export default function ServiceOrder() {
         {pkg && <p className="text-[12px] font-bold text-navy dark:text-white mt-0.5">{pkg.title}</p>}
         <p className="text-[16px] font-black text-accent mt-2">{Number(order.amount).toLocaleString()} XAF</p>
 
+        {order.proposed_delivery_at && order.escrow_status === 'awaiting_acceptance' && (
+          <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1"><Clock size={11} /> Buyer requested date: {new Date(order.proposed_delivery_at).toLocaleDateString()} · awaiting seller confirmation</p>
+        )}
+        {order.confirmed_delivery_at && ['in_progress','revision_requested'].includes(order.escrow_status) && (
+          <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1"><Clock size={11} /> Seller-confirmed deadline: {new Date(order.confirmed_delivery_at).toLocaleString()}</p>
+        )}
         {order.auto_release_deadline_at && order.escrow_status === 'delivered' && (
           <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1">
             <Clock size={11} /> Auto-releases {new Date(order.auto_release_deadline_at).toLocaleString()}
           </p>
         )}
       </div>
+
+      {(order.service_order_milestones || []).length > 0 && (
+        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
+          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Project milestones</p>
+          {order.service_order_milestones.map((m: any) => (
+            <div key={m.id} className="border-b last:border-0 border-gray-100 dark:border-darkline py-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-bold text-navy dark:text-white">{m.sequence_no}. {m.title}</p>
+                <span className="text-[10px] text-gray-500">{m.status}</span>
+              </div>
+              <p className="text-[11px] text-accent font-bold">{Number(m.amount).toLocaleString()} XAF</p>
+              {m.delivery_note && <p className="text-[10px] text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{m.delivery_note}</p>}
+              {m.delivery_file_url && <a href={m.delivery_file_url} target="_blank" rel="noreferrer" className="text-[10px] text-accent underline">View milestone submission</a>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {order.requirements && (
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
@@ -312,7 +391,28 @@ export default function ServiceOrder() {
         </div>
       )}
 
-      {isSeller && order.escrow_status === 'hold' && (
+      {isSeller && order.escrow_status === 'awaiting_acceptance' && (
+        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
+          <p className="text-[11px] font-bold text-navy dark:text-white mb-2">Accept project and confirm delivery date</p>
+          <input type="date" min={new Date(Date.now() + 86400000).toISOString().slice(0,10)}
+            value={confirmedDeadline} onChange={e => setConfirmedDeadline(e.target.value)}
+            className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs mb-2" />
+          <button onClick={async () => {
+            if (!confirmedDeadline) { setErrorMsg('Confirm a delivery date first.'); return; }
+            setBusy(true);
+            try {
+              await supabaseWorkerRequest(`/api/v1/service-orders/${encodeURIComponent(order.id)}/accept`, {
+                method: 'POST', body: JSON.stringify({ confirmed_deadline: new Date(confirmedDeadline + 'T23:59:59').toISOString() })
+              });
+              window.location.reload();
+            } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not accept project.'); setBusy(false); }
+          }} disabled={busy} className="w-full bg-accent text-white font-bold py-2.5 rounded-lg text-[12px] disabled:opacity-50">
+            {busy ? 'Accepting...' : 'Accept project & confirm deadline'}
+          </button>
+        </div>
+      )}
+
+      {isSeller && ['in_progress','revision_requested'].includes(order.escrow_status) && (
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
           <p className="text-[11px] font-bold text-navy dark:text-white mb-2">Deliver your service</p>
           <textarea
@@ -337,7 +437,24 @@ export default function ServiceOrder() {
         </div>
       )}
 
+      {['in_progress','revision_requested'].includes(order.escrow_status) && (
+        <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3">
+          <p className="text-[11px] font-bold text-navy dark:text-white mb-2">Project deadline</p>
+          <p className="text-[10px] text-gray-500 mb-2">Any change requires approval from both buyer and seller.</p>
+          <button onClick={requestDeadlineChange} disabled={busy} className="w-full border border-gray-300 dark:border-darkline rounded-lg py-2 text-[11px] font-bold">Propose new deadline</button>
+          {(order.service_order_deadline_changes || []).filter((x: any) => !x.applied_at).map((x: any) => {
+            const alreadyApproved = isBuyer ? !!x.buyer_approved_at : !!x.seller_approved_at;
+            return <div key={x.id} className="mt-2 p-2 bg-gray-50 dark:bg-darkbg rounded-lg">
+              <p className="text-[10px]">Proposed: {new Date(x.proposed_deadline_at).toLocaleString()}</p>
+              <p className="text-[10px] text-gray-500">Buyer: {x.buyer_approved_at ? 'approved' : 'pending'} · Seller: {x.seller_approved_at ? 'approved' : 'pending'}</p>
+              {!alreadyApproved && <button onClick={() => approveDeadlineChange(x.id)} disabled={busy} className="text-[11px] text-accent font-bold mt-1">Approve deadline change</button>}
+            </div>;
+          })}
+        </div>
+      )}
+
       {isBuyer && order.escrow_status === 'delivered' && (
+
         <div className="bg-white dark:bg-darkcard rounded-2xl shadow-sm p-3 mb-3 flex flex-col gap-2">
           <button
             onClick={approve}
@@ -346,6 +463,12 @@ export default function ServiceOrder() {
           >
             <Check size={13} /> {busy ? 'Confirming...' : 'Approve & release funds'}
           </button>
+          {order.service_order_milestones?.filter((m: any) => m.status === 'submitted').map((m: any) => (
+            <button key={m.id} onClick={() => requestRevision(m.id)} disabled={busy}
+              className="w-full border border-amber-300 text-amber-700 font-bold py-2.5 rounded-lg text-[12px]">
+              Request revision
+            </button>
+          ))}
           <button
             onClick={openDispute}
             className="w-full border border-red-300 text-red-600 font-bold py-2.5 rounded-lg text-[12px] flex items-center justify-center gap-1"
