@@ -49,7 +49,7 @@ export default function Subscribe() {
           supabaseWorkerRequest<{ data: { is_subscribed: boolean } }>('/api/v1/me/profile'),
           supabaseWorkerRequest<{ data: { available_funds: number } | null }>('/api/v1/wallet'),
           supabaseWorkerRequest<{ data: { profile: any; countries: any[] } }>('/api/v1/me/payment-preferences'),
-          supabaseWorkerRequest<{ data: { plan_price?: number; currency?: string; options?: Array<{ payment_method: string }> } }>('/api/v1/subscriptions/options'),
+          supabaseWorkerRequest<{ data: { plan_price?: number; currency?: string; options?: Array<{ provider: string; payment_method: string; gross_amount: number; gateway_fee: number }> } }>('/api/v1/subscriptions/options'),
         ]);
         if (!active) return;
         if (userRes.data) setIsSubscribed(!!userRes.data.is_subscribed);
