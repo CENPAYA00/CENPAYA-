@@ -1,0 +1,4 @@
+# New financial event ingress. Authentication is performed with a timestamped HMAC
+# signature in the function; do not disable this check or expose its secret.
+[functions.cenpaya-financial]
+verify_jwt = false

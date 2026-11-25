@@ -1,0 +1,16 @@
+-- LEGACY POLICY REFERENCE — DO NOT APPLY AS A NEW MIGRATION.
+--
+-- The policies previously in this file covered users, chat, notifications,
+-- and chat participants. Those are non-financial domains now owned by the
+-- Cloudflare Worker + D1 and must not depend on Supabase Auth.
+--
+-- In particular, auth.uid() is a Supabase Auth identity. It does not identify
+-- a user authenticated by the D1 Worker. Passing a D1 user ID from the browser
+-- does not make auth.uid() valid and is not a secure identity bridge.
+--
+-- Keep financial data in Supabase. Before enabling or changing financial
+-- RLS, define the trusted server-to-server identity mechanism first, then
+-- write table-specific policies for the actual financial schema.
+--
+-- This file is intentionally non-executable documentation. Do not restore
+-- policies for profiles, chat, notifications, or other D1-owned tables here.
