@@ -1,26 +1,20 @@
 begin;
 
--- The legacy notification providers are not financial providers. Their records
--- have no Vault entries and no transactional-ledger references.
-delete from public.system_providers
-where provider_type in ('EMAIL_SERVICE', 'SMS_SERVICE', 'EMAIL_GATEWAY', 'SMS_GATEWAY');
+drop function if exists public.admin_list_providers();
 
-alter table public.system_providers
-  drop constraint if exists system_providers_provider_type_check;
-
-alter table public.system_providers
-  add constraint system_providers_provider_type_check
-  check (provider_type = any (array['PAYMENT_GATEWAY', 'VIDEO_HOST', 'VOICE_CALL']::text[]));
-
-create or replace function public.admin_list_providers()
+create function public.admin_list_providers()
 returns table(
+  id uuid,
   provider_type text,
   provider_name text,
   display_name text,
   is_active boolean,
-  has_key boolean,
-  environment text,
-  last_updated timestamp with time zone
+  priority integer,
+  supported_countries text[],
+  has_sandbox_key boolean,
+  has_production_key boolean,
+  sandbox_updated_at timestamp with time zone,
+  production_updated_at timestamp with time zone
 )
 language sql
 stable
@@ -28,33 +22,39 @@ security definer
 set search_path to 'public'
 as $function$
   select
+    sp.id,
     sp.provider_type,
     sp.provider_name,
     sp.display_name,
     sp.is_active,
+    sp.priority,
+    sp.supported_countries,
     exists (
       select 1 from public.platform_api_vault v
-      where v.provider_id = sp.id
-    ) as has_key,
+      where v.provider_id = sp.id and v.environment = 'sandbox'
+    ) as has_sandbox_key,
+    exists (
+      select 1 from public.platform_api_vault v
+      where v.provider_id = sp.id and v.environment = 'production'
+    ) as has_production_key,
     (
-      select v.environment
+      select max(v.updated_at)
       from public.platform_api_vault v
-      where v.provider_id = sp.id
-      order by v.updated_at desc
-      limit 1
-    ) as environment,
+      where v.provider_id = sp.id and v.environment = 'sandbox'
+    ) as sandbox_updated_at,
     (
-      select v.updated_at
+      select max(v.updated_at)
       from public.platform_api_vault v
-      where v.provider_id = sp.id
-      order by v.updated_at desc
-      limit 1
-    ) as last_updated
+      where v.provider_id = sp.id and v.environment = 'production'
+    ) as production_updated_at
   from public.system_providers sp
   where public.is_super_admin()
     and sp.provider_type = 'PAYMENT_GATEWAY'
   order by sp.priority, sp.provider_name;
 $function$;
+
+revoke all on function public.admin_list_providers() from public, anon;
+grant execute on function public.admin_list_providers() to authenticated;
 
 create or replace function public.admin_set_provider_active(
   p_provider_name text,

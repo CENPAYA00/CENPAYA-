@@ -1,140 +1,160 @@
 import { useEffect, useState } from 'react';
 import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
-import { CreditCard, MessageSquare, Mail, X, Check, Lock } from 'lucide-react';
+import { CreditCard, X, Check, Lock, AlertTriangle, RefreshCw } from 'lucide-react';
 
+type Environment = 'sandbox' | 'production';
 type Provider = {
   id: string;
   provider_name: string;
-  display_name: string;
+  display_name: string | null;
   provider_type: string;
   is_active: boolean;
   priority: number;
-  has_key: boolean;
-  environment: string | null;
-  updated_at: string | null;
+  supported_countries: string[] | null;
+  has_sandbox_key: boolean;
+  has_production_key: boolean;
+  sandbox_updated_at: string | null;
+  production_updated_at: string | null;
 };
 
-const SECTIONS: { key: string; title: string; icon: any; subtitle: string }[] = [
-  { key: 'PAYMENT_GATEWAY', title: 'Payment gateways', icon: CreditCard, subtitle: 'Mobile money & card aggregators' },
-  { key: 'SMS_SERVICE',     title: 'SMS providers',    icon: MessageSquare, subtitle: 'OTP and transactional SMS' },
-  { key: 'EMAIL_SERVICE',   title: 'Email providers',  icon: Mail, subtitle: 'Transactional email' },
-];
+function dateLabel(value: string | null): string {
+  if (!value) return 'Never updated';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString();
+}
 
 export default function AdminVault() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [editing, setEditing] = useState<Provider | null>(null);
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
-
+    setError('');
     try {
       const result = await supabaseWorkerRequest<{ data: Provider[] }>('/api/v1/admin/providers');
-      setProviders(result.data || []);
-    } catch (error) {
-      console.error(error);
-      setProviders([]);
+      setProviders(Array.isArray(result.data) ? result.data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load API Vault providers.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
 
-  const toggleActive = async (p: Provider) => {
-    await supabaseWorkerRequest('/api/v1/admin/rpc/admin_set_provider_active', { method: 'POST', body: JSON.stringify({ args: { p_provider_name: p.provider_name, p_active: !p.is_active } }) });
-    load();
+  const toggleActive = async (provider: Provider) => {
+    setBusyProvider(provider.id);
+    setError('');
+    try {
+      await supabaseWorkerRequest('/api/v1/admin/rpc/admin_set_provider_active', {
+        method: 'POST',
+        body: JSON.stringify({ args: { p_provider_name: provider.provider_name, p_active: !provider.is_active } }),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update provider status.');
+    } finally {
+      setBusyProvider(null);
+    }
   };
-
-  if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold text-navy dark:text-white mb-2">🔐 API Vault</h2>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        Keys are encrypted and only accessible from the backend. Tap a provider to add or update its keys.
-      </p>
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-2xl font-bold text-navy dark:text-white mb-1">🔐 Platform API Vault</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Payment-provider credentials are stored in Supabase Vault and accessed by the financial Worker only.
+          Secret values are never returned to this screen.
+        </p>
+      </div>
 
-      {SECTIONS.map(section => {
-        const list = providers.filter(p => p.provider_type === section.key);
-        const Icon = section.icon;
-        return (
-          <div key={section.key} className="mb-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Icon size={15} className="text-navy dark:text-white" />
-              <p className="text-[13px] font-bold text-navy dark:text-white">{section.title}</p>
-              <span className="text-[10px] text-gray-500">· {list.length}</span>
-            </div>
-            <p className="text-[10px] text-gray-500 mb-2">{section.subtitle}</p>
+      {error && (
+        <div role="alert" className="flex items-start gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 p-3 text-xs text-red-700 dark:text-red-300">
+          <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+          <span className="flex-1">{error}</span>
+          <button type="button" onClick={() => void load()} aria-label="Retry loading API Vault"><RefreshCw size={14} /></button>
+        </div>
+      )}
 
-            <div className="bg-white dark:bg-darkcard rounded-xl shadow-sm overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center px-3 py-2 bg-gray-50 dark:bg-darkbg border-b border-gray-100 dark:border-darkline">
-                <p className="flex-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider">Provider</p>
-                <p className="w-20 text-center text-[9px] font-bold text-gray-500 uppercase tracking-wider">Status</p>
-                <p className="w-20 text-center text-[9px] font-bold text-gray-500 uppercase tracking-wider">Keys</p>
-                <p className="w-10"></p>
+      {loading ? (
+        <div className="p-6 text-center text-xs text-gray-500">Loading payment providers…</div>
+      ) : providers.length === 0 ? (
+        <div className="rounded-xl bg-white dark:bg-darkcard p-6 text-center shadow-sm">
+          <CreditCard size={26} className="mx-auto mb-2 text-gray-400" />
+          <p className="text-sm font-semibold text-navy dark:text-white">No payment providers returned</p>
+          <p className="mt-1 text-xs text-gray-500">Check administrator access and provider configuration.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <CreditCard size={15} className="text-navy dark:text-white" />
+            <p className="text-[13px] font-bold text-navy dark:text-white">Payment gateways</p>
+            <span className="text-[10px] text-gray-500">· {providers.length}</span>
+          </div>
+
+          {providers.map(provider => (
+            <section key={provider.id} className="rounded-xl bg-white dark:bg-darkcard shadow-sm overflow-hidden">
+              <div className="p-3 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-bold text-navy dark:text-white truncate">
+                    {provider.display_name || provider.provider_name}
+                  </p>
+                  <p className="text-[10px] text-gray-500 font-mono">{provider.provider_name}</p>
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    Markets: {provider.supported_countries?.length ? provider.supported_countries.join(' · ') : 'Not restricted'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void toggleActive(provider)}
+                  disabled={busyProvider === provider.id}
+                  aria-label={provider.is_active ? `Disable ${provider.display_name || provider.provider_name}` : `Enable ${provider.display_name || provider.provider_name}`}
+                  className={`text-[10px] font-bold px-3 py-1.5 rounded-full disabled:opacity-50 ${provider.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 dark:bg-darkline text-gray-500'}`}
+                >
+                  {busyProvider === provider.id ? 'Saving…' : provider.is_active ? 'Active' : 'Disabled'}
+                </button>
               </div>
 
-              {list.length === 0 && (
-                <p className="p-4 text-[11px] text-gray-400 text-center">No providers in this category.</p>
-              )}
-
-              {list.map(p => (
-                <div key={p.id} className="flex items-center px-3 py-3 border-b border-gray-100 dark:border-darkline last:border-b-0">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-bold text-navy dark:text-white truncate">
-                      {p.display_name || p.provider_name}
-                    </p>
-                    {p.updated_at && (
-                      <p className="text-[9px] text-gray-400">
-                        Updated {new Date(p.updated_at).toLocaleDateString()}
-                      </p>
-                    )}
+              <div className="grid grid-cols-2 gap-2 px-3 pb-3">
+                <div className="rounded-lg bg-gray-50 dark:bg-darkbg p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Sandbox</p>
+                    {provider.has_sandbox_key
+                      ? <span className="text-[9px] font-bold text-green-700 flex items-center gap-1"><Check size={10} /> Configured</span>
+                      : <span className="text-[9px] text-amber-600">Not configured</span>}
                   </div>
-
-                  <div className="w-20 flex justify-center">
-                    <button
-                      onClick={() => toggleActive(p)}
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                        p.is_active
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 dark:bg-darkline text-gray-500'
-                      }`}
-                    >
-                      {p.is_active ? 'Active' : 'Off'}
-                    </button>
-                  </div>
-
-                  <div className="w-20 flex justify-center">
-                    {p.has_key ? (
-                      <span className="text-[9px] font-bold text-green-700 flex items-center gap-1">
-                        <Check size={10} /> Set
-                      </span>
-                    ) : (
-                      <span className="text-[9px] font-bold text-gray-400">Not set</span>
-                    )}
-                  </div>
-
-                  <div className="w-10 flex justify-end">
-                    <button
-                      onClick={() => setEditing(p)}
-                      className="text-[10px] font-bold text-accent"
-                    >
-                      Edit
-                    </button>
-                  </div>
+                  <p className="mt-1 text-[9px] text-gray-400">{dateLabel(provider.sandbox_updated_at)}</p>
                 </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+                <div className="rounded-lg bg-gray-50 dark:bg-darkbg p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Production</p>
+                    {provider.has_production_key
+                      ? <span className="text-[9px] font-bold text-green-700 flex items-center gap-1"><Check size={10} /> Configured</span>
+                      : <span className="text-[9px] text-amber-600">Not configured</span>}
+                  </div>
+                  <p className="mt-1 text-[9px] text-gray-400">{dateLabel(provider.production_updated_at)}</p>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-100 dark:border-darkline px-3 py-2 flex items-center justify-between">
+                <p className="text-[9px] text-gray-400">Priority {provider.priority}</p>
+                <button type="button" onClick={() => setEditing(provider)} className="text-[11px] font-bold text-accent">
+                  Manage credentials
+                </button>
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
 
       {editing && (
         <KeyEditor
           provider={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); load(); }}
+          onSaved={() => { setEditing(null); void load(); }}
         />
       )}
     </div>
@@ -144,115 +164,136 @@ export default function AdminVault() {
 function KeyEditor({
   provider, onClose, onSaved,
 }: { provider: Provider; onClose: () => void; onSaved: () => void }) {
+  const [environment, setEnvironment] = useState<Environment>('sandbox');
   const [publicKey, setPublicKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState('');
+
+  const hasCredentials = environment === 'sandbox' ? provider.has_sandbox_key : provider.has_production_key;
 
   const save = async () => {
+    setError('');
     if (!publicKey.trim() || !secretKey.trim()) {
-      return alert('Public key and secret key are required.');
+      setError('Enter both the public/API key and secret key. Existing secret values cannot be viewed or recovered here.');
+      return;
     }
     setSaving(true);
     try {
-      await supabaseWorkerRequest('/api/v1/admin/gateway-credentials', { method: 'POST', body: JSON.stringify({
-        provider_name: provider.provider_name, api_public_key: publicKey.trim(), api_secret_key: secretKey.trim(),
-        webhook_secret: webhookSecret.trim() || null, environment: 'production',
-      }) });
-    } catch (error: unknown) {
-      alert('Error: ' + (error instanceof Error ? error.message : 'Could not save credentials.'));
+      await supabaseWorkerRequest('/api/v1/admin/gateway-credentials', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider_name: provider.provider_name,
+          api_public_key: publicKey.trim(),
+          api_secret_key: secretKey.trim(),
+          webhook_secret: webhookSecret.trim() || null,
+          environment,
+        }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save credentials.');
+    } finally {
       setSaving(false);
-      return;
     }
-    setSaving(false);
-    onSaved();
   };
 
   const removeKeys = async () => {
-    if (!window.confirm(`Remove keys for ${provider.provider_name}?`)) return;
+    if (!hasCredentials) return;
+    if (!window.confirm(`Remove ${environment} credentials for ${provider.provider_name}?`)) return;
+    setError('');
+    setRemoving(true);
     try {
-      await supabaseWorkerRequest('/api/v1/admin/gateway-credentials/remove', { method: 'POST', body: JSON.stringify({ provider_name: provider.provider_name, environment: 'production' }) });
+      await supabaseWorkerRequest('/api/v1/admin/gateway-credentials/remove', {
+        method: 'POST',
+        body: JSON.stringify({ provider_name: provider.provider_name, environment }),
+      });
       onSaved();
-    } catch (error: unknown) { alert(error instanceof Error ? error.message : 'Could not remove credentials.'); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove credentials.');
+    } finally {
+      setRemoving(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/50 flex items-end" onClick={onClose}>
+    <div className="fixed inset-0 z-[200] bg-black/50 flex items-end sm:items-center sm:justify-center" onClick={onClose}>
       <div
-        onClick={e => e.stopPropagation()}
-        className="w-full max-h-[90vh] bg-white dark:bg-darkcard rounded-t-2xl overflow-y-auto animate-slide-up"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Manage ${provider.display_name || provider.provider_name} credentials`}
+        onClick={event => event.stopPropagation()}
+        className="w-full sm:max-w-lg max-h-[90vh] bg-white dark:bg-darkcard rounded-t-2xl sm:rounded-2xl overflow-y-auto"
       >
         <div className="p-3 border-b border-gray-100 dark:border-darkline flex items-center justify-between sticky top-0 bg-white dark:bg-darkcard z-10">
           <div>
-            <p className="text-[12px] font-bold text-navy dark:text-white">
-              {provider.display_name || provider.provider_name}
-            </p>
-            <p className="text-[9px] text-gray-500 uppercase tracking-widest">{provider.provider_type}</p>
+            <p className="text-[12px] font-bold text-navy dark:text-white">{provider.display_name || provider.provider_name}</p>
+            <p className="text-[9px] text-gray-500 uppercase tracking-widest">Payment gateway credentials</p>
           </div>
-          <button onClick={onClose}><X size={18} /></button>
+          <button type="button" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
 
         <div className="p-4 space-y-3">
           <div>
-            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
-              Public / API key
-            </label>
-            <input
-              value={publicKey}
-              onChange={e => setPublicKey(e.target.value)}
-              placeholder="pk_live_..."
-              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono"
-            />
+            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">Environment</label>
+            <select
+              value={environment}
+              onChange={event => { setEnvironment(event.target.value as Environment); setPublicKey(''); setSecretKey(''); setWebhookSecret(''); setError(''); }}
+              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px]"
+            >
+              <option value="sandbox">Sandbox / test</option>
+              <option value="production">Production / live</option>
+            </select>
+          </div>
+
+          {hasCredentials && (
+            <p className="text-[10px] text-green-700 bg-green-50 dark:bg-green-900/20 rounded-lg p-2">
+              Credentials are already configured for this environment. Enter replacement values to rotate them; existing secrets are never displayed.
+            </p>
+          )}
+
+          <div>
+            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">Public / API key</label>
+            <input autoComplete="off" value={publicKey} onChange={event => setPublicKey(event.target.value)}
+              placeholder="Enter new public/API key"
+              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono" />
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
-              Secret key
-            </label>
-            <input
-              type="password"
-              value={secretKey}
-              onChange={e => setSecretKey(e.target.value)}
-              placeholder="sk_live_..."
-              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono"
-            />
+            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">Secret key / token</label>
+            <input type="password" autoComplete="new-password" value={secretKey} onChange={event => setSecretKey(event.target.value)}
+              placeholder="Enter new secret key"
+              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono" />
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
-              Webhook secret (optional)
-            </label>
-            <input
-              type="password"
-              value={webhookSecret}
-              onChange={e => setWebhookSecret(e.target.value)}
-              placeholder="whsec_..."
-              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono"
-            />
+            <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">Webhook secret (optional)</label>
+            <input type="password" autoComplete="new-password" value={webhookSecret} onChange={event => setWebhookSecret(event.target.value)}
+              placeholder="Enter webhook signing secret"
+              className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl bg-gray-50 dark:bg-darkbg text-[12px] font-mono" />
           </div>
 
           <p className="text-[9px] text-gray-400 flex items-center gap-1">
-            <Lock size={10} /> Keys are stored in the platform_api_vault table and never shown to regular users.
+            <Lock size={10} /> Values are sent to the authenticated Worker and stored in Supabase Vault. They are not returned to the browser.
           </p>
 
-          <button
-            onClick={save}
-            disabled={saving}
-            className="w-full bg-navy dark:bg-accent text-white font-bold py-3 rounded-xl text-[12px] disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save keys'}
+          {error && <p role="alert" className="text-[11px] text-red-600">{error}</p>}
+
+          <button type="button" onClick={() => void save()} disabled={saving || removing}
+            className="w-full bg-navy dark:bg-accent text-white font-bold py-3 rounded-xl text-[12px] disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save credentials'}
           </button>
 
-          {provider.has_key && (
-            <button
-              onClick={removeKeys}
-              className="w-full bg-red-50 dark:bg-red-900/20 text-red-600 font-bold py-2.5 rounded-xl text-[11px]"
-            >
-              Remove keys
+          {hasCredentials && (
+            <button type="button" onClick={() => void removeKeys()} disabled={saving || removing}
+              className="w-full bg-red-50 dark:bg-red-900/20 text-red-600 font-bold py-2.5 rounded-xl text-[11px] disabled:opacity-50">
+              {removing ? 'Removing…' : `Remove ${environment} credentials`}
             </button>
           )}
         </div>
       </div>
     </div>
   );
-      }
+}
