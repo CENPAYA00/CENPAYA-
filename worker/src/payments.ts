@@ -285,7 +285,7 @@ export async function handleAuthenticatedPaymentApi(
       return jsonResponse({ success: true, data: result }, 200, headers);
     }
 
-    const provider = text(body.provider, 24).toUpperCase();
+    const provider = text(body.provider, 40).toUpperCase();
     const paymentMethod = text(body.payment_method, 32).toUpperCase();
     const { data: userInfo, error: userInfoError } = await userDb.from("users").select("phone,momo_number,email").eq("id", userId).maybeSingle();
     const mobile = phone(body.phone) || phone(userInfo?.momo_number || userInfo?.phone);
