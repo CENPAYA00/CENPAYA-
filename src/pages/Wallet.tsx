@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
@@ -8,8 +7,8 @@ import { PaymentMethodLogo } from '../components/PaymentMethodLogo';
 import Select from '../components/Select';
 import { useI18n } from '../contexts/i18n';
 
-type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
-const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
+type Method = 'mtn_momo' | 'orange_money';
+const METHODS: Method[] = ['mtn_momo', 'orange_money'];
 
 const METHOD_LABELS: Record<Method, string> = {
   mtn_momo: 'MTN MoMo',
@@ -38,20 +37,27 @@ export default function Wallet() {
       const { user } = await d1Me();
       if (!user) { setLoading(false); return; }
 
-      const [walletRes, userRes, countriesRes] = await Promise.all([
+      const [walletRes, prefsRes] = await Promise.all([
         supabaseWorkerRequest<{ data: any }>('/api/v1/wallet'),
-        supabase.from('users').select('username, country_iso, momo_number, momo_provider, is_subscribed').eq('id', user.id).single(),
-        supabase.from('supported_countries').select('code, name, phone_prefix, flag_emoji').eq('is_active', true).order('code'),
+        supabaseWorkerRequest<{ data: { profile: any; countries: any[] } }>('/api/v1/me/payment-preferences'),
       ]);
 
+      const profile = prefsRes.data?.profile || {};
+      const configuredCountries = (prefsRes.data?.countries || []).map((country: any) => ({
+        code: country.country_iso,
+        name: country.name,
+        phone_prefix: country.phone_prefix,
+        enabled_methods: Array.isArray(country.enabled_methods) ? country.enabled_methods : METHODS,
+      }));
       setWallet(walletRes.data);
-      setUser(userRes.data);
+      setUser({ ...user, ...profile });
       setEscrow(walletRes.data?.escrow_summary || null);
-      setCountries(countriesRes.data || []);
+      setCountries(configuredCountries);
 
-      if (userRes.data?.momo_number) setMomoNumber(userRes.data.momo_number);
-      if (userRes.data?.momo_provider) setMomoProvider(userRes.data.momo_provider as Method);
-      if (userRes.data?.country_iso) setMomoCountry(userRes.data.country_iso);
+      if (profile.momo_number) setMomoNumber(String(profile.momo_number));
+      else if (profile.phone) setMomoNumber(String(profile.phone));
+      if (profile.momo_provider && METHODS.includes(profile.momo_provider as Method)) setMomoProvider(profile.momo_provider as Method);
+      if (profile.country_iso) setMomoCountry(profile.country_iso);
       setLoading(false);
     };
     load();
@@ -61,14 +67,20 @@ export default function Wallet() {
     setSavingMomo(true);
     const { user } = await d1Me();
     if (!user) { setSavingMomo(false); return; }
-    await supabase.from('users').update({
-      momo_number: momoNumber.trim() || null,
-      momo_provider: momoProvider || null,
-      country_iso: momoCountry,
-    }).eq('id', user.id);
-    setUser({ ...user, momo_number: momoNumber, momo_provider: momoProvider, country_iso: momoCountry });
-    setSavingMomo(false);
-    alert('MoMo details saved');
+    try {
+      const prefix = countries.find((country) => country.code === momoCountry)?.phone_prefix || '';
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/me/payment-preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ country_iso: momoCountry, momo_number: `${prefix} ${momoNumber.trim()}`, momo_provider: momoProvider }),
+      });
+      if (result.data?.ok === false) throw new Error(result.data.error || 'Could not save payment details.');
+      setUser({ ...user, momo_number: `${prefix} ${momoNumber.trim()}`, momo_provider: momoProvider, country_iso: momoCountry });
+      alert('MoMo details saved');
+    } catch (error: any) {
+      alert(error.message || 'Could not save MoMo details.');
+    } finally {
+      setSavingMomo(false);
+    }
   };
 
   if (loading) {
@@ -170,7 +182,7 @@ export default function Wallet() {
           onChange={setMomoCountry}
           options={countries.map(c => ({
             value: c.code,
-            label: `${c.flag_emoji || ''} ${c.name} (${c.phone_prefix})`.trim(),
+            label: `${c.name} (${c.phone_prefix})`,
           }))}
           placeholder="Choose country"
         />
@@ -193,7 +205,7 @@ export default function Wallet() {
 
         <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5">Provider</p>
         <div className="grid grid-cols-4 gap-2 mb-3">
-          {METHODS.map((m) => (
+          {METHODS.filter(m => (selectedCountry?.enabled_methods || METHODS).includes(m)).map((m) => (
             <button
               key={m}
               onClick={() => setMomoProvider(m)}
@@ -208,7 +220,7 @@ export default function Wallet() {
 
         <button
           onClick={saveMomo}
-          disabled={!momoNumber.trim() || !momoProvider || savingMomo}
+          disabled={!momoNumber.trim() || !momoProvider || savingMomo || !METHODS.includes(momoProvider)}
           className="w-full bg-accent text-white font-bold py-2.5 rounded-lg text-[11px] disabled:opacity-40 cursor-pointer"
         >
           {savingMomo ? 'Saving...' : momoNumber ? 'Update MoMo details' : 'Save MoMo details'}
