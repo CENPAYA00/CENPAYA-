@@ -209,8 +209,8 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
       const profile = await env.DB.prepare("SELECT profile_visibility FROM users WHERE id=? AND deleted_at IS NULL").bind(targetId).first<{ profile_visibility: string }>();
       if (!profile || !(await canViewProfile(env.DB, user?.id || null, targetId, profile.profile_visibility))) return fail("Profile not found", 404);
       const rows = suffix === "followers"
-        ? await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at FROM user_follows f JOIN users u ON u.id=f.follower_id WHERE f.following_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(targetId).all()
-        : await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at FROM user_follows f JOIN users u ON u.id=f.following_id WHERE f.follower_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(targetId).all();
+        ? await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at,EXISTS(SELECT 1 FROM user_follows mine WHERE mine.follower_id=? AND mine.following_id=u.id) AS is_followed_by_me FROM user_follows f JOIN users u ON u.id=f.follower_id WHERE f.following_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(user?.id || "",targetId).all()
+        : await env.DB.prepare(`SELECT ${PROFILE_SELECT},f.created_at AS followed_at,EXISTS(SELECT 1 FROM user_follows mine WHERE mine.follower_id=? AND mine.following_id=u.id) AS is_followed_by_me FROM user_follows f JOIN users u ON u.id=f.following_id WHERE f.follower_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL ORDER BY f.created_at DESC LIMIT 100`).bind(user?.id || "",targetId).all();
       return json({ success: true, data: rows.results });
     }
     if (suffix === "follow" && (method === "POST" || method === "DELETE")) {
@@ -518,7 +518,7 @@ export async function handleSocialRoutes(request: Request, env: Env, context: Ro
 
   if (path === "/api/me/following" && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
-    const rows = await env.DB.prepare(`SELECT u.id,u.username,u.display_name,u.avatar_url,u.is_premium,f.created_at AS followed_at
+    const rows = await env.DB.prepare(`SELECT u.id,u.username,u.display_name,u.avatar_url,u.is_premium,f.created_at AS followed_at,1 AS is_followed_by_me
       FROM user_follows f JOIN users u ON u.id=f.following_id
       WHERE f.follower_id=? AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
       AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=u.id) OR (b.blocker_id=u.id AND b.blocked_id=?))
