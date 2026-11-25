@@ -262,10 +262,11 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   const staffWorkspace = user
     ? await env.DB.prepare("SELECT workspace_role FROM staff_workspace_members WHERE user_id=? AND is_active=1").bind(user.id).first<{workspace_role:string}>().catch(() => null)
     : null;
-  const effectiveRole = staffWorkspace?.workspace_role || user?.role || "";
-  const staffAllowed = !!user && ["support_agent","staff_member","staff","super_admin","owner"].includes(effectiveRole);
-  const supportAuthority = !!user && ["support_agent","super_admin","owner"].includes(effectiveRole);
   const platformAdmin = !!user && ["super_admin","owner"].includes(user.role);
+  // Platform authority must never be downgraded by a staff workspace assignment.
+  const effectiveRole = platformAdmin ? user!.role : staffWorkspace?.workspace_role || user?.role || "";
+  const staffAllowed = !!user && ["support_agent","staff_member","staff","super_admin","owner"].includes(effectiveRole);
+  const supportAuthority = !!user && (platformAdmin || effectiveRole === "support_agent");
   if (path === "/api/staff/profile" && method === "GET") {
     if (!staffAllowed) return fail("Staff access required",403);
     const row=await env.DB.prepare("SELECT COUNT(*) AS assigned_total FROM support_tickets WHERE assigned_to_user_id=?").bind(user!.id).first<{assigned_total:number}>();
@@ -471,7 +472,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if (ticket.status === "closed" || ticket.status === "resolved") return fail("This support ticket is closed", 409);
     const id = uuid();
     await env.DB.prepare("INSERT INTO support_ticket_messages(id,ticket_id,sender_type,sender_user_id,message_text) VALUES(?,?,'user',?,?)").bind(id, ticket.id, user.id, message).run();
-    await env.DB.prepare("UPDATE support_tickets SET status=CASE WHEN status='waiting_for_user' THEN 'in_progress' ELSE status END WHERE id=?").bind(ticket.id).run();
+    await env.DB.prepare("UPDATE support_tickets SET status=CASE WHEN status IN ('waiting','waiting_for_user') THEN 'in_progress' ELSE status END,updated_at="+NOW+",last_message_at="+NOW+" WHERE id=?").bind(ticket.id).run();
     return json({ success: true, id }, 201);
   }
 
