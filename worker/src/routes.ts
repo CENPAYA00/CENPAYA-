@@ -253,7 +253,8 @@ export async function handleAuthenticatedApi(
       if (!response.ok || !result.success || !result.data) return failure("listing_quote_unavailable", response.status === 404 ? 404 : 503, headers);
       const listing = result.data;
       const isRange = listing.price_is_range === true || listing.price_is_range === 1 || listing.price_is_range === "true";
-      const amountValue = isRange ? listing.price_min : listing.price;
+      if (isRange) return failure("negotiable_price_requires_seller_agreement", 409, headers);
+      const amountValue = listing.price;
       const amount = Math.round(Number(amountValue));
       const currency = String(listing.currency_code || "XAF").toUpperCase();
       const sellerId = typeof listing.seller_id === "string" ? listing.seller_id : "";
@@ -300,7 +301,8 @@ export async function handleAuthenticatedApi(
     }
     const sellerId = typeof listing.seller_id === "string" ? listing.seller_id : "";
     const isRange = listing.price_is_range === true || listing.price_is_range === 1 || listing.price_is_range === "true";
-    const rawAmount = isRange ? listing.price_min : listing.price;
+    if (isRange) return failure("negotiable_price_requires_seller_agreement", 409, headers);
+    const rawAmount = listing.price;
     const amount = Math.round(Number(rawAmount));
     const currency = String(listing.currency_code || "XAF").toUpperCase();
     if (!sellerId || sellerId === userId || !Number.isSafeInteger(amount) || amount <= 0 ||
@@ -366,6 +368,8 @@ export async function handleAuthenticatedApi(
       );
       const quote = await response.json() as { success?: boolean; data?: Record<string, unknown> };
       const sellerId = quote.data?.seller_id;
+      const isRange = quote.data?.price_is_range === true || quote.data?.price_is_range === 1 || quote.data?.price_is_range === "true";
+      if (isRange) return failure("negotiable_price_requires_seller_agreement", 409, headers);
       const amount = Number(quote.data?.price);
       const listingType = String(quote.data?.listing_type || "");
       const currency = String(quote.data?.currency_code || "XAF").toUpperCase();
@@ -407,6 +411,8 @@ export async function handleAuthenticatedApi(
       );
       const quote = await quoteResponse.json() as { success?: boolean; data?: Record<string, unknown> };
       const canonicalSeller = quote.data?.seller_id;
+      const isRange = quote.data?.price_is_range === true || quote.data?.price_is_range === 1 || quote.data?.price_is_range === "true";
+      if (isRange) return failure("negotiable_price_requires_seller_agreement", 409, headers);
       const canonicalAmount = Number(quote.data?.price);
       const listingType = String(quote.data?.listing_type || "");
       const quoteCurrency = String(quote.data?.currency_code || "XAF").toUpperCase();
