@@ -108,7 +108,9 @@ export default function Market() {
                 </button>
                 <div className="p-3 flex-1 flex flex-col">
                   <p className="text-[14px] font-bold text-navy dark:text-white line-clamp-1">{l.title}</p>
-                  <p className="text-[15px] font-black text-[#12935a] mt-1">{Number(l.price || 0).toLocaleString()} XAF</p>
+                  <p className="text-[15px] font-black text-[#12935a] mt-1">{l.price_is_range && l.price_min != null
+                    ? `${Number(l.price_min).toLocaleString()} – ${Number(l.price_max).toLocaleString()} XAF`
+                    : `${Number(l.price || 0).toLocaleString()} XAF`}</p>
                   {l.location_city && <p className="text-[11px] text-mute mt-0.5">{l.location_city}</p>}
                   
                   <InlineBoostBar 
