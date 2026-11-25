@@ -17,6 +17,11 @@ const firstString=(...values:unknown[]):string=>{
   return typeof value==="string"?value:"";
 };
 const str=(value:unknown,max=200)=>typeof value==="string"?value.trim().slice(0,max):"";
+const SEARCH_STOP_WORDS = new Set(["the","and","for","with","from","your","you","are","that","this","how","what","who","where","when","les","des","une","pour","avec","dans","sur","qui","que","est","sont"]);
+function searchTopics(value:string):string[]{
+ return [...new Set(value.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu," ").split(/\s+/)
+  .filter(token=>token.length>=3&&token.length<=28&&!SEARCH_STOP_WORDS.has(token)))].slice(0,6);
+}
 
 async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,viewerId:string|null):Promise<SearchHit[]>{
   if(kind==="all"){
@@ -43,15 +48,17 @@ async function fallbackSearch(env:Env,url:URL,q:string,kind:string,limit:number,
   }else{
     const listingType=kind==="services"?"service":"product";
     const rows=await env.DB.prepare(`SELECT l.id AS listing_id,l.title AS product_title,l.description,l.price_amount,l.currency_code,l.listing_type,l.images_json,l.city,l.country_code,
-      COALESCE(l.published_at,l.created_at) AS published_date,u.username AS merchant_name,l.is_demo AS is_demo
+      COALESCE(l.published_at,l.created_at) AS published_date,u.username AS merchant_name,l.is_demo AS is_demo,
+      CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=l.seller_id) THEN 18 ELSE 0 END AS relationship_score,
+      COALESCE((SELECT SUM(i.score) FROM user_interest_signals i WHERE i.user_id=? AND i.score>0 AND instr(lower(l.title||' '||COALESCE(l.description,'')),i.topic_key)>0),0) AS interest_score
       FROM marketplace_listings l JOIN users u ON u.id=l.seller_id
       WHERE l.status='active' AND l.deleted_at IS NULL AND l.moderation_status='approved'
       AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL AND l.listing_type=?
       AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))
       AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM user_blocks b WHERE (b.blocker_id=? AND b.blocked_id=l.seller_id) OR (b.blocker_id=l.seller_id AND b.blocked_id=?)))
       AND (l.title LIKE ? OR l.description LIKE ? OR u.username LIKE ?)
-      ORDER BY (l.boosted_until IS NOT NULL AND l.boosted_until > strftime('%Y-%m-%dT%H:%M:%fZ','now')) DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
-      .bind(listingType,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,term,term,term,limit).all<Record<string,unknown>>();
+      ORDER BY (l.boosted_until IS NOT NULL AND l.boosted_until > strftime('%Y-%m-%dT%H:%M:%fZ','now')) DESC,(relationship_score+interest_score) DESC,COALESCE(l.published_at,l.created_at) DESC LIMIT ?`)
+      .bind(viewerId,viewerId,listingType,viewerId,viewerId,viewerId,viewerId,viewerId,viewerId,term,term,term,limit).all<Record<string,unknown>>();
     for(const row of rows.results){
       let keys:string[]=[];
       if(typeof row.images_json==="string"){try{const parsed:unknown=JSON.parse(row.images_json);if(Array.isArray(parsed))keys=parsed.filter((value):value is string=>typeof value==="string");}catch{}}
@@ -73,6 +80,12 @@ export async function handleSearchRoute(request:Request,env:Env,viewerId:string|
   const q=str(url.searchParams.get("q"),200),kind=str(url.searchParams.get("type"),20)||"all";
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||30),1),50);
   if(!q)return json({success:true,data:[]});
+  if(viewerId){
+    for(const topic of searchTopics(q)){
+      await env.DB.prepare("INSERT INTO user_interest_signals(user_id,topic_key,score) VALUES(?,?,1.5) ON CONFLICT(user_id,topic_key) DO UPDATE SET score=MIN(100,user_interest_signals.score+1.5),updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')")
+        .bind(viewerId,topic).run();
+    }
+  }
   const cacheKey="search:"+await digest(kind+":"+q.toLowerCase()+":"+limit+":"+(viewerId||"anonymous"));
   const cached=await cacheGet(env,cacheKey);
   if(cached)return json({success:true,data:cached,source:"cache"});
