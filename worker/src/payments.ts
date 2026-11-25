@@ -445,7 +445,7 @@ export async function handleAuthenticatedPaymentApi(
       return jsonResponse({ success: true, data: existing }, 200, headers);
     }
     if (existing.initiation_in_progress === true) {
-      return jsonResponse({ success: false, error: "topup_initiation_in_progress_check_status" }, 409, headers);
+      return jsonResponse({ success: true, data: existing }, 200, headers);
     }
 
     let email = "";
