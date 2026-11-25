@@ -337,7 +337,9 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   }
   if(path==="/api/support/tickets"&&method==="GET"){
     if(!user)return fail("Unauthorized",401);
-    const rows=await env.DB.prepare("SELECT id,ticket_number,subject,category,queue_type,priority,status,last_message_at,created_at,updated_at FROM support_tickets WHERE user_id=? ORDER BY updated_at DESC LIMIT 100").bind(user.id).all();
+    const queueType=str(url.searchParams.get("queue_type"),16);
+    if(queueType && !["support","admin"].includes(queueType))return fail("Invalid ticket queue");
+    const rows=await env.DB.prepare("SELECT id,ticket_number,subject,category,queue_type,priority,status,last_message_at,created_at,updated_at FROM support_tickets WHERE user_id=? AND (?='' OR queue_type=?) ORDER BY updated_at DESC LIMIT 100").bind(user.id,queueType,queueType).all();
     return json({success:true,data:rows.results});
   }
 
