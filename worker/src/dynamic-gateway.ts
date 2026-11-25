@@ -24,7 +24,8 @@ const safeUrl=(base:string,path:string):string=>{
 export function validateDynamicAdapter(v:unknown):DynamicAdapter{
  const c=ownObject(v),base=typeof c.base_url==="string"?c.base_url:"",topup=ownObject(c.topup),status=ownObject(c.status);
  if(!base||!topup.method||!topup.path||!topup.reference_path||!status.method||!status.path||!status.status_path||!status.amount_path||!status.currency_path)throw new Error("adapter_config_incomplete");
- safeUrl(base,"/");
+ const map=ownObject(status.status_map);if(!["success","failed","pending"].every(k=>Array.isArray(map[k])&&(map[k] as unknown[]).length>0))throw new Error("adapter_status_map_incomplete");
+ safeUrl(base,"/");if(typeof c.sandbox_base_url==="string"&&c.sandbox_base_url)safeUrl(c.sandbox_base_url,"/");
  for(const op of [topup,status,...(c.payout?[ownObject(c.payout)]:[])])if(!["GET","POST","PUT"].includes(String(op.method).toUpperCase())||typeof op.path!=="string"||(op.headers!==undefined&&Object.keys(ownObject(op.headers)).length>20))throw new Error("adapter_operation_invalid");else safeUrl(base,String(op.path).replace(/\{\{reference\}\}/g,"reference"));
  return c as DynamicAdapter;
 }

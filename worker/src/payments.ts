@@ -52,7 +52,9 @@ async function credentials(db: SupabaseClient, provider: Gateway, env: Env): Pro
   if (provider !== "FAPSHI" && provider !== "CAMPAY") {
     const { data: config, error: configError } = await db.rpc("worker_get_payment_adapter_config", { p_provider_name: provider });
     if (configError || !config) throw new Error("gateway_adapter_unavailable");
-    value.__adapter_config = config;
+    const configObject = object(config);
+    const selectedBase = environment(env) === "sandbox" ? text(configObject.sandbox_base_url) || text(configObject.base_url) : text(configObject.base_url);
+    value.__adapter_config = { ...configObject, base_url: selectedBase };
   }
   return value;
 }

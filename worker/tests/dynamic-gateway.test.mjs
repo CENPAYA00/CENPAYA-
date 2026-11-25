@@ -16,6 +16,9 @@ void describe("configuration-driven payment adapters", () => {
     assert.throws(() => validateDynamicAdapter({ ...valid, base_url: "https://127.0.0.1" }), /adapter_url_not_allowed/);
     assert.throws(() => validateDynamicAdapter({ ...valid, base_url: "https://localhost" }), /adapter_url_not_allowed/);
   });
+  void it("requires explicit successful, failed and pending status mappings", () => {
+    assert.throws(() => validateDynamicAdapter({ ...valid, status: { ...valid.status, status_map: { success: ["PAID"], failed: ["FAILED"] } } }), /adapter_status_map_incomplete/);
+  });
   void it("rejects incomplete mappings and unsafe HTTP methods", () => {
     assert.throws(() => validateDynamicAdapter({ ...valid, status: { method: "GET", path: "/status" } }), /adapter_config_incomplete/);
     assert.throws(() => validateDynamicAdapter({ ...valid, topup: { ...valid.topup, method: "DELETE" } }), /adapter_operation_invalid/);

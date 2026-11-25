@@ -654,7 +654,10 @@ export async function handleAuthenticatedApi(
     const config = body?.config;
     if (!body || !onlyKeys(body,["provider_name","config"]) || !/^[A-Z][A-Z0-9_]{1,39}$/.test(provider) || !config || typeof config !== "object" || Array.isArray(config) || JSON.stringify(config).length>24000) return failure("invalid_payment_adapter_config",400,headers);
     const result = await rpc(supabase,"admin_set_payment_adapter_config",{p_provider_name:provider,p_config:config});
-    return result.error ? failure(result.error,result.status,headers) : success(result.data,headers);
+    if (result.error) return failure(result.error,result.status,headers);
+    const saved = result.data && typeof result.data === "object" ? result.data as Record<string,unknown> : {};
+    if (saved.ok !== true) return failure(typeof saved.error === "string" ? saved.error : "payment_adapter_save_failed",400,headers);
+    return success(saved,headers);
   }
   if (method === "GET" && path === "/api/v1/admin/providers") {
     const result = await rpc(supabase, "admin_list_providers", {});
