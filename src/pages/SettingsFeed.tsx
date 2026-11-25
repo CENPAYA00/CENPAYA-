@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, SlidersHorizontal, Sparkles, Info } from 'lucide-react';
 import { d1Request } from '../lib/d1Api';
+import { setCached } from '../lib/cache';
 
 type Interest = { topic_key: string; score: number; updated_at: string };
 
@@ -34,6 +35,7 @@ export default function SettingsFeed() {
     try {
       await d1Request('/api/me/feed-interests', { method: 'DELETE' });
       setItems([]);
+      setCached('home_posts', null);
     } catch (e: any) {
       setError(e.message || 'Could not reset recommendations.');
     } finally {
