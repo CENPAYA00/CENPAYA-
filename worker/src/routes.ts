@@ -757,6 +757,19 @@ export async function handleAuthenticatedApi(
     return failure("method_not_allowed", 405, headers);
   }
 
+  if (method === "GET" && path === "/api/v1/admin/regions") {
+    const profile = await readUserProfile(supabase, userId);
+    if (!profile || !["owner", "super_admin"].includes(String(profile.role))) return failure("not_authorized", 403, headers);
+    const [{ data: countries, error: countryError }, { data: configs, error: configError }] = await Promise.all([
+      supabase.from("supported_countries").select("country_iso,name,phone_prefix,currency_code,currency_value_in_xaf,flag_emoji,is_active").order("country_iso"),
+      supabase.from("regional_market_configurations").select("country_iso,base_marketplace_fee_pct,premium_subscriber_fee_pct,withdrawal_fee_pct,is_operational,fee_fixed_premium,fee_fixed_base"),
+    ]);
+    if (countryError || configError) return failure("regions_lookup_failed", 502, headers);
+    const byCode = new Map((configs || []).map((row: Record<string, unknown>) => [row.country_iso, row]));
+    return success((countries || []).map((row: Record<string, unknown>) => ({
+      ...row, code: row.country_iso, ...(byCode.get(row.country_iso) || {}),
+    })), headers);
+  }
   if (method === "GET" && path === "/api/v1/admin/payment-adapter") {
     const provider = (url.searchParams.get("provider") || "").trim().toUpperCase();
     if (!/^[A-Z][A-Z0-9_]{1,39}$/.test(provider)) return failure("invalid_payment_provider",400,headers);
