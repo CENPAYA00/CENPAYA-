@@ -151,7 +151,7 @@ export default function Subscribe() {
           <p className="text-xs font-bold text-navy dark:text-white mb-2">Your Benefits</p>
           {[
             'Reduced marketplace fees (3% + 25 XAF)',
-            'Verified seller badge on your profile',
+            'Verified membership badge on your profile',
             'Free monthly listing boosts',
             'Priority customer support',
           ].map((b, i) => (
@@ -196,7 +196,7 @@ export default function Subscribe() {
           <p className="text-xs font-bold text-navy dark:text-white">What you unlock</p>
         </div>
         <BenefitItem icon={<Store size={14} />} title="Reduced marketplace fees" desc="3% + 25 XAF instead of 5% + 50 XAF." />
-        <BenefitItem icon={<Shield size={14} />} title="Verified seller badge" desc="Build buyer trust with a check mark on your profile." />
+        <BenefitItem icon={<Shield size={14} />} title="Verified membership badge" desc="Shows that you are a CenPaya subscriber." />
         <BenefitItem icon={<Zap size={14} />} title="Free monthly boosts" desc="Promote one listing per month at no cost." />
       </div>
 
@@ -211,7 +211,7 @@ export default function Subscribe() {
         </div>
         <ComparisonRow feature="List products" free={true} premium={true} />
         <ComparisonRow feature="Reduced fees (3%+25)" free={false} premium={true} />
-        <ComparisonRow feature="Verified badge" free={false} premium={true} />
+        <ComparisonRow feature="Verified membership badge" free={false} premium={true} />
         <ComparisonRow feature="Free monthly boosts" free={false} premium={true} />
       </div>
 
