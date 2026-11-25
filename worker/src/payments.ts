@@ -265,8 +265,14 @@ export async function handleAuthenticatedPaymentApi(
       userDb.from("users").select("referral_code").eq("id", userId).maybeSingle(),
     ]);
     if (error || profileError) return jsonResponse({ success: false, error: "referral_dashboard_unavailable" }, 502, headers);
+    const referredIds = [...new Set((referrals || []).map((row: Record<string, unknown>) => String(row.referred_id || "")).filter(Boolean))];
+    const referredUsers = referredIds.length
+      ? await userDb.from("users").select("id,username").in("id", referredIds)
+      : { data: [], error: null };
+    const usernames = new Map((referredUsers.data || []).map((row: Record<string, unknown>) => [String(row.id), typeof row.username === "string" ? row.username : null]));
     const rows = (referrals || []).map((row: Record<string, unknown>) => ({
-      id: String(row.id), referred_id: String(row.referred_id), referred_username: null,
+      id: String(row.id), referred_id: String(row.referred_id),
+      referred_username: usernames.get(String(row.referred_id)) || null,
       points: Number(row.points || 0), status: String(row.status || "pending"), created_at: String(row.created_at || ""),
     }));
     return jsonResponse({ success: true, data: {
