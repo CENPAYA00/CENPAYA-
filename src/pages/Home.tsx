@@ -77,23 +77,37 @@ export default function Home() {
     const currentlyLiked = likedPosts.has(postId);
     setLikedPosts(prev => { const n = new Set(prev); currentlyLiked ? n.delete(postId) : n.add(postId); return n; });
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: (p.likes_count || 0) + (currentlyLiked ? -1 : 1) } : p));
-    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/like`, { method: currentlyLiked ? 'DELETE' : 'POST' }); }
-    catch (error: any) { alert(error.message || 'Could not update like'); }
+    try {
+      await d1Request(`/api/posts/${encodeURIComponent(postId)}/like`, { method: currentlyLiked ? 'DELETE' : 'POST' });
+      if (!currentlyLiked) void d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: postId, event_type: 'like', source: 'feed' }) }).catch(() => undefined);
+    } catch (error: any) {
+      setLikedPosts(prev => { const n = new Set(prev); currentlyLiked ? n.add(postId) : n.delete(postId); return n; });
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: Math.max(0, (p.likes_count || 0) + (currentlyLiked ? 1 : -1)) } : p));
+      alert(error.message || 'Could not update like');
+    }
   };
 
   const handleSave = async (postId: string) => {
     if (!userId) return alert('Please log in to save posts.');
     const isSaved = savedPosts.has(postId);
     setSavedPosts(prev => { const n = new Set(prev); isSaved ? n.delete(postId) : n.add(postId); return n; });
-    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/save`, { method: isSaved ? 'DELETE' : 'POST' }); }
-    catch (error: any) { alert(error.message || 'Could not update saved post'); }
+    try {
+      await d1Request(`/api/posts/${encodeURIComponent(postId)}/save`, { method: isSaved ? 'DELETE' : 'POST' });
+      if (!isSaved) void d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: postId, event_type: 'save', source: 'feed' }) }).catch(() => undefined);
+    } catch (error: any) {
+      setSavedPosts(prev => { const n = new Set(prev); isSaved ? n.add(postId) : n.delete(postId); return n; });
+      alert(error.message || 'Could not update saved post');
+    }
   };
 
   const handleShare = async (postId: string) => {
     const url = `https://cenpaya.pages.dev/post/${postId}`;
     if (navigator.share) { try { await navigator.share({ url, title: 'CenPaya post' }); } catch {} }
     else { await navigator.clipboard.writeText(url); alert('Link copied'); }
-    try { await d1Request(`/api/posts/${encodeURIComponent(postId)}/share`, { method: 'POST', body: JSON.stringify({ channel: 'external' }) }); } catch {}
+    try {
+      await d1Request(`/api/posts/${encodeURIComponent(postId)}/share`, { method: 'POST', body: JSON.stringify({ channel: 'external' }) });
+      void d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: postId, event_type: 'share', source: 'feed' }) }).catch(() => undefined);
+    } catch {}
   };
 
   const handleFollowToggle = async (authorId: string, isNowFollowing: boolean) => {
@@ -108,6 +122,7 @@ export default function Home() {
   };
 
   const handleCommentAdded = (postId: string) => {
+    void d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: postId, event_type: 'comment', source: 'feed' }) }).catch(() => undefined);
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p));
     setCached('home_posts', null);
   };
