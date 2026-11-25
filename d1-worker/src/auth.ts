@@ -4,7 +4,7 @@ import { digest, hmac, uuid } from "./security.js";
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 
 export async function readUser(db:D1Database,id:string):Promise<User|null>{
-  return db.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,role,account_status,banned,password_hash,onboarding_completed FROM users WHERE id=? AND deleted_at IS NULL").bind(id).first<User>();
+  return db.prepare("SELECT id,username,display_name,email,phone,email_verified,phone_verified,is_premium,role,account_status,banned,password_hash,onboarding_completed FROM users WHERE id=? AND deleted_at IS NULL").bind(id).first<User>();
 }
 async function userForSessionToken(token:string,env:Env):Promise<User|null>{
   if(token.length<32||token.length>256)return null;
@@ -60,4 +60,4 @@ export async function verifyOtp(env:Env,db:D1Database,userId:string,purpose:"ver
   else if(purpose==="verify_phone") await db.prepare("UPDATE users SET phone_verified=1,phone_verified_at="+NOW+",updated_at="+NOW+" WHERE id=?").bind(userId).run();
   return true;
 }
-export function safeUser(u:User){return {id:u.id,username:u.username,display_name:u.display_name,email:u.email,phone:u.phone,email_verified:!!u.email_verified,phone_verified:!!u.phone_verified,role:u.role,onboarding_completed:!!u.onboarding_completed};}
+export function safeUser(u:User){return {id:u.id,username:u.username,display_name:u.display_name,email:u.email,phone:u.phone,email_verified:!!u.email_verified,phone_verified:!!u.phone_verified,is_phone_verified:!!u.phone_verified,is_premium:!!u.is_premium,is_subscribed:!!u.is_premium,role:u.role,onboarding_completed:!!u.onboarding_completed};}
