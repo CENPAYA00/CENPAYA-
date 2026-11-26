@@ -46,7 +46,7 @@ export default function TeamTasksPanel() {
     setSaving(true);
     try {
       const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_assign_task',{
-        method:'POST',body:JSON.stringify({args:{p_title:title.trim(),p_description:description.trim(),p_assigned_to:assignee,p_due_at:dueAt?new Date(dueAt).toISOString():null,p_department_id:departmentId||null}})
+        method:'POST',body:JSON.stringify({args:{p_title:title.trim(),p_description:description.trim()||null,p_assigned_to:assignee,p_due_at:dueAt?new Date(dueAt).toISOString():null,p_department_id:departmentId||null}})
       });
       if(!r.data?.ok) throw new Error(r.data?.error || 'Task assignment failed.');
       setTitle('');setDescription('');setAssignee('');setDueAt('');setDepartmentId('');
