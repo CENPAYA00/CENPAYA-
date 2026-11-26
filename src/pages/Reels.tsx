@@ -10,7 +10,8 @@ type Reel = {
  video_id:string; post_id:string; author_id:string; content:string; username:string; display_name:string;
  playlist_url:string; duration_seconds:number|null; likes_count:number; comments_count:number;
  is_liked:number|boolean; is_following_author:number|boolean; average_rating:number|null;
- ratings_count:number; views_count:number; viewer_rating:number|null;\n ai_video_status?:'completed'|'unavailable'|null; ai_video_classification?:'possible_ai_generated'|'no_clear_signal'|'inconclusive'|null;
+ ratings_count:number; views_count:number; viewer_rating:number|null;
+ ai_video_status?:'completed'|'unavailable'|null; ai_video_classification?:'possible_ai_generated'|'no_clear_signal'|'inconclusive'|null;
 };
 let loader:Promise<void>|null=null;
 function loadHls(){if(window.Hls)return Promise.resolve();if(!loader)loader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';script.onload=()=>resolve();script.onerror=()=>reject(new Error('HLS player unavailable'));document.head.appendChild(script);});return loader;}
