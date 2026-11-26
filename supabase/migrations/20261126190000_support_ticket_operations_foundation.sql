@@ -67,6 +67,7 @@ as $function$
 declare
   v_uid uuid := auth.uid();
   v_updated uuid;
+  v_old_assignee uuid;
 begin
   if v_uid is null then
     return jsonb_build_object('ok', false, 'error', 'not authenticated');
@@ -74,6 +75,8 @@ begin
   if not public.is_support_or_admin() then
     return jsonb_build_object('ok', false, 'error', 'staff only');
   end if;
+
+  select assigned_agent_id into v_old_assignee from public.platform_tickets where id=p_ticket_id for update;
 
   update public.platform_tickets
      set assigned_agent_id = v_uid,
@@ -87,6 +90,10 @@ begin
   if v_updated is null then
     return jsonb_build_object('ok', false, 'error', 'ticket unavailable or assigned to another agent');
   end if;
+  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,old_value,new_value)
+  select v_uid,'support_ticket_claimed',user_id,'platform_tickets',v_updated,
+    jsonb_build_object('assigned_agent_id',v_old_assignee),jsonb_build_object('assigned_agent_id',v_uid,'status','in_progress')
+  from public.platform_tickets where id=v_updated;
   return jsonb_build_object('ok', true, 'ticket_id', v_updated);
 end;
 $function$;
