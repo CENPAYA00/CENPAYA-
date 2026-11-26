@@ -18,6 +18,36 @@ async function putObject(client,bucket,key,body,contentType,metadata={}){
  const head=await client.send(new HeadObjectCommand({Bucket:bucket,Key:key}));
  if(Number(head.ContentLength)!==body.length)throw Error("object verification failed: "+key);
 }
+async function analyzeVideoFrames(input,duration,dir){
+ if(!e.GEMINI_API_KEY)return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"Video AI analysis is not configured",model:null,sampled_frames:0};
+ const frames=[];
+ const count=5;
+ for(let i=0;i<count;i++){
+  const at=Math.min(Math.max(0.2,duration-0.2),Math.max(0.1,duration*(i+1)/(count+1)));
+  const file=join(dir,"ai-frame-"+i+".jpg");
+  try{
+   await ff(["-y","-ss",String(at),"-i",input,"-frames:v","1","-vf","scale=w=768:h=768:force_original_aspect_ratio=decrease","-q:v","7",file],dir);
+   const bytes=await readFile(file);
+   if(bytes.length>0&&bytes.length<=1024*1024)frames.push({inlineData:{mimeType:"image/jpeg",data:bytes.toString("base64")}});
+  }catch{}
+ }
+ if(!frames.length)return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"No usable video frames could be sampled",model:null,sampled_frames:0};
+ const model="gemini-2.5-flash";
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
+ try{
+  const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{
+   method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":e.GEMINI_API_KEY},signal:controller.signal,
+   body:JSON.stringify({contents:[{role:"user",parts:[{text:"Review these evenly sampled frames from a public marketplace or freelance listing video. Identify only visual evidence that the imagery/video may be AI-generated or synthetically altered. This is probabilistic and not forensic proof. Do not infer AI generation from professional editing, filters, animation, compression, or image quality alone. If uncertain choose inconclusive. Return JSON only."},...frames]}],
+    generationConfig:{temperature:0,responseMimeType:"application/json",responseSchema:{type:"OBJECT",properties:{classification:{type:"STRING",enum:["possible_ai_generated","no_clear_signal","inconclusive"]},confidence:{type:"NUMBER"},reason:{type:"STRING"}},required:["classification","confidence","reason"]}}})
+  });
+  if(!response.ok)return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"Gemini video-frame analysis is temporarily unavailable",model:null,sampled_frames:frames.length};
+  const payload=await response.json(),raw=payload?.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("").trim()||"";
+  const parsed=JSON.parse(raw);
+  if(!["possible_ai_generated","no_clear_signal","inconclusive"].includes(parsed.classification))throw Error("invalid classification");
+  return {status:"completed",classification:parsed.classification,confidence:Number.isFinite(parsed.confidence)?Math.max(0,Math.min(1,parsed.confidence)):null,reason:String(parsed.reason||"No reliable explanation returned").slice(0,500),model,sampled_frames:frames.length};
+ }catch{return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"Video-frame analysis could not be completed",model:null,sampled_frames:frames.length};}
+ finally{clearTimeout(timer);}
+}
 async function processVideo(d){
  if(!safe(d.source_key)||!d.source_key.startsWith("videos/source/")||!safe(d.video_id))throw Error("invalid job");
  const obj=await b2.send(new GetObjectCommand({Bucket:e.B2_BUCKET_NAME,Key:d.source_key})),chunks=[];
@@ -43,7 +73,7 @@ async function processVideo(d){
    const outWidth=Math.min(1280,Math.floor((Number(video.width)*outHeight/Number(video.height))/2)*2);
    outputs.push({...r,folder,width:outWidth,height:outHeight});
   }
-  const thumb=join(dir,"thumbnail.jpg");
+  const videoAiIndicator=await analyzeVideoFrames(input,duration,dir);\n  const thumb=join(dir,"thumbnail.jpg");
   await ff(["-y","-ss",String(Math.min(1,Math.max(0,duration/4))),"-i",input,"-frames:v","1","-vf","scale=w=640:h=-2","-q:v","4",thumb],dir);
   const master=["#EXTM3U","#EXT-X-VERSION:3",...outputs.flatMap(r=>[`#EXT-X-STREAM-INF:BANDWIDTH=${r.bandwidth},RESOLUTION=${r.width}x${r.height}`,r.name+"/index.m3u8"])].join("\n")+"\n";
   const prefix="videos/hls/"+d.video_id+"/",playlist=Buffer.from(master);
@@ -66,7 +96,7 @@ async function processVideo(d){
   for(const item of backupObjects){
    await putObject(tg,e.TIGRIS_BUCKET_NAME,item.key,item.body,item.type,{sha256:createHash("sha256").update(item.body).digest("hex")});
   }
-  return {status:"ready",hls_key:prefix+"master.m3u8",thumbnail_key:thumbnailKey,duration_seconds:duration,width:Number(video.width),height:Number(video.height),sha256:hash,backup:"verified",renditions:outputs.map(x=>x.name),backup_objects:backupObjects.length+1};
+  return {status:"ready",hls_key:prefix+"master.m3u8",thumbnail_key:thumbnailKey,duration_seconds:duration,width:Number(video.width),height:Number(video.height),sha256:hash,backup:"verified",renditions:outputs.map(x=>x.name),backup_objects:backupObjects.length+1,video_ai_indicator:videoAiIndicator};
  }finally{await rm(dir,{recursive:true,force:true});}
 }
 async function playbackPlaylist(key){
