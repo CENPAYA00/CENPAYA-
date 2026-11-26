@@ -104,6 +104,51 @@ begin
  return jsonb_build_object('ok',true);
 end;$function$;
 
+create or replace function public.notify_team_message()
+returns trigger language plpgsql security definer set search_path=public,pg_temp
+as $function$
+begin
+ insert into public.team_notifications(recipient_id,event_type,title,body,entity_type,entity_id)
+ select cm.user_id,'team_message','New team message',left(new.body,240),'team_conversation',new.conversation_id
+ from public.team_conversation_members cm
+ where cm.conversation_id=new.conversation_id and cm.user_id<>new.sender_id
+   and public.is_active_team_member(cm.user_id);
+ return new;
+end;$function$;
+
+create or replace function public.notify_team_task_update()
+returns trigger language plpgsql security definer set search_path=public,pg_temp
+as $function$
+declare v_assigned uuid; v_supervisor uuid; v_title text;
+begin
+ select assigned_to,supervisor_id,title into v_assigned,v_supervisor,v_title from public.team_tasks where id=new.task_id;
+ insert into public.team_notifications(recipient_id,event_type,title,body,entity_type,entity_id)
+ select distinct target.user_id,'task_update','Task update: '||coalesce(v_title,'Team task'),coalesce(new.body,new.update_type),'team_task',new.task_id
+ from (values(v_assigned),(v_supervisor)) as target(user_id)
+ where target.user_id is not null and target.user_id<>new.author_id
+   and public.is_active_team_member(target.user_id);
+ return new;
+end;$function$;
+
+create or replace function public.notify_team_escalation()
+returns trigger language plpgsql security definer set search_path=public,pg_temp
+as $function$
+begin
+ if new.assigned_to is not null and public.is_active_team_member(new.assigned_to) then
+  insert into public.team_notifications(recipient_id,event_type,title,body,entity_type,entity_id)
+  values(new.assigned_to,'escalation','New escalation',left(new.reason,240),'team_escalation',new.id);
+ else
+  insert into public.team_notifications(recipient_id,event_type,title,body,entity_type,entity_id)
+  select u.id,'escalation','New '||replace(new.escalation_level,'_',' ')||' escalation',left(new.reason,240),'team_escalation',new.id
+  from public.users u
+  where ((new.escalation_level='vice_admin' and u.role='vice_admin')
+     or (new.escalation_level='super_admin' and u.role='super_admin')
+     or (new.escalation_level='owner' and u.role='owner'))
+     and public.is_active_team_member(u.id);
+ end if;
+ return new;
+end;$function$;
+
 grant execute on function public.is_active_team_member(uuid) to authenticated;
 grant execute on function public.team_list_conversations() to authenticated;
 grant execute on function public.team_get_messages(uuid) to authenticated;
