@@ -43,6 +43,10 @@ begin
     or not exists(select 1 from public.staff_invitations where accepted_by=p_assigned_to and appointment_status='active') then
    return jsonb_build_object('ok',false,'error','assignee is not an active Staff Member');
  end if;
+ if v_role='support_agent' and not exists(
+   select 1 from public.staff_invitations where accepted_by=p_assigned_to
+   and appointment_status='active' and supervisor_id=v_uid
+ ) then return jsonb_build_object('ok',false,'error','you may assign tasks only to Staff Members under your supervision'); end if;
  insert into public.team_tasks(title,description,assigned_to,assigned_by,supervisor_id,due_at,department_id)
  values(trim(p_title),nullif(trim(p_description),''),p_assigned_to,v_uid,v_uid,p_due_at,p_department_id)
  returning id into v_id;
