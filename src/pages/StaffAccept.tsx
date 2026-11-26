@@ -27,10 +27,11 @@ export default function StaffAccept() {
     setStatus('accepting');
     setError('');
     try {
-      const result = await supabaseWorkerRequest<{ data: { ok: boolean; role: string } }>('/api/v1/staff/invitations/accept', {
+      const result = await supabaseWorkerRequest<{ data: { ok: boolean; role: string; title?: string; department?: string; supervisor_id?: string; permissions?: string[]; error?: string } }>('/api/v1/admin/rpc/accept_staff_invitation', {
         method: 'POST',
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ args: { p_token: token } }),
       });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Invitation could not be accepted.');
       const acceptedRole = result.data?.role;
       if (!acceptedRole) throw new Error('Invitation acceptance returned no role.');
       setRole(acceptedRole);
