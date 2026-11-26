@@ -47,8 +47,18 @@ export default function AdminFeatures() {
     setLoading(true);
     setError('');
     try {
-      const [featureResult, callsResult, videoResult] = await Promise.all([
-        d1Request<{ data: FeatureFlag[] }>('/api/admin/features'),
+      const featureResult = await d1Request<{ data: FeatureFlag[] }>('/api/admin/features');
+      setFlags(featureResult.data || []);
+    } catch (err: any) {
+      setError(err.message || 'Could not load platform feature controls.');
+      setLoading(false);
+      return;
+    }
+
+    // Voice/video controls use the separate Supabase Worker. Their availability
+    // must not prevent Owner/Super Admin from managing D1-backed feature flags.
+    try {
+      const [callsResult, videoResult] = await Promise.all([
         supabaseWorkerRequest<{ data: AssistanceStatus }>('/api/v1/admin/rpc/admin_call_status', {
           method: 'POST', body: JSON.stringify({ args: {} }),
         }),
@@ -56,7 +66,6 @@ export default function AdminFeatures() {
           method: 'POST', body: JSON.stringify({ args: {} }),
         }),
       ]);
-      setFlags(featureResult.data || []);
       setCallStatus(callsResult.data || null);
       setVideoStatus(videoResult.data || null);
       setCallHost(callsResult.data?.host && callsResult.data.host !== 'none' ? callsResult.data.host.toUpperCase() : 'none');
@@ -64,7 +73,7 @@ export default function AdminFeatures() {
       setCallMinutes(String(callsResult.data?.max_minutes || 30));
       setVideoSeconds(String(videoResult.data?.max_seconds || 90));
     } catch (err: any) {
-      setError(err.message || 'Could not load all feature controls.');
+      setError(err.message || 'Live voice/video controls could not be loaded. Platform feature flags remain available.');
     } finally {
       setLoading(false);
     }
