@@ -25,6 +25,7 @@ export default function StaffPanel() {
 
       const currentProfile = appointment;
       if (!currentProfile) { navigate('/home'); return; }
+      if (currentProfile.role === 'vice_admin') { navigate('/vice-admin', { replace: true }); return; }
       setProfile(currentProfile);
       if (currentProfile.role === 'staff_member') {
         const taskRes = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_my_tasks', { method: 'POST', body: JSON.stringify({ args: {} }) });
