@@ -162,7 +162,7 @@ begin
  elsif p_role='staff_member' then
    p_permissions:=p_permissions || jsonb_build_array('can_submit_reports');
  end if;
- if p_supervisor_id is not null and not exists(select 1 from public.users u where u.id=p_supervisor_id and u.role in ('vice_admin','super_admin','owner') and u.banned=false) then return jsonb_build_object('ok',false,'error','invalid supervisor'); end if;
+ if p_supervisor_id is not null and not exists(select 1 from public.users u where u.id=p_supervisor_id and u.banned=false and coalesce(u.is_deactivated,false)=false and (u.role in ('super_admin','owner') or (u.role='vice_admin' and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active')) or (u.role='support_agent' and p_role='staff_member' and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active' and si.permissions ? 'can_supervise_staff')))) then return jsonb_build_object('ok',false,'error','invalid supervisor'); end if;
  insert into public.staff_invitations(email,role,permissions,invited_by,official_title,department,supervisor_id,appointment_status)
  values(lower(trim(p_email)),p_role,p_permissions,v_uid,coalesce(nullif(trim(p_title),''),initcap(replace(p_role,'_',' '))),nullif(trim(p_department),''),p_supervisor_id,'pending')
  returning id,invite_token into v_id,v_token;
