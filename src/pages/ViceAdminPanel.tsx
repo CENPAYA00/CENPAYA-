@@ -3,6 +3,7 @@ import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { Shield, Users, ClipboardList, AlertTriangle, MessageSquare, CheckCircle2, Clock } from 'lucide-react';
 
 export default function ViceAdminPanel() {
+  const [profile, setProfile] = useState<any>(null);
   const [overview, setOverview] = useState<any>(null);
   const [escalations, setEscalations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,6 +15,7 @@ export default function ViceAdminPanel() {
     try {
       const profile = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) });
       if (!profile.data?.ok) throw new Error(profile.data?.error || 'An active team appointment is required.');
+      setProfile(profile.data);
       const role = profile.data.role;
       const permissions: string[] = profile.data.permissions || [];
       const canSeeMetrics = ['owner','super_admin'].includes(role) || permissions.includes('can_view_team_metrics');
@@ -63,8 +65,10 @@ export default function ViceAdminPanel() {
     <div className="max-w-5xl mx-auto pb-24 space-y-4">
       <section className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
         <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500">Operational command</p>
-        <h2 className="text-xl font-black text-navy dark:text-white mt-1">Vice Admin Workspace</h2>
-        <p className="text-[11px] text-gray-500 mt-1">Supervise daily operations within the permissions granted by the Owner. Critical ownership and financial controls remain restricted.</p>
+        <h2 className="text-xl font-black text-navy dark:text-white mt-1">{profile?.title || 'Vice Admin Workspace'}</h2>
+        <p className="text-[10px] text-gray-500 mt-1">Vice Admin · {profile?.appointment_status || 'active'}{profile?.department ? ' · '+profile.department : ''}</p>
+        {profile?.supervisor_username && <p className="text-[10px] text-gray-500 mt-1">Supervisor: @{profile.supervisor_username}</p>}
+        <p className="text-[11px] text-gray-500 mt-2">Supervise daily operations within the permissions granted by the Owner. Critical ownership and financial controls remain restricted.</p>
       </section>
 
       <section className="grid grid-cols-2 md:grid-cols-3 gap-2">
