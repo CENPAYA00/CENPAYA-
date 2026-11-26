@@ -29,12 +29,12 @@ begin
  if not exists(select 1 from public.users where id=v_uid and role in ('owner','super_admin','vice_admin','support_agent','staff_member') and banned=false and coalesce(is_deactivated,false)=false) then return jsonb_build_object('ok',false,'error','team access required'); end if;
  select coalesce(jsonb_agg(jsonb_build_object(
   'id',u.id,'username',u.username,'role',u.role,'title',i.official_title,
-  'department',i.department,'invitation_id',i.id,'appointment_status',i.appointment_status,
+  'department',i.department,'supervisor_id',i.supervisor_id,'invitation_id',i.id,'appointment_status',i.appointment_status,
   'permissions',coalesce(i.permissions,'[]'::jsonb)
  ) order by u.username),'[]'::jsonb)
  into v_rows
  from public.users u left join lateral (
-   select id,official_title,department,appointment_status,permissions
+   select id,official_title,department,supervisor_id,appointment_status,permissions
    from public.staff_invitations si where si.accepted_by=u.id
    order by accepted_at desc nulls last limit 1
  ) i on true
