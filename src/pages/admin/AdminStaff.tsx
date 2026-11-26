@@ -28,6 +28,7 @@ export default function AdminStaff() {
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [canAppointViceAdmin, setCanAppointViceAdmin] = useState(false);
+  const [canConfigureViceAdmin, setCanConfigureViceAdmin] = useState(false);
   const [canManageTasks, setCanManageTasks] = useState(false);
   const [tasks, setTasks] = useState<any[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
@@ -55,7 +56,8 @@ export default function AdminStaff() {
       const colleagues = usersResult.data?.members || [];
       setTeamMembers(colleagues);
       setStaffMembers(colleagues.filter((user: any) => user.role === 'staff_member' && user.appointment_status === 'active'));
-      setCanAppointViceAdmin(profileResult.data?.role === 'owner');
+      setCanAppointViceAdmin(['owner','super_admin'].includes(profileResult.data?.role));
+      setCanConfigureViceAdmin(profileResult.data?.role === 'owner');
       setCanManageTasks(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_tasks') || profileResult.data?.permissions?.includes('can_supervise_staff'));
       setTasks(taskResult.data?.tasks || []);
     } catch (error: any) {
@@ -268,12 +270,12 @@ export default function AdminStaff() {
         </div>
       ))}
 
-      {showInvite && <InviteSheet members={teamMembers} allowViceAdmin={canAppointViceAdmin} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
+      {showInvite && <InviteSheet members={teamMembers} allowViceAdmin={canAppointViceAdmin} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
     </div>
   );
 }
 
-function InviteSheet({ onClose, onCreated, members = [], allowViceAdmin = false }: any) {
+function InviteSheet({ onClose, onCreated, members = [], allowViceAdmin = false, canConfigureViceAdmin = false }: any) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'support_agent' | 'staff_member' | 'vice_admin'>('support_agent');
   const [permissions, setPermissions] = useState<string[]>([]);
@@ -371,7 +373,7 @@ function InviteSheet({ onClose, onCreated, members = [], allowViceAdmin = false 
             </div>
           </div>
 
-          {(role === 'support_agent' || role === 'staff_member' || role === 'vice_admin') && (
+          {(role === 'support_agent' || role === 'staff_member' || (role === 'vice_admin' && canConfigureViceAdmin)) && (
             <div>
               <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 block">
                 Permissions (optional)
