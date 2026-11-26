@@ -6,13 +6,14 @@ import {
   MessageCircle, HeadphonesIcon, Globe, Link2, Crown, FileText, Briefcase, PlusCircle, Zap, Ticket
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { d1Me } from '../lib/d1Api';
+import { d1Me, d1Request } from '../lib/d1Api';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(false);
   const [username, setUsername] = useState('');
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [workspaceLabel, setWorkspaceLabel] = useState('');
@@ -26,6 +27,10 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
       try {
         const { user } = await d1Me();
         setUsername(user.username || 'User');
+        try {
+          const assistantStatus = await d1Request<{ data: { enabled?: boolean; available?: boolean } }>('/api/ai/assistant/status');
+          setAiAssistantEnabled(!!assistantStatus.data?.available);
+        } catch { setAiAssistantEnabled(false); }
         try {
           const appointment = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', {
             method: 'POST', body: JSON.stringify({ args: {} }),
@@ -179,6 +184,12 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           {workspacePath && (
             <Section label="Workspaces">
               <Item icon={<Shield size={18} />} label={workspaceLabel} onClick={() => go(workspacePath)} />
+            </Section>
+          )}
+
+          {aiAssistantEnabled && (
+            <Section label="CenPaya AI">
+              <Item icon={<Sparkles size={18} />} label="AI Assistant" onClick={() => go('/ai-assistant')} />
             </Section>
           )}
 
