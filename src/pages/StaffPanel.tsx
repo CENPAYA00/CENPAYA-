@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { d1Request } from '../lib/d1Api';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { MessageSquare, Check, Shield } from 'lucide-react';
 
@@ -11,6 +10,7 @@ export default function StaffPanel() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [tab, setTab] = useState<'all' | 'mine'>('all');
   const [loading, setLoading] = useState(true);
+  const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
 
   const load = async () => {
     setLoading(true);
@@ -23,16 +23,13 @@ export default function StaffPanel() {
         if (result.data?.ok) appointment = result.data;
       } catch { /* Staff Member task access is checked by D1 below. */ }
 
-      let currentProfile = appointment;
-      if (!currentProfile) {
-        const profileRes = await d1Request<{ data: any }>('/api/staff/profile');
-        currentProfile = profileRes.data;
-      }
+      const currentProfile = appointment;
       if (!currentProfile) { navigate('/home'); return; }
       setProfile(currentProfile);
       if (currentProfile.role === 'staff_member') {
-        const taskRes = await d1Request<{ data: any[] }>('/api/staff/tasks');
-        setTasks(taskRes.data || []);
+        const taskRes = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_my_tasks', { method: 'POST', body: JSON.stringify({ args: {} }) });
+        if (!taskRes.data?.ok) throw new Error(taskRes.data?.error || 'Could not load assigned tasks.');
+        setTasks(taskRes.data.tasks || []);
         setTickets([]);
       } else {
         const ticketsRes = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_list_tickets', {
@@ -51,9 +48,11 @@ export default function StaffPanel() {
 
   const updateTask = async (taskId: string, status: string) => {
     try {
-      await d1Request(`/api/staff/tasks/${encodeURIComponent(taskId)}`, {
-        method: 'PATCH', body: JSON.stringify({ status }),
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_update_task', {
+        method: 'POST', body: JSON.stringify({ args: { p_task_id: taskId, p_status: status, p_body: taskNotes[taskId] || null, p_attachment_url: null } }),
       });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update task.');
+      setTaskNotes(previous => ({ ...previous, [taskId]: '' }));
       await load();
     } catch (error: any) { alert(error.message || 'Could not update task'); }
   };
@@ -96,13 +95,26 @@ export default function StaffPanel() {
               </div>
               {task.description && <p className="text-[12px] text-gray-600 dark:text-gray-300 mt-2 whitespace-pre-wrap">{task.description}</p>}
               {task.due_at && <p className="text-[10px] text-gray-500 mt-2">Due {new Date(task.due_at).toLocaleString()}</p>}
-              <div className="flex flex-wrap gap-2 mt-3">
-                {(['todo','in_progress','blocked','completed'] as const).filter(status => status !== task.status).map(status => (
+              <textarea
+                value={taskNotes[task.id] || ''}
+                onChange={e => setTaskNotes(previous => ({ ...previous, [task.id]: e.target.value }))}
+                maxLength={5000}
+                placeholder="Progress update, completion report or evidence notes..."
+                rows={2}
+                className="w-full mt-3 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
+              />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {(['todo','in_progress','blocked','submitted'] as const).filter(status => status !== task.status).map(status => (
                   <button key={status} onClick={() => void updateTask(task.id,status)} className="text-[10px] font-bold px-3 py-2 rounded-lg bg-[#e3f7ec] text-[#12935a]">
-                    {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : 'Complete'}
+                    {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : 'Submit report'}
                   </button>
                 ))}
               </div>
+              {Array.isArray(task.updates) && task.updates.length > 0 && (
+                <div className="mt-3 border-t border-gray-100 dark:border-darkline pt-2 space-y-1">
+                  {task.updates.slice(-3).map((update: any) => <p key={update.id} className="text-[10px] text-gray-500">{update.body || update.update_type} · {new Date(update.created_at).toLocaleString()}</p>)}
+                </div>
+              )}
             </section>
           ))}
         </div>
