@@ -32,7 +32,20 @@ export default function AdminLayout() {
       if (cancelled) return;
       if (!user) { navigate('/'); return; }
 
-      const role = user.role;
+      let role = '';
+      try {
+        const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string; error?: string } }>('/api/v1/admin/rpc/staff_my_profile', {
+          method: 'POST', body: JSON.stringify({ args: {} }),
+        });
+        if (!appointment.data?.ok) throw new Error(appointment.data?.error || 'No active admin appointment.');
+        role = appointment.data.role || '';
+      } catch {
+        if (!cancelled) {
+          alert('Access denied. An active Owner or Super Admin appointment is required.');
+          navigate('/home');
+        }
+        return;
+      }
       setAdminRole(role);
       if (role !== 'owner' && role !== 'super_admin') {
         alert(`Access denied. Your role is: ${role || 'unknown'}`);
