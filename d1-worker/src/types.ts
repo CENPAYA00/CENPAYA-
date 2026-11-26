@@ -16,7 +16,9 @@ export interface Env {
   FRONTEND_URL?: string;
   AI_SEARCH_NAME?: string;
   CENPAYA_API?: Fetcher;
-  AI?: { autorag: (name: string) => { search: (options: Record<string, unknown>) => Promise<unknown> } };
+  AI?: { autorag: (name: string) => { search: (options: Record<string, unknown>) => Promise<unknown> }; run?: (model: string, input: Record<string, unknown>, options?: Record<string, unknown>) => Promise<unknown> };
+  AI_ASSISTANT_MODEL?: string;
+  AI_ASSISTANT_GATEWAY?: string;
   CACHE?: KVNamespace;
   UPSTASH_REDIS_REST_URL?: string;
   UPSTASH_REDIS_REST_TOKEN?: string;
