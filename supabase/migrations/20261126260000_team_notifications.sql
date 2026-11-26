@@ -87,7 +87,7 @@ returns jsonb language plpgsql security definer set search_path=public,pg_temp
 as $function$
 declare v_uid uuid:=auth.uid();
 begin
- if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
+ if v_uid is null or not public.is_active_team_member(v_uid) then return jsonb_build_object('ok',false,'error','active team appointment required'); end if;
  update public.team_notifications set read_at=now() where id=p_id and recipient_id=v_uid;
  if not found then return jsonb_build_object('ok',false,'error','notification not found'); end if;
  return jsonb_build_object('ok',true);
