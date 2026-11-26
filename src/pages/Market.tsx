@@ -94,6 +94,8 @@ export default function Market() {
           {filtered.map(l => {
             const cover = Array.isArray(l.images) ? l.images[0] : l.images;
             const isBoosted = l.boosted_until && new Date(l.boosted_until) > new Date();
+            const aiText = l.ai_text_classification;
+            const aiMedia = l.ai_media_classification;
             return (
               <div key={l.id} className="bg-white dark:bg-darkcard rounded-[20px] shadow-sm overflow-hidden flex flex-col border border-gray-100 dark:border-darkline">
                 <button onClick={() => navigate(`/listing/${l.id}`)} className="w-full aspect-square bg-gray-100 dark:bg-darkline relative">
@@ -102,6 +104,7 @@ export default function Market() {
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-400"><Store size={24} /></div>
                   )}
+                  {(aiText === 'possible_ai_generated' || aiText === 'possible_ai_assisted' || aiMedia === 'possible_ai_generated') && <span className="absolute top-2 left-2 bg-black/75 text-white text-[9px] font-semibold px-2 py-1 rounded-md">AI indicator · review</span>}
                   {isBoosted && (
                     <span className="absolute top-2 right-2 bg-[#12935a] text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-md flex items-center gap-1">
                       <Zap size={10} fill="currentColor" /> Boosted
@@ -111,6 +114,7 @@ export default function Market() {
                 <div className="p-3 flex-1 flex flex-col">
                   <p className="text-[14px] font-bold text-navy dark:text-white line-clamp-1">{l.title}</p>
                   <p className="text-[15px] font-black text-[#12935a] mt-1">{Number(l.price || 0).toLocaleString()} XAF</p>
+                  {(aiText === 'possible_ai_generated' || aiText === 'possible_ai_assisted' || aiMedia === 'possible_ai_generated') && <p className="text-[10px] text-amber-700 dark:text-amber-300 mt-1">AI indicator: possible AI signals · not proof</p>}
                   {l.location_city && <p className="text-[11px] text-mute mt-0.5">{l.location_city}</p>}
                   
                   <InlineBoostBar 
