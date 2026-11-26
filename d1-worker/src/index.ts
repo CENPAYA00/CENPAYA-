@@ -13,6 +13,7 @@ import { handleSearchRoute } from "./search.js";
 import { handleVideoRoutes, processVideoQueue } from "./video.js";
 import { handleVideoLifecycleRoutes, processVideoLifecycleCleanupQueue, processListingRetentionQueue } from "./video-lifecycle.js";
 import { handleAdminRoutes } from "./admin.js";
+import { handleAiAssistantRoutes } from "./ai-assistant.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -53,6 +54,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   const authResponse=await handleAuthRoutes(request,env,url,path,method);
   if(authResponse)return authResponse;
   const user=await auth(request,env);
+  const aiAssistantResponse=await handleAiAssistantRoutes(request,env,path,method,user);
+  if(aiAssistantResponse)return aiAssistantResponse;
   const adminResponse=await handleAdminRoutes(request,env,{path,method,user});
   if(adminResponse)return adminResponse;
   const searchResponse=await handleSearchRoute(request,env,user?.id||null);
