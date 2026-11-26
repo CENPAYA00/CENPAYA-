@@ -33,7 +33,7 @@ begin
  into v_rows from public.team_tasks t
  where t.assigned_to=v_uid
     or (v_role in ('super_admin','owner'))
-    or (v_role='vice_admin' and t.supervisor_id=v_uid and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_tasks'))
+    or (v_role='vice_admin' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_tasks'))
     or (v_role='support_agent' and t.supervisor_id=v_uid and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_supervise_staff'));
  return jsonb_build_object('ok',true,'tasks',v_rows);
 end;$function$;
