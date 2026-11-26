@@ -298,6 +298,7 @@ export default function AdminStaff() {
               Accepted {new Date(inv.accepted_at).toLocaleDateString()}
             </p>
           )}
+          {inv.status === 'accepted' && <p className={`text-[9px] mt-1 font-bold ${inv.appointment_status==='active'?'text-green-600':inv.appointment_status==='suspended'?'text-amber-600':'text-gray-400'}`}>Appointment: {inv.appointment_status || 'active'}</p>}
           {inv.status === 'accepted' && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {((inv.role === 'support_agent' && canManageSupportAgents) || (inv.role === 'staff_member' && canManageStaffMembers) || (inv.role === 'vice_admin' && canConfigureViceAdmin)) && (
