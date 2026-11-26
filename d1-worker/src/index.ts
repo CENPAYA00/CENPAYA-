@@ -57,6 +57,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   const user=await auth(request,env);
   const aiAssistantResponse=await handleAiAssistantRoutes(request,env,path,method,user);
   if(aiAssistantResponse)return aiAssistantResponse;
+  const aiIndicatorResponse=await handleAiIndicatorRoutes(request,env,path,method,user);
+  if(aiIndicatorResponse)return aiIndicatorResponse;
   const adminResponse=await handleAdminRoutes(request,env,{path,method,user});
   if(adminResponse)return adminResponse;
   const searchResponse=await handleSearchRoute(request,env,user?.id||null);
