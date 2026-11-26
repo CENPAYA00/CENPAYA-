@@ -5,7 +5,7 @@ returns boolean language sql stable security definer set search_path=public,pg_t
 as $function$
  select exists(
   select 1 from public.users u
-  where u.id=p_user_id and u.banned=false and (
+  where u.id=p_user_id and u.banned=false and coalesce(u.is_deactivated,false)=false and (
    u.role in ('owner','super_admin') or
    (u.role in ('vice_admin','support_agent','staff_member') and exists(
      select 1 from public.staff_invitations i
