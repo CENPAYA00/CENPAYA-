@@ -110,7 +110,7 @@ export default function AdminStaff() {
         method: 'POST',
         body: JSON.stringify({ args: {
           p_title: taskTitle.trim(),
-          p_description: taskDescription.trim(),
+          p_description: taskDescription.trim() || null,
           p_assigned_to: taskAssignee,
           p_due_at: taskDue ? new Date(taskDue).toISOString() : null,
           p_department_id: taskDepartment || null,
