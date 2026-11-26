@@ -60,6 +60,7 @@ begin
  end if;
  if p_type<>'direct' and not v_allowed then return jsonb_build_object('ok',false,'error','team communication management permission required'); end if;
  if p_type='direct' and coalesce(array_length(p_member_ids,1),0)<>1 then return jsonb_build_object('ok',false,'error','direct message requires exactly one recipient'); end if;
+ if p_type='department' and p_department_id is null then return jsonb_build_object('ok',false,'error','department required for department conversation'); end if;
  insert into public.team_conversations(conversation_type,title,department_id,created_by)
  values(p_type,nullif(trim(p_title),''),p_department_id,v_uid) returning id into v_id;
  insert into public.team_conversation_members(conversation_id,user_id,added_by)
@@ -70,6 +71,20 @@ begin
     or (u.role in ('vice_admin','support_agent','staff_member')
         and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active')))
  on conflict do nothing;
+ if p_type='announcement' then
+  insert into public.team_conversation_members(conversation_id,user_id,added_by)
+  select v_id,u.id,v_uid from public.users u
+  where u.id<>v_uid and public.is_active_team_member(u.id)
+  on conflict do nothing;
+ elsif p_type='department' then
+  insert into public.team_conversation_members(conversation_id,user_id,added_by)
+  select v_id,si.accepted_by,v_uid
+  from public.staff_invitations si
+  join public.team_departments d on lower(d.name)=lower(si.department) and d.id=p_department_id
+  where si.appointment_status='active' and si.accepted_by is not null
+    and si.accepted_by<>v_uid and public.is_active_team_member(si.accepted_by)
+  on conflict do nothing;
+ end if;
  insert into public.admin_audit_log(actor_id,action,target_table,target_id,new_value)
  values(v_uid,'team_conversation_created','team_conversations',v_id,jsonb_build_object('type',p_type,'member_count',coalesce(array_length(p_member_ids,1),0)));
  return jsonb_build_object('ok',true,'conversation_id',v_id);
