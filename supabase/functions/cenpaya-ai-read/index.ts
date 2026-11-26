@@ -48,7 +48,9 @@ async function consumeAssertion(claims: Claims): Promise<boolean> {
   const secret = Deno.env.get("D1_INTERNAL_CALL_SECRET") ?? "";
   if (!workerUrl || secret.length < 32) return false;
   try {
-    const result = await fetch(workerUrl + "/internal/v1/identity/consume", {
+    const workerBase = new URL(workerUrl);
+    if (workerBase.protocol !== "https:") return false;
+    const result = await fetch(new URL("/internal/v1/identity/consume", workerBase).toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CenPaya-Internal-Secret": secret },
       body: JSON.stringify({ jti: claims.jti, expires_at: claims.exp }),
@@ -72,7 +74,7 @@ function getSupabaseServerKey(): { key: string; isSecretKey: boolean } {
 async function selectRows(table: string, params: Record<string, string>, limit: number) {
   const base = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
   const serverKey = getSupabaseServerKey();
-  if (!base || !serverKey.key) throw new Error("Supabase read service is not configured");
+  if (!base || !serverKey.key || new URL(base).protocol !== "https:") throw new Error("Supabase read service is not configured");
   const query = new URLSearchParams({ select: params.select, ...params, limit: String(limit) });
   query.delete("select");
   const url = base + "/rest/v1/" + table + "?select=" + encodeURIComponent(params.select) + "&" + query.toString();
@@ -143,6 +145,8 @@ Deno.serve(async (req: Request) => {
   if (contentType !== "application/json") return response({ success: false, error: "JSON body required" }, 415);
   let body: unknown;
   try {
+    const declaredLength = Number(req.headers.get("Content-Length") ?? 0);
+    if (declaredLength > 2048) return response({ success: false, error: "Payload too large" }, 413);
     const raw = await req.text();
     if (new TextEncoder().encode(raw).byteLength > 2048) return response({ success: false, error: "Payload too large" }, 413);
     body = JSON.parse(raw);
