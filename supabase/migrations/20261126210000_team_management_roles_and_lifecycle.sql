@@ -145,7 +145,10 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_id uuid; v_token text; v_allowed text[];
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- if not (public.is_owner() or public.is_super_admin()) and not (p_role='support_agent' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_support_agents')) and not (p_role='staff_member' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_staff')) then return jsonb_build_object('ok',false,'error','team appointment management permission required'); end if;
+ if not (public.is_owner() or public.is_super_admin()) and not (
+   (p_role='support_agent' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_support_agents'))
+   or (p_role='staff_member' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_staff'))
+ ) then return jsonb_build_object('ok',false,'error','team appointment management permission required'); end if;
  if p_role is null or p_role not in ('support_agent','staff_member','vice_admin') then return jsonb_build_object('ok',false,'error','invalid team role'); end if;
  if p_role='vice_admin' and not (public.is_owner() or public.is_super_admin()) then return jsonb_build_object('ok',false,'error','Owner or Super Admin required to appoint a Vice Admin'); end if;
  if p_role='vice_admin' and not public.is_owner() and jsonb_array_length(p_permissions)>0 then return jsonb_build_object('ok',false,'error','only Owner may grant Vice Admin permissions'); end if;
