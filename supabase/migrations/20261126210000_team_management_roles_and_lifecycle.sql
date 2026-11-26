@@ -139,7 +139,7 @@ begin
  end;
  if exists(select 1 from jsonb_array_elements_text(p_permissions) x(value) where x.value<>all(v_allowed)) then return jsonb_build_object('ok',false,'error','permission is not allowed for this role'); end if;
  if p_role='support_agent' then
-   p_permissions:=p_permissions || jsonb_build_array('can_manage_tickets','can_escalate');
+   p_permissions:=p_permissions || jsonb_build_array('can_manage_tickets','can_escalate','can_supervise_staff');
  elsif p_role='staff_member' then
    p_permissions:=p_permissions || jsonb_build_array('can_submit_reports');
  end if;
