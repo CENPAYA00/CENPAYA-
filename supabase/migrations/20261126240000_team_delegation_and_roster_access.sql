@@ -66,7 +66,7 @@ begin
  values(v_id,v_uid,v_uid) on conflict do nothing;
  insert into public.team_conversation_members(conversation_id,user_id,added_by)
  select v_id,selected.user_id,v_uid from unnest(coalesce(p_member_ids,'{}'::uuid[])) as selected(user_id)
- join public.users u on u.id=selected.user_id and (u.role in ('owner','super_admin')
+ join public.users u on u.id=selected.user_id and u.banned=false and coalesce(u.is_deactivated,false)=false and (u.role in ('owner','super_admin')
     or (u.role in ('vice_admin','support_agent','staff_member')
         and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active')))
  on conflict do nothing;
