@@ -97,6 +97,7 @@ export default function Layout() {
 
   const goToPanel = () => {
     if (staffRole === 'owner' || staffRole === 'super_admin') navigate('/admin');
+    else if (staffRole === 'vice_admin') navigate('/vice-admin');
     else if (staffRole === 'support_agent' || staffRole === 'staff_member') navigate('/staff');
   };
 
