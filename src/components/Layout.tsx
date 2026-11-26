@@ -48,11 +48,22 @@ export default function Layout() {
       if (!user || !active) return;
       setUserId(user.id);
       let role = user.role || '';
+      if (!['owner', 'super_admin', 'support_agent', 'staff_member'].includes(role)) {
+        // The Supabase control plane is authoritative for accepted team appointments.
+        // D1 remains authoritative for ordinary app identity and staff task data.
+        try {
+          const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string } }>(
+            '/api/v1/admin/rpc/staff_my_profile',
+            { method: 'POST', body: JSON.stringify({ args: {} }) },
+          );
+          if (appointment.data?.ok && appointment.data.role) role = appointment.data.role;
+        } catch { /* Ordinary app users do not have a team appointment. */ }
+      }
       if (role === 'user') {
         try {
           const workspace = await d1Request<{ data: { role: string } }>('/api/staff/profile');
           if (workspace.data?.role === 'staff_member') role = 'staff_member';
-        } catch { /* Not every user has a staff workspace. */ }
+        } catch { /* Not every user has a D1 staff workspace. */ }
       }
       if (['support_agent', 'staff_member', 'super_admin', 'owner'].includes(role)) {
         setStaffRole(role);
