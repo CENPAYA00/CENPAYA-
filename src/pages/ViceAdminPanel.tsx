@@ -126,6 +126,26 @@ export default function ViceAdminPanel() {
         </section>
       )}
 
+      {Array.isArray(overview?.recent_tickets) && overview.recent_tickets.length>0 && (
+        <section className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
+          <h3 className="text-sm font-bold text-navy dark:text-white mb-2">Recent customer ticket handling</h3>
+          {overview.recent_tickets.map((ticket:any)=><div key={ticket.id} className="border-t border-gray-100 dark:border-darkline py-2">
+            <p className="text-xs font-bold text-navy dark:text-white">{ticket.subject}</p>
+            <p className="text-[10px] text-gray-500">Customer @{ticket.customer||'unknown'} · {ticket.status} · Handled by {ticket.handled_by?('@'+ticket.handled_by):'Unassigned'}</p>
+            <p className="text-[9px] text-gray-400">{new Date(ticket.updated_at).toLocaleString()}</p>
+          </div>)}
+        </section>
+      )}
+      {Array.isArray(overview?.recent_tasks) && overview.recent_tasks.length>0 && (
+        <section className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
+          <h3 className="text-sm font-bold text-navy dark:text-white mb-2">Recent staff assignments</h3>
+          {overview.recent_tasks.map((task:any)=><div key={task.id} className="border-t border-gray-100 dark:border-darkline py-2">
+            <p className="text-xs font-bold text-navy dark:text-white">{task.title}</p>
+            <p className="text-[10px] text-gray-500">@{task.assignee||'unknown'} · {task.status} · Supervisor {task.supervisor?('@'+task.supervisor):'—'}</p>
+          </div>)}
+        </section>
+      )}
+
       <section className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
         <h3 className="text-sm font-bold text-navy dark:text-white mb-2">Recent team audit</h3>
         {(overview?.recent_audit || []).length === 0 ? <p className="text-xs text-gray-500">No recent team actions.</p> : (overview.recent_audit || []).map((entry: any) => (
