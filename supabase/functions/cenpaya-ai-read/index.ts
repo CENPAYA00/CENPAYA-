@@ -140,7 +140,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return response({ success: false, error: "Method not allowed" }, 405);
   const authorization = req.headers.get("Authorization") ?? "";
-  const token = authorization.match(/^Bearer\\s+(.+)$/i)?.[1] ?? "";
+  const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
   const claims = await verifyIdentityAssertion(token);
   if (!claims) return response({ success: false, error: "Unauthorized" }, 401);
   if (!await consumeAssertion(claims)) return response({ success: false, error: "Identity assertion expired, replayed, or unavailable" }, 401);
