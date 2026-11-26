@@ -54,6 +54,7 @@ begin
    or (v_role='support_agent' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_supervise_staff'))
  );
  if v_uid<>v_task.assigned_to and not v_supervisor and not v_manager then return jsonb_build_object('ok',false,'error','not authorized for this task'); end if;
+ if p_status is null then return jsonb_build_object('ok',false,'error','task status required'); end if;
  if v_uid=v_task.assigned_to and p_status not in ('todo','in_progress','blocked','submitted') then return jsonb_build_object('ok',false,'error','staff can only submit or update their own work'); end if;
  if v_uid<>v_task.assigned_to and p_status not in ('todo','in_progress','blocked','submitted','completed','cancelled') then return jsonb_build_object('ok',false,'error','invalid task status'); end if;
  if p_body is not null and char_length(p_body)>5000 then return jsonb_build_object('ok',false,'error','update too long'); end if;
