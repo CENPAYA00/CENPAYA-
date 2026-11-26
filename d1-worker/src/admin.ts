@@ -44,8 +44,8 @@ function definitions(env: Env): FeatureDefinition[] {
       key: "ai_assistant",
       display_name: "AI assistance",
       description: "AI-powered assistance for members.",
-      ready: false,
-      blocked_reason: "The member-facing AI assistant is not implemented yet. AI Search availability alone does not enable an assistant.",
+      ready: typeof env.AI?.run === "function",
+      blocked_reason: typeof env.AI?.run === "function" ? null : "Bind Workers AI to this D1 Worker before enabling CenPaya Assistant.",
     },
   ];
 }
@@ -201,6 +201,9 @@ export async function handleAdminRoutes(
   if (path === "/api/admin/features" && method === "GET") {
     if (!user || !["owner", "super_admin"].includes(user.role)) return fail("Admin access required", 403);
     try {
+      for (const feature of definitions(env)) {
+        await env.DB.prepare("INSERT INTO feature_flags(key,enabled) VALUES(?,0) ON CONFLICT(key) DO NOTHING").bind(feature.key).run();
+      }
       const rows = await env.DB.prepare("SELECT key, enabled FROM feature_flags ORDER BY key").all<{ key: string; enabled: number }>();
       const enabledByKey = new Map((rows.results || []).map(row => [row.key, Number(row.enabled) === 1]));
       const data = definitions(env).map(feature => ({
