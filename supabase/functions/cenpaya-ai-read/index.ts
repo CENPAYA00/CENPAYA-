@@ -1,9 +1,3 @@
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "null",
-  "Access-Control-Allow-Headers": "authorization, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
 type ReadIntent = "wallet" | "transactions" | "marketplace_orders" | "service_orders" | "subscriptions" | "support_tickets" | "profile";
 type Claims = { iss: string; aud: string; sub: string; iat: number; exp: number; jti: string };
 
@@ -13,7 +7,7 @@ const INTENTS = new Set<ReadIntent>(["wallet", "transactions", "marketplace_orde
 function response(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
   });
 }
 function decodeBase64Url(value: string): Uint8Array {
@@ -137,7 +131,7 @@ async function readUserData(userId: string, intent: ReadIntent): Promise<unknown
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response(null, { status: 204 });
   if (req.method !== "POST") return response({ success: false, error: "Method not allowed" }, 405);
   const authorization = req.headers.get("Authorization") ?? "";
   const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
