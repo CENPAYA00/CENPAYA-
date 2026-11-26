@@ -11,7 +11,7 @@ These migrations are committed to the existing `migration/supabase-worker-api` b
 5. `0005_escrow_buyer_fee_and_verified_delivery_settlement.sql` — buyer-paid marketplace fee, full seller-price payout, verified delivery, inspection-window auto-release.
 6. `0006_freelance_service_escrow_tables.sql` — service orders, mutually approved deadline changes, and milestone records with participant read policies.
 7. `0007_freelance_service_escrow_lifecycle.sql` — atomic freelance wallet funding, seller acceptance and deadline confirmation, milestones, revisions, deadline changes, and service disputes.
-8. `0008_escrow_auto_settlement_and_dispute_resolution.sql` — missed-deadline refunds, 72-hour submitted-milestone review auto-release, atomic product disputes, product/service dispute settlement, and admin escrow actions.
+8. `0008_escrow_auto_settlement_and_dispute_resolution.sql` — missed-deadline refunds, 72-hour submitted-milestone review auto-release, atomic product disputes, product/service dispute settlement, and admin escrow actions.\n9. `0009_team_management_system.sql` — Support Agent, Staff Member and Vice Admin appointments, role-scoped permissions, ticket operations, private tasks, supervisor reassignment, departments, internal communications, notifications, searchable history, audit records and inactive-appointment access revocation.
 
 ## Escrow rules implemented
 
