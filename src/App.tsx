@@ -168,6 +168,7 @@ export default function App() {
             <Route path="/vice-admin" element={<ViceAdminPanel />} />
             <Route path="/staff/tasks" element={<TeamTasksPanel />} />
             <Route path="/staff/team" element={<TeamCommunications />} />
+            <Route path="/staff/management" element={<AdminStaff />} />
             <Route path="/staff/tickets/:id" element={<StaffTicketThread />} />
             <Route path="/staff/reports" element={<StaffReports />} />
           </Route>
