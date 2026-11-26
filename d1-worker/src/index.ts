@@ -13,7 +13,8 @@ import { handleSearchRoute } from "./search.js";
 import { handleVideoRoutes, processVideoQueue } from "./video.js";
 import { handleVideoLifecycleRoutes, processVideoLifecycleCleanupQueue, processListingRetentionQueue } from "./video-lifecycle.js";
 import { handleAdminRoutes } from "./admin.js";
-import { handleAiAssistantRoutes } from "./ai-assistant.js";\nimport { handleAiIndicatorRoutes } from "./ai-indicator.js";
+import { handleAiAssistantRoutes } from "./ai-assistant.js";
+import { handleAiIndicatorRoutes } from "./ai-indicator.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
