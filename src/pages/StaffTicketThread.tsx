@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { d1Request } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { ArrowLeft, Send, Check } from 'lucide-react';
 
 export default function StaffTicketThread() {
@@ -16,9 +16,12 @@ export default function StaffTicketThread() {
   const load = async () => {
     if (!id) return;
     try {
-      const result = await d1Request<{ data: { ticket: any; messages: any[] } }>(`/api/staff/tickets/${encodeURIComponent(id)}`);
-      setTicket(result.data?.ticket || null);
-      setMessages(result.data?.messages || []);
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/get_ticket_thread', {
+        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not load ticket.');
+      setTicket(result.data.ticket || null);
+      setMessages(result.data.messages || []);
     } catch (error) { console.warn('Could not load support ticket', error); }
     finally { setLoading(false); }
   };
@@ -37,9 +40,10 @@ export default function StaffTicketThread() {
     if (!input.trim() || !id) return;
     setSending(true);
     try {
-      await d1Request(`/api/staff/tickets/${encodeURIComponent(id)}/messages`, {
-        method: 'POST', body: JSON.stringify({ body: input.trim() }),
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/send_ticket_message', {
+        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id, p_body: input.trim() } }),
       });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not send reply.');
       setInput('');
       await load();
     } catch (error: any) { alert(error.message || 'Send failed'); }
@@ -48,9 +52,10 @@ export default function StaffTicketThread() {
 
   const setStatus = async (status: 'open' | 'in_progress' | 'resolved' | 'closed') => {
     try {
-      await d1Request(`/api/staff/tickets/${encodeURIComponent(id || '')}`, {
-        method: 'PATCH', body: JSON.stringify({ status }),
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/set_ticket_status', {
+        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id, p_status: status } }),
       });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update ticket status.');
       load();
     } catch (error: any) { alert(error.message || 'Update failed'); }
   };
