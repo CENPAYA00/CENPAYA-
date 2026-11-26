@@ -6,7 +6,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_role text; v_rows jsonb; v_allowed boolean:=false;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- select role into v_role from public.users where id=v_uid and banned=false;
+ select role into v_role from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false;
  if v_role in ('owner','super_admin') then v_allowed:=true;
  elsif v_role='support_agent' then
    select exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='support_agent' and appointment_status='active') into v_allowed;
@@ -39,7 +39,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_role text; v_allowed boolean:=false; v_id uuid;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- select role into v_role from public.users where id=v_uid and banned=false;
+ select role into v_role from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false;
  if v_role='owner' or v_role='super_admin' then v_allowed:=true;
  elsif v_role='support_agent' then
    select exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_escalate') into v_allowed;
