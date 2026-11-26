@@ -24,7 +24,8 @@ begin
  insert into public.team_notifications(recipient_id,event_type,title,body,entity_type,entity_id)
  select cm.user_id,'team_message','New team message',left(new.body,240),'team_conversation',new.conversation_id
  from public.team_conversation_members cm
- where cm.conversation_id=new.conversation_id and cm.user_id<>new.sender_id;
+ where cm.conversation_id=new.conversation_id and cm.user_id<>new.sender_id
+   and public.is_active_team_member(cm.user_id);
  return new;
 end;$function$;
 drop trigger if exists team_message_notification_trigger on public.team_messages;
@@ -40,7 +41,8 @@ begin
  insert into public.team_notifications(recipient_id,event_type,title,body,entity_type,entity_id)
  select distinct target.user_id,'task_update','Task update: '||coalesce(v_title,'Team task'),coalesce(new.body,new.update_type),'team_task',new.task_id
  from (values(v_assigned),(v_supervisor)) as target(user_id)
- where target.user_id is not null and target.user_id<>new.author_id;
+ where target.user_id is not null and target.user_id<>new.author_id
+   and public.is_active_team_member(target.user_id);
  return new;
 end;$function$;
 drop trigger if exists team_task_update_notification_trigger on public.team_task_updates;
@@ -51,7 +53,7 @@ create or replace function public.notify_team_escalation()
 returns trigger language plpgsql security definer set search_path=public,pg_temp
 as $function$
 begin
- if new.assigned_to is not null then
+ if new.assigned_to is not null and public.is_active_team_member(new.assigned_to) then
   insert into public.team_notifications(recipient_id,event_type,title,body,entity_type,entity_id)
   values(new.assigned_to,'escalation','New escalation',left(new.reason,240),'team_escalation',new.id);
  else
@@ -60,7 +62,8 @@ begin
   from public.users u
   where (new.escalation_level='vice_admin' and u.role='vice_admin')
      or (new.escalation_level='super_admin' and u.role='super_admin')
-     or (new.escalation_level='owner' and u.role='owner');
+     or (new.escalation_level='owner' and u.role='owner'))
+     and public.is_active_team_member(u.id);
  end if;
  return new;
 end;$function$;
@@ -73,7 +76,7 @@ returns jsonb language plpgsql stable security definer set search_path=public,pg
 as $function$
 declare v_uid uuid:=auth.uid(); v_rows jsonb;
 begin
- if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
+ if v_uid is null or not public.is_active_team_member(v_uid) then return jsonb_build_object('ok',false,'error','active team appointment required'); end if;
  select coalesce(jsonb_agg(jsonb_build_object('id',id,'event_type',event_type,'title',title,'body',body,'entity_type',entity_type,'entity_id',entity_id,'read_at',read_at,'created_at',created_at) order by created_at desc),'[]'::jsonb)
  into v_rows from (select * from public.team_notifications where recipient_id=v_uid order by created_at desc limit greatest(1,least(p_limit,100))) n;
  return jsonb_build_object('ok',true,'notifications',v_rows);
