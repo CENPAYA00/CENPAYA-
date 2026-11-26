@@ -197,6 +197,18 @@ export default function AdminStaff() {
           ].map(([label,value])=><div key={label as string} className="bg-white dark:bg-darkcard rounded-lg p-3 shadow-sm"><p className="text-lg font-black text-navy dark:text-white">{value as any}</p><p className="text-[9px] text-gray-500">{label}</p></div>)}
         </section>
       )}
+      {overview && (Array.isArray(overview.recent_tickets) || Array.isArray(overview.recent_tasks)) && (
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div className="bg-white dark:bg-darkcard rounded-xl p-3 shadow-sm">
+            <h3 className="text-xs font-bold text-navy dark:text-white mb-2">Recent ticket handlers</h3>
+            {(overview.recent_tickets||[]).slice(0,6).map((ticket:any)=><p key={ticket.id} className="text-[10px] border-t border-gray-100 dark:border-darkline py-1.5 text-gray-600 dark:text-gray-300">{ticket.subject} · {ticket.handled_by?'@'+ticket.handled_by:'Unassigned'} · {ticket.status}</p>)}
+          </div>
+          <div className="bg-white dark:bg-darkcard rounded-xl p-3 shadow-sm">
+            <h3 className="text-xs font-bold text-navy dark:text-white mb-2">Recent staff assignments</h3>
+            {(overview.recent_tasks||[]).slice(0,6).map((task:any)=><p key={task.id} className="text-[10px] border-t border-gray-100 dark:border-darkline py-1.5 text-gray-600 dark:text-gray-300">{task.title} · @{task.assignee||'unknown'} · {task.status}</p>)}
+          </div>
+        </section>
+      )}
 
       {canManageTasks && <section className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-3 mb-4">
         <h3 className="text-[13px] font-bold text-navy dark:text-white mb-2">Staff tasks</h3>
