@@ -62,7 +62,7 @@ export default function StaffLayout() {
   };
 
   const tabs = workspaceRole === 'staff_member'
-    ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'My Tasks' }]
+    ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'My Tasks' }, { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' }]
     : workspaceRole === 'vice_admin'
       ? [
           { path: '/vice-admin', icon: <LayoutDashboard size={15} />, label: 'Overview' },
@@ -75,7 +75,6 @@ export default function StaffLayout() {
             { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
             { path: '/staff/tasks', icon: <Flag size={15} />, label: 'Staff Tasks' },
             { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' },
-            ...(workspacePermissions.includes('can_supervise_staff') ? [{ path: '/staff/tasks', icon: <Flag size={15} />, label: 'Staff Tasks' }] : []),
           ]
         : [
             { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
