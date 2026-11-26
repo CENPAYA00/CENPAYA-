@@ -12,12 +12,18 @@ export default function ViceAdminPanel() {
     setLoading(true);
     setError('');
     try {
+      const profile = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) });
+      if (!profile.data?.ok) throw new Error(profile.data?.error || 'An active team appointment is required.');
+      const role = profile.data.role;
+      const permissions: string[] = profile.data.permissions || [];
+      const canSeeMetrics = ['owner','super_admin'].includes(role) || permissions.includes('can_view_team_metrics');
+      const canManageEscalations = ['owner','super_admin'].includes(role) || permissions.includes('can_manage_escalations');
       const [summary, queue] = await Promise.all([
-        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }),
-        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_list_escalations', { method: 'POST', body: JSON.stringify({ args: {} }) }),
+        canSeeMetrics ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }) : Promise.resolve({ data: { ok: true, overview: null } }),
+        canManageEscalations ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_list_escalations', { method: 'POST', body: JSON.stringify({ args: {} }) }) : Promise.resolve({ data: { ok: true, escalations: [] } }),
       ]);
-      if (!summary.data?.ok) throw new Error(summary.data?.error || 'Your appointment does not include team oversight.');
-      setOverview(summary.data.overview || {});
+      if (!summary.data?.ok) throw new Error(summary.data?.error || 'Could not load team oversight.');
+      setOverview(summary.data.overview || null);
       setEscalations(queue.data?.ok ? queue.data.escalations || [] : []);
     } catch (e: any) {
       setError(e?.message || 'Could not load Vice Admin workspace.');
@@ -42,12 +48,12 @@ export default function ViceAdminPanel() {
   if (error) return <div className="bg-white dark:bg-darkcard rounded-xl p-5 text-sm text-red-600">{error}</div>;
 
   const metrics = [
-    ['Active team', overview?.active_members ?? 0, Users],
-    ['Pending appointments', overview?.pending_appointments ?? 0, Clock],
-    ['Open tasks', overview?.tasks_pending ?? 0, ClipboardList],
-    ['Overdue tasks', overview?.tasks_overdue ?? 0, AlertTriangle],
-    ['Open escalations', overview?.open_escalations ?? 0, Shield],
-    ['Open support tickets', overview?.tickets_open ?? 0, MessageSquare],
+    ['Active team', overview?.active_members ?? '—', Users],
+    ['Pending appointments', overview?.pending_appointments ?? '—', Clock],
+    ['Open tasks', overview?.tasks_pending ?? '—', ClipboardList],
+    ['Overdue tasks', overview?.tasks_overdue ?? '—', AlertTriangle],
+    ['Open escalations', overview?.open_escalations ?? escalations.length, Shield],
+    ['Open support tickets', overview?.tickets_open ?? '—', MessageSquare],
   ] as const;
 
   return (
