@@ -60,7 +60,7 @@ begin
   insert into public.team_notifications(recipient_id,event_type,title,body,entity_type,entity_id)
   select u.id,'escalation','New '||replace(new.escalation_level,'_',' ')||' escalation',left(new.reason,240),'team_escalation',new.id
   from public.users u
-  where (new.escalation_level='vice_admin' and u.role='vice_admin')
+  where ((new.escalation_level='vice_admin' and u.role='vice_admin')
      or (new.escalation_level='super_admin' and u.role='super_admin')
      or (new.escalation_level='owner' and u.role='owner'))
      and public.is_active_team_member(u.id);
