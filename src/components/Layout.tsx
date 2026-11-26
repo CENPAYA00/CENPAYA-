@@ -47,16 +47,30 @@ export default function Layout() {
       try { ({ user } = await d1Me()); } catch { return; }
       if (!user || !active) return;
       setUserId(user.id);
-      const role = user.role || '';
-      if (['support_agent', 'super_admin', 'owner'].includes(role)) {
+      let role = '';
+      try {
+        const appointment = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', {
+          method: 'POST', body: JSON.stringify({ args: {} }),
+        });
+        if (appointment.data?.ok && appointment.data.role) role = appointment.data.role;
+      } catch { /* No active appointment: no team-panel shortcut. */ }
+      if (['support_agent','vice_admin','super_admin','owner'].includes(role)) {
         setStaffRole(role);
-        const [ticketsRes, reportsRes] = await Promise.all([
-          supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
-          supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
-        ]);
-        const ticketCount = (ticketsRes.data || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
-        const reportCount = (reportsRes.data || []).length;
-        if (active) setStaffBadge(ticketCount + reportCount);
+        if (role === 'support_agent') {
+          const ticketsRes = await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/staff_list_tickets', {
+            method: 'POST', body: JSON.stringify({ args: { p_scope: 'mine' } }),
+          }).catch(() => ({data:null}));
+          const ticketCount = (ticketsRes.data?.tickets || []).reduce((sum: number, ticket: any) => sum + (Number(ticket.unread) || 0), 0);
+          if (active) setStaffBadge(ticketCount);
+        } else if (role === 'vice_admin') {
+          const escalationRes = await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_list_escalations', {
+            method: 'POST', body: JSON.stringify({ args: {} }),
+          }).catch(() => ({data:null}));
+          if (active) setStaffBadge((escalationRes.data?.escalations || []).filter((item:any) => ['open','in_progress'].includes(item.status)).length);
+        } else {
+          const reportsRes = await supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] }));
+          if (active) setStaffBadge((reportsRes.data || []).length);
+        }
       }
       const refreshNotifications = async () => {
         try {
@@ -78,6 +92,7 @@ export default function Layout() {
 
   const goToPanel = () => {
     if (staffRole === 'owner' || staffRole === 'super_admin') navigate('/admin');
+    else if (staffRole === 'vice_admin') navigate('/vice-admin');
     else if (staffRole === 'support_agent') navigate('/staff');
   };
 
