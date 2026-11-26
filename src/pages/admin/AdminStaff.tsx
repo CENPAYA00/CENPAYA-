@@ -39,6 +39,7 @@ export default function AdminStaff() {
   const [taskDescription, setTaskDescription] = useState('');
   const [taskAssignee, setTaskAssignee] = useState('');
   const [taskDue, setTaskDue] = useState('');
+  const [taskDepartment, setTaskDepartment] = useState('');
   const [taskError, setTaskError] = useState('');
   const [taskSaving, setTaskSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -106,7 +107,7 @@ export default function AdminStaff() {
           p_description: taskDescription.trim(),
           p_assigned_to: taskAssignee,
           p_due_at: taskDue ? new Date(taskDue).toISOString() : null,
-          p_department_id: null,
+          p_department_id: taskDepartment || null,
         } }),
       });
       if (!result.data?.ok) throw new Error(result.data?.error || 'Task assignment was rejected.');
@@ -114,6 +115,7 @@ export default function AdminStaff() {
       setTaskDescription('');
       setTaskAssignee('');
       setTaskDue('');
+      setTaskDepartment('');
       await load();
     } catch (error: any) {
       setTaskError(error.message || 'Could not create task.');
@@ -203,7 +205,8 @@ export default function AdminStaff() {
             </select>
             <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} maxLength={160} placeholder="Task title" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
             <textarea value={taskDescription} onChange={e => setTaskDescription(e.target.value)} maxLength={5000} placeholder="Instructions and expected result" rows={3} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
-            <input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            <select value={taskDepartment} onChange={e=>setTaskDepartment(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs"><option value="">No department</option>{departments.map((d:any)=><option key={d.id} value={d.id}>{d.name}</option>)}</select>
+                        <input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
             {taskError && <p role="alert" className="text-[11px] text-red-600">{taskError}</p>}
             <button onClick={() => void createTask()} disabled={taskSaving || !taskTitle.trim() || !taskAssignee} className="w-full bg-accent text-white font-bold py-2.5 rounded-lg text-xs disabled:opacity-50">{taskSaving ? 'Assigning...' : 'Assign task'}</button>
           </div>
