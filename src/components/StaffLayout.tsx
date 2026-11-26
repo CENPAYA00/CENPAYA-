@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Home, Inbox, Flag, LogOut } from 'lucide-react';
 import { d1Me, d1Request, d1Logout } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
 export default function StaffLayout() {
   const navigate = useNavigate();
@@ -22,12 +23,22 @@ export default function StaffLayout() {
       if (cancelled) return;
       if (!user) { navigate('/'); return; }
 
-      let role = user.role;
+      let role = user.role || '';
       let allowed = ['support_agent', 'super_admin', 'owner'].includes(role);
+      if (!allowed) {
+        // Confirm the appointment against the authoritative control plane.
+        try {
+          const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string } }>(
+            '/api/v1/admin/rpc/staff_my_profile',
+            { method: 'POST', body: JSON.stringify({ args: {} }) },
+          );
+          if (appointment.data?.ok && appointment.data.role) role = appointment.data.role;
+        } catch { /* Continue to the D1 staff-member check below. */ }
+      }
       if (!allowed) {
         try {
           const workspace = await d1Request<{ data: { role: string } }>('/api/staff/profile');
-          role = workspace.data?.role || role;
+          if (workspace.data?.role) role = workspace.data.role;
           allowed = role === 'staff_member' || role === 'staff';
         } catch { allowed = false; }
       }
