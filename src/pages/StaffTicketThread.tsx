@@ -76,7 +76,11 @@ export default function StaffTicketThread() {
   };
 
   const escalate = async () => {
-    const target = workspaceRole === 'vice_admin' ? window.prompt('Escalate to super_admin or owner:', 'super_admin') : 'vice_admin';
+    const target = workspaceRole === 'vice_admin'
+      ? window.prompt('Escalate to super_admin or owner:', 'super_admin')
+      : workspaceRole === 'support_agent'
+        ? window.prompt('Escalate to vice_admin, super_admin or owner:', 'vice_admin')
+        : 'vice_admin';
     if (!target || !['vice_admin','super_admin','owner'].includes(target)) return;
     const reason = window.prompt('Explain why this ticket needs supervisor attention:');
     if (!reason?.trim()) return;
