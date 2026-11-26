@@ -91,7 +91,7 @@ export default function AdminStaff() {
     const description = window.prompt('Department description (optional):') || null;
     try {
       const result = await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/admin_upsert_team_department',{
-        method:'POST',body:JSON.stringify({args:{p_name:name.trim(),p_description:description}})
+        method:'POST',body:JSON.stringify({args:{p_name:name.trim(),p_description:description.trim()||null}})
       });
       if(!result.data?.ok)throw new Error(result.data?.error||'Could not save department.');
       await load();
@@ -110,7 +110,7 @@ export default function AdminStaff() {
         method: 'POST',
         body: JSON.stringify({ args: {
           p_title: taskTitle.trim(),
-          p_description: taskDescription.trim(),
+          p_description: taskDescription.trim() || null,
           p_assigned_to: taskAssignee,
           p_due_at: taskDue ? new Date(taskDue).toISOString() : null,
           p_department_id: taskDepartment || null,
@@ -370,8 +370,8 @@ function InviteSheet({ onClose, onCreated, members = [], departments = [], allow
           p_email: email.trim().toLowerCase(),
           p_role: role,
           p_permissions: permissions,
-          p_title: officialTitle || null,
-          p_department: department || null,
+          p_title: officialTitle.trim() || null,
+          p_department: department.trim() || null,
           p_supervisor_id: supervisorId || null,
         } }),
       });
