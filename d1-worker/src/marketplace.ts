@@ -1,6 +1,7 @@
 import type { Env, User } from "./types.js";
 import { uuid, constantTimeEqual } from "./security.js";
 import { extractMediaKey, hydratePosts, resolveMediaUrl } from "./media.js";
+import { analyzeListingText } from "./ai-indicator.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
@@ -284,7 +285,15 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const listingStatement=env.DB.prepare("INSERT INTO marketplace_listings(id,seller_id,category_id,title,description,listing_type,price_type,price_amount,currency_code,country_code,region,city,status,published_at,delivery_required,availability,hide_from_friends,price_is_range,price_min,price_max,images_json,documents_json,estimated_delivery_days) VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 'active',"+NOW+",?,?,?,?,?,?,?,?,?)")
       .bind(id,user.id,cat.id,title,description,type,priceType,priceType==="contact"?null:priceIsRange?priceMin:Number(priceAmount),priceType==="contact"?null:currency,country,region,city,deliveryRequired,availability,hideFromFriends,priceIsRange?1:0,priceIsRange?priceMin:null,priceIsRange?priceMax:null,JSON.stringify(imageKeys),JSON.stringify(documentKeys),deliveryDays);
     await env.DB.batch([listingStatement,...mediaStatements]);
-    return json({success:true,id,status:"active"},201);
+    // AI analysis is advisory and must never prevent a valid listing from being published.
+    const aiIndicator = await analyzeListingText(env,title,description,type);
+    try {
+      await env.DB.prepare("INSERT INTO ai_indicator_results(listing_id,seller_id,listing_type,status,classification,confidence,reason,model,updated_at) VALUES(?,?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(listing_id) DO UPDATE SET status=excluded.status,classification=excluded.classification,confidence=excluded.confidence,reason=excluded.reason,model=excluded.model,updated_at=excluded.updated_at")
+        .bind(id,user.id,type,aiIndicator.status,aiIndicator.classification,aiIndicator.confidence,aiIndicator.reason,aiIndicator.model).run();
+    } catch (error) {
+      console.warn("AI Indicator result could not be stored; listing remains published", error instanceof Error ? error.message : "unknown");
+    }
+    return json({success:true,id,status:"active",ai_indicator:aiIndicator},201);
   }
 
   return null;
