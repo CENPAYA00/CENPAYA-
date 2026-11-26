@@ -95,6 +95,16 @@ begin
   'tasks_pending',(select count(*) from public.team_tasks where status in ('todo','in_progress','blocked','submitted')),
   'tasks_overdue',(select count(*) from public.team_tasks where due_at<now() and status not in ('completed','cancelled')),
   'tasks_completed',(select count(*) from public.team_tasks where status='completed' and completed_at>=now()-interval '30 days'),
+  'tasks_completed_today',(select count(*) from public.team_tasks where status='completed' and completed_at>=date_trunc('day',now())),
+  'tasks_completed_week',(select count(*) from public.team_tasks where status='completed' and completed_at>=date_trunc('week',now())),
+  'tasks_completed_month',(select count(*) from public.team_tasks where status='completed' and completed_at>=date_trunc('month',now())),
+  'member_performance',(select coalesce(jsonb_agg(to_jsonb(perf) order by perf.username),'[]'::jsonb) from (
+    select u.id as user_id,u.username,count(t.id) as assigned,
+      count(t.id) filter(where t.status='completed') as completed,
+      count(t.id) filter(where t.due_at<now() and t.status not in ('completed','cancelled')) as overdue
+    from public.users u join public.team_tasks t on t.assigned_to=u.id
+    group by u.id,u.username order by u.username limit 50
+  ) perf),
   'open_escalations',(select count(*) from public.team_escalations where status in ('open','in_progress')),
   'tickets_open',(select count(*) from public.platform_tickets where status in ('open','in_progress')),
   'recent_audit',(select coalesce(jsonb_agg(jsonb_build_object('id',a.id,'actor_id',a.actor_id,'action',a.action,'target_user_id',a.target_user_id,'created_at',a.created_at,'new_value',a.new_value) order by a.created_at desc),'[]'::jsonb) from (select * from public.admin_audit_log where target_table in ('staff_invitations','team_tasks','team_escalations') order by created_at desc limit 30) a)
