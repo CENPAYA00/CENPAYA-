@@ -11,7 +11,7 @@ alter table public.ticket_messages
 create or replace function public.get_ticket_thread(p_ticket_id uuid)
 returns jsonb
 language plpgsql
-stable
+volatile
 security definer
 set search_path = public
 as $function$
@@ -31,6 +31,12 @@ begin
   if v_ticket.user_id <> v_uid and not v_is_elevated
      and not (v_is_support and (v_ticket.assigned_agent_id is null or v_ticket.assigned_agent_id=v_uid)) then
     return jsonb_build_object('ok',false,'error','not authorized');
+  end if;
+
+  if v_ticket.user_id=v_uid then
+    update public.ticket_messages set read_by_user=true where ticket_id=p_ticket_id and sender_id<>v_uid;
+  elsif v_is_support then
+    update public.ticket_messages set read_by_staff=true where ticket_id=p_ticket_id and sender_role='user';
   end if;
 
   select coalesce(jsonb_agg(jsonb_build_object(
@@ -67,6 +73,7 @@ declare
   v_assignee uuid;
   v_is_support boolean;
   v_is_elevated boolean;
+  v_message_id uuid;
 begin
   if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
   if p_body is null or char_length(trim(p_body))=0 or char_length(p_body)>10000 then
@@ -87,12 +94,15 @@ begin
   end if;
 
   insert into public.ticket_messages(ticket_id,sender_id,sender_role,body,read_by_user,read_by_staff)
-  values(p_ticket_id,v_uid,case when v_is_support then 'support' else 'user' end,trim(p_body),not v_is_support,v_is_support);
+  values(p_ticket_id,v_uid,case when v_is_support then 'support' else 'user' end,trim(p_body),not v_is_support,v_is_support)
+  returning id into v_message_id;
 
   update public.platform_tickets
      set updated_at=now(),
          status=case when v_is_support and status='open' then 'in_progress' else status end
    where id=p_ticket_id;
+  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,new_value)
+  values(v_uid,case when v_is_support then 'support_ticket_reply_sent' else 'customer_ticket_reply_sent' end,v_owner,'platform_tickets',p_ticket_id,jsonb_build_object('message_id',v_message_id));
   return jsonb_build_object('ok',true);
 end;
 $function$;
@@ -106,6 +116,8 @@ as $function$
 declare
   v_uid uuid := auth.uid();
   v_assignee uuid;
+  v_old_status text;
+  v_ticket_user uuid;
 begin
   if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
   if not (public.is_support_or_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='vice_admin' and appointment_status='active' and permissions ? 'can_manage_tickets')) then return jsonb_build_object('ok',false,'error','staff only'); end if;
@@ -113,7 +125,7 @@ begin
     return jsonb_build_object('ok',false,'error','invalid status');
   end if;
 
-  select assigned_agent_id into v_assignee
+  select assigned_agent_id,status,user_id into v_assignee,v_old_status,v_ticket_user
   from public.platform_tickets where id=p_ticket_id for update;
   if not found then return jsonb_build_object('ok',false,'error','ticket not found'); end if;
   if not (public.is_owner() or public.is_super_admin())
@@ -122,6 +134,8 @@ begin
   end if;
 
   update public.platform_tickets set status=p_status,updated_at=now() where id=p_ticket_id;
+  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,old_value,new_value)
+  values(v_uid,'support_ticket_status_updated',v_ticket_user,'platform_tickets',p_ticket_id,jsonb_build_object('status',v_old_status),jsonb_build_object('status',p_status,'assigned_agent_id',v_assignee));
   return jsonb_build_object('ok',true);
 end;
 $function$;
