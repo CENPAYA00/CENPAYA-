@@ -15,6 +15,59 @@ as $function$
  );
 $function$;
 
+create or replace function public.team_my_tasks()
+returns jsonb language plpgsql stable security definer set search_path=public,pg_temp
+as $function$
+declare v_uid uuid:=auth.uid(); v_role text; v_rows jsonb;
+begin
+ if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
+ if not public.is_active_team_member(v_uid) then return jsonb_build_object('ok',false,'error','active team appointment required'); end if;
+ select role into v_role from public.users where id=v_uid and banned=false;
+ select coalesce(jsonb_agg(jsonb_build_object(
+  'id',t.id,'title',t.title,'description',t.description,'status',t.status,'due_at',t.due_at,
+  'assigned_to',t.assigned_to,'assigned_by',t.assigned_by,'supervisor_id',t.supervisor_id,
+  'department',(select name from public.team_departments where id=t.department_id),
+  'created_at',t.created_at,'updated_at',t.updated_at,
+  'updates',(select coalesce(jsonb_agg(jsonb_build_object('id',u.id,'author_id',u.author_id,'update_type',u.update_type,'body',u.body,'attachment_url',u.attachment_url,'created_at',u.created_at) order by u.created_at),'[]'::jsonb) from public.team_task_updates u where u.task_id=t.id)
+ ) order by t.due_at nulls last,t.created_at desc),'[]'::jsonb)
+ into v_rows from public.team_tasks t
+ where t.assigned_to=v_uid
+    or (v_role in ('super_admin','owner'))
+    or (v_role='vice_admin' and t.supervisor_id=v_uid and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_tasks'))
+    or (v_role='support_agent' and t.supervisor_id=v_uid and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_supervise_staff'));
+ return jsonb_build_object('ok',true,'tasks',v_rows);
+end;$function$;
+
+create or replace function public.team_update_task(p_task_id uuid,p_status text,p_body text default null,p_attachment_url text default null)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp
+as $function$
+declare v_uid uuid:=auth.uid(); v_task public.team_tasks%rowtype; v_role text; v_manager boolean:=false; v_supervisor boolean:=false;
+begin
+ if v_uid is null or not public.is_active_team_member(v_uid) then return jsonb_build_object('ok',false,'error','active team appointment required'); end if;
+ select * into v_task from public.team_tasks where id=p_task_id for update;
+ if v_task.id is null then return jsonb_build_object('ok',false,'error','task not found'); end if;
+ select role into v_role from public.users where id=v_uid and banned=false;
+ v_manager:=v_role in ('owner','super_admin') or (v_role='vice_admin' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_tasks'));
+ v_supervisor:=v_uid=v_task.supervisor_id and (
+   v_role in ('owner','super_admin')
+   or (v_role='vice_admin' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_tasks'))
+   or (v_role='support_agent' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_supervise_staff'))
+ );
+ if v_uid<>v_task.assigned_to and not v_supervisor and not v_manager then return jsonb_build_object('ok',false,'error','not authorized for this task'); end if;
+ if v_uid=v_task.assigned_to and p_status not in ('todo','in_progress','blocked','submitted') then return jsonb_build_object('ok',false,'error','staff can only submit or update their own work'); end if;
+ if v_uid<>v_task.assigned_to and p_status not in ('todo','in_progress','blocked','submitted','completed','cancelled') then return jsonb_build_object('ok',false,'error','invalid task status'); end if;
+ if p_body is not null and char_length(p_body)>5000 then return jsonb_build_object('ok',false,'error','update too long'); end if;
+ if p_attachment_url is not null and (char_length(p_attachment_url)>2048 or p_attachment_url !~ '^https://') then return jsonb_build_object('ok',false,'error','evidence must be a secure HTTPS link'); end if;
+ update public.team_tasks set status=p_status,updated_at=now(),completed_at=case when p_status='completed' then now() when p_status<>'completed' then null else completed_at end where id=p_task_id;
+ if p_body is not null or p_attachment_url is not null or p_status<>v_task.status then
+  insert into public.team_task_updates(task_id,author_id,update_type,body,attachment_url)
+  values(p_task_id,v_uid,case when p_status='submitted' then 'submission' when p_attachment_url is not null then 'evidence' when p_status<>v_task.status then 'status_change' else 'comment' end,nullif(trim(p_body),''),p_attachment_url);
+ end if;
+ insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,old_value,new_value)
+ values(v_uid,'team_task_updated',v_task.assigned_to,'team_tasks',p_task_id,jsonb_build_object('status',v_task.status),jsonb_build_object('status',p_status));
+ return jsonb_build_object('ok',true);
+end;$function$;
+
 create or replace function public.team_list_conversations()
 returns jsonb language plpgsql stable security definer set search_path=public,pg_temp
 as $function$
