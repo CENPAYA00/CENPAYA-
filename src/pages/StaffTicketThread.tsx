@@ -100,7 +100,7 @@ export default function StaffTicketThread() {
 
       <main className="flex-1 overflow-y-auto p-3 pb-24">
         {messages.map(m => {
-          const isStaff = m.sender_type === 'support';
+          const isStaff = m.sender_role === 'staff' || m.sender_role === 'support' || m.sender_role === 'admin';
           return (
             <div key={m.id} className={`mb-2 flex ${isStaff ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-[12px] ${
