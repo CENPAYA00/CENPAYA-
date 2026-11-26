@@ -33,6 +33,9 @@ export default function AdminStaff() {
   const [canAppointViceAdmin, setCanAppointViceAdmin] = useState(false);
   const [canConfigureViceAdmin, setCanConfigureViceAdmin] = useState(false);
   const [canManageTasks, setCanManageTasks] = useState(false);
+  const [canManageSupportAgents, setCanManageSupportAgents] = useState(false);
+  const [canManageStaffMembers, setCanManageStaffMembers] = useState(false);
+  const [canManageDepartments, setCanManageDepartments] = useState(false);
   const [tasks, setTasks] = useState<any[]>([]);
   const [overview, setOverview] = useState<any>(null);
   const [taskTitle, setTaskTitle] = useState('');
@@ -66,6 +69,9 @@ export default function AdminStaff() {
       setCanAppointViceAdmin(['owner','super_admin'].includes(profileResult.data?.role));
       setCanConfigureViceAdmin(profileResult.data?.role === 'owner');
       setCanManageTasks(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_tasks') || profileResult.data?.permissions?.includes('can_supervise_staff'));
+      setCanManageSupportAgents(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_support_agents'));
+      setCanManageStaffMembers(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_staff'));
+      setCanManageDepartments(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_departments'));
       setTasks(taskResult.data?.tasks || []);
       setOverview(overviewResult.data?.ok ? overviewResult.data.overview : null);
       setDepartments(departmentResult.data?.ok ? departmentResult.data.departments || [] : []);
@@ -171,7 +177,7 @@ export default function AdminStaff() {
           <p className="text-[11px] text-gray-500">Manage Support Agents, Staff Members and Vice Admin appointments, permissions and tasks.</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => void createDepartment()} className="bg-gray-100 dark:bg-darkline text-navy dark:text-white text-[10px] font-bold px-3 py-2 rounded-lg">Department</button>
+          {canManageDepartments && <button onClick={() => void createDepartment()} className="bg-gray-100 dark:bg-darkline text-navy dark:text-white text-[10px] font-bold px-3 py-2 rounded-lg">Department</button>}
           <button
             onClick={() => setShowInvite(true)}
             className="bg-accent text-white text-[11px] font-bold px-3 py-2 rounded-lg flex items-center gap-1"
@@ -313,14 +319,14 @@ export default function AdminStaff() {
         </div>
       ))}
 
-      {showInvite && <InviteSheet members={teamMembers} departments={departments} allowViceAdmin={canAppointViceAdmin} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
+      {showInvite && <InviteSheet members={teamMembers} departments={departments} allowViceAdmin={canAppointViceAdmin} canConfigureViceAdmin={canConfigureViceAdmin} canManageSupportAgents={canManageSupportAgents} canManageStaffMembers={canManageStaffMembers} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
       {editingInvite && <EditPermissionsSheet invitation={editingInvite} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setEditingInvite(null)} onSaved={() => { setEditingInvite(null); load(); }} />}
       {editingAppointment && <EditAppointmentSheet invitation={editingAppointment} members={teamMembers} onClose={() => setEditingAppointment(null)} onSaved={() => { setEditingAppointment(null); load(); }} />}
     </div>
   );
 }
 
-function InviteSheet({ onClose, onCreated, members = [], departments = [], allowViceAdmin = false, canConfigureViceAdmin = false }: any) {
+function InviteSheet({ onClose, onCreated, members = [], departments = [], allowViceAdmin = false, canConfigureViceAdmin = false, canManageSupportAgents = false, canManageStaffMembers = false }: any) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'support_agent' | 'staff_member' | 'vice_admin'>('support_agent');
   const [permissions, setPermissions] = useState<string[]>([]);
@@ -405,7 +411,7 @@ function InviteSheet({ onClose, onCreated, members = [], departments = [], allow
           <div>
             <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 flex items-center gap-1"><Shield size={11}/> Role</label>
             <div className="grid grid-cols-2 gap-2">
-              {(['support_agent', 'staff_member', ...(allowViceAdmin ? ['vice_admin' as const] : [])] as const).map(r => (
+              {(['support_agent','staff_member',...(allowViceAdmin?['vice_admin' as const]:[])] as const).filter(r => r==='support_agent'?canManageSupportAgents:r==='staff_member'?canManageStaffMembers:allowViceAdmin).map(r => (
                 <button
                   key={r}
                   onClick={() => setRole(r)}
