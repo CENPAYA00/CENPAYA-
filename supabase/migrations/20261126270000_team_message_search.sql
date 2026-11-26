@@ -5,7 +5,7 @@ returns jsonb language plpgsql stable security definer set search_path=public,pg
 as $function$
 declare v_uid uuid:=auth.uid(); v_rows jsonb;
 begin
- if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
+ if v_uid is null or not public.is_active_team_member(v_uid) then return jsonb_build_object('ok',false,'error','active team appointment required'); end if;
  if p_query is null or char_length(trim(p_query))<2 then return jsonb_build_object('ok',false,'error','enter at least two search characters'); end if;
  select coalesce(jsonb_agg(jsonb_build_object(
   'id',m.id,'conversation_id',m.conversation_id,'conversation_title',c.title,
