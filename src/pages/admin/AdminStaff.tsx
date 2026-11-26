@@ -24,6 +24,8 @@ export default function AdminStaff() {
   const [invitations, setInvitations] = useState<any[]>([]);
   const [showInvite, setShowInvite] = useState(false);
   const [editingInvite, setEditingInvite] = useState<any>(null);
+  const [editingAppointment, setEditingAppointment] = useState<any>(null);
+  const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
@@ -45,7 +47,7 @@ export default function AdminStaff() {
     setLoading(true);
     setLoadError('');
     try {
-      const [invitationResult, usersResult, taskResult, profileResult, overviewResult] = await Promise.all([
+      const [invitationResult, usersResult, taskResult, profileResult, overviewResult, departmentResult] = await Promise.all([
         supabaseWorkerRequest<{ data: { ok?: boolean; invitations?: any[]; error?: string } }>('/api/v1/admin/rpc/admin_list_invitations', {
           method: 'POST', body: JSON.stringify({ args: {} }),
         }),
@@ -53,6 +55,7 @@ export default function AdminStaff() {
         supabaseWorkerRequest<{ data: { ok?: boolean; tasks?: any[] } }>('/api/v1/admin/rpc/team_my_tasks', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { tasks: [] } })),
         supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) }),
         supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: null })),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_list_departments', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: null })),
       ]);
       if (!invitationResult.data?.ok) throw new Error(invitationResult.data?.error || 'Could not load staff invitations.');
       setInvitations(invitationResult.data.invitations || []);
@@ -64,6 +67,7 @@ export default function AdminStaff() {
       setCanManageTasks(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_tasks') || profileResult.data?.permissions?.includes('can_supervise_staff'));
       setTasks(taskResult.data?.tasks || []);
       setOverview(overviewResult.data?.ok ? overviewResult.data.overview : null);
+      setDepartments(departmentResult.data?.ok ? departmentResult.data.departments || [] : []);
     } catch (error: any) {
       setLoadError(error?.message || 'Could not load staff administration.');
       setInvitations([]);
@@ -72,6 +76,19 @@ export default function AdminStaff() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const createDepartment = async () => {
+    const name = window.prompt('Department name:');
+    if (!name?.trim()) return;
+    const description = window.prompt('Department description (optional):') || null;
+    try {
+      const result = await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/admin_upsert_team_department',{
+        method:'POST',body:JSON.stringify({args:{p_name:name.trim(),p_description:description}})
+      });
+      if(!result.data?.ok)throw new Error(result.data?.error||'Could not save department.');
+      await load();
+    } catch(e:any){alert(e?.message||'Could not save department.');}
   };
 
   const createTask = async () => {
@@ -151,12 +168,15 @@ export default function AdminStaff() {
           <h2 className="text-2xl font-bold text-navy dark:text-white">👤 Staff</h2>
           <p className="text-[11px] text-gray-500">Manage Support Agents, Staff Members and Vice Admin appointments, permissions and tasks.</p>
         </div>
-        <button
-          onClick={() => setShowInvite(true)}
-          className="bg-accent text-white text-[11px] font-bold px-3 py-2 rounded-lg flex items-center gap-1"
-        >
-          <UserPlus size={12} /> Invite
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => void createDepartment()} className="bg-gray-100 dark:bg-darkline text-navy dark:text-white text-[10px] font-bold px-3 py-2 rounded-lg">Department</button>
+          <button
+            onClick={() => setShowInvite(true)}
+            className="bg-accent text-white text-[11px] font-bold px-3 py-2 rounded-lg flex items-center gap-1"
+          >
+            <UserPlus size={12} /> Invite
+          </button>
+        </div>
       </div>
 
       {loadError && <p role="alert" className="text-[11px] text-red-600 bg-red-50 rounded-lg p-3 mb-3">{loadError}</p>}
@@ -274,6 +294,9 @@ export default function AdminStaff() {
               {(inv.role !== 'vice_admin' || canConfigureViceAdmin) && (
                 <button onClick={() => setEditingInvite(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-blue-50 text-blue-700">Edit permissions</button>
               )}
+              {(inv.role !== 'vice_admin' || canConfigureViceAdmin) && (
+                <button onClick={() => setEditingAppointment(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-700">Edit appointment</button>
+              )}
               {inv.appointment_status === 'suspended' ? (
                 <button onClick={() => void setAppointmentStatus(inv.id, 'active')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-green-100 text-green-700">Reactivate</button>
               ) : inv.appointment_status !== 'removed' ? (
@@ -289,6 +312,7 @@ export default function AdminStaff() {
 
       {showInvite && <InviteSheet members={teamMembers} allowViceAdmin={canAppointViceAdmin} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
       {editingInvite && <EditPermissionsSheet invitation={editingInvite} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setEditingInvite(null)} onSaved={() => { setEditingInvite(null); load(); }} />}
+      {editingAppointment && <EditAppointmentSheet invitation={editingAppointment} members={teamMembers} onClose={() => setEditingAppointment(null)} onSaved={() => { setEditingAppointment(null); load(); }} />}
     </div>
   );
 }
@@ -462,6 +486,37 @@ function EditPermissionsSheet({ invitation, canConfigureViceAdmin, onClose, onSa
         </label>)}
         {error&&<p className="text-xs text-red-600">{error}</p>}
         <button disabled={busy||(role==='vice_admin'&&!canConfigureViceAdmin)} onClick={()=>void save()} className="w-full bg-accent text-white rounded-lg py-3 text-xs font-bold disabled:opacity-50">{busy?'Saving...':'Save permissions'}</button>
+      </div>
+    </div>
+  );
+}
+
+function EditAppointmentSheet({ invitation, members = [], onClose, onSaved }: any) {
+  const [title,setTitle]=useState(invitation.official_title||invitation.role.replace('_',' '));
+  const [department,setDepartment]=useState(invitation.department||'');
+  const [supervisorId,setSupervisorId]=useState(invitation.supervisor_id||'');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const save=async()=>{
+    setBusy(true);setError('');
+    try{
+      const result=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/admin_update_team_appointment',{
+        method:'POST',body:JSON.stringify({args:{p_invitation_id:invitation.id,p_title:title.trim(),p_department:department.trim()||null,p_supervisor_id:supervisorId||null}})
+      });
+      if(!result.data?.ok)throw new Error(result.data?.error||'Appointment update failed.');
+      onSaved();
+    }catch(e:any){setError(e?.message||'Could not update appointment.');}
+    finally{setBusy(false);}
+  };
+  return (
+    <div className="fixed inset-0 z-[220] bg-black/50 flex items-end" onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} className="w-full bg-white dark:bg-darkcard rounded-t-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-navy dark:text-white">Edit appointment</h3><button onClick={onClose}><X size={18}/></button></div>
+        <label className="block text-[10px] font-bold text-gray-500">Official title<input value={title} onChange={e=>setTitle(e.target.value)} maxLength={100} className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"/></label>
+        <label className="block text-[10px] font-bold text-gray-500">Department<input value={department} onChange={e=>setDepartment(e.target.value)} maxLength={100} list="team-departments" className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"/><datalist id="team-departments">{members.map((m:any)=>m.department).filter(Boolean).filter((v:string,i:number,a:string[])=>a.indexOf(v)===i).map((d:string)=><option key={d} value={d}/>)}</datalist></label>
+        <label className="block text-[10px] font-bold text-gray-500">Supervisor<select value={supervisorId} onChange={e=>setSupervisorId(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"><option value="">No direct supervisor</option>{members.filter((m:any)=>['vice_admin','super_admin','owner'].includes(m.role)&&m.appointment_status!=='suspended').map((m:any)=><option key={m.id} value={m.id}>@{m.username} · {m.role.replace('_',' ')}</option>)}</select></label>
+        {error&&<p className="text-xs text-red-600">{error}</p>}
+        <button disabled={busy||!title.trim()} onClick={()=>void save()} className="w-full bg-accent text-white rounded-lg py-3 text-xs font-bold disabled:opacity-50">{busy?'Saving...':'Save appointment'}</button>
       </div>
     </div>
   );
