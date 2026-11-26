@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
-import { ArrowLeft, Send, Check } from 'lucide-react';
+import { ArrowLeft, Send, Check, AlertTriangle } from 'lucide-react';
 
 export default function StaffTicketThread() {
   const { id } = useParams();
@@ -60,6 +60,19 @@ export default function StaffTicketThread() {
     } catch (error: any) { alert(error.message || 'Update failed'); }
   };
 
+  const escalate = async () => {
+    const reason = window.prompt('Explain why this ticket needs supervisor attention:');
+    if (!reason?.trim()) return;
+    try {
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_raise_escalation', {
+        method: 'POST',
+        body: JSON.stringify({ args: { p_reason: reason.trim(), p_level: 'vice_admin', p_ticket_id: id, p_task_id: null, p_assigned_to: null } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not escalate ticket.');
+      alert('Ticket escalated to the Vice Admin team.');
+    } catch (error: any) { alert(error.message || 'Could not escalate ticket.'); }
+  };
+
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
   if (!ticket) return <div className="p-4 text-center text-xs">Ticket not found.</div>;
 
@@ -96,6 +109,9 @@ export default function StaffTicketThread() {
             Reopen
           </button>
         )}
+        <button onClick={() => void escalate()} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 flex items-center gap-1">
+          <AlertTriangle size={11}/> Escalate
+        </button>
       </div>
 
       <main className="flex-1 overflow-y-auto p-3 pb-24">
