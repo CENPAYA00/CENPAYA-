@@ -30,6 +30,9 @@ const CreatePost = lazy(() => import('./pages/CreatePost'));
 const CreateListing = lazy(() => import('./pages/CreateListing'));
 const ListingDetail = lazy(() => import('./pages/ListingDetail'));
 const StaffPanel = lazy(() => import('./pages/StaffPanel'));
+const ViceAdminPanel = lazy(() => import('./pages/ViceAdminPanel'));
+const TeamTasksPanel = lazy(() => import('./pages/TeamTasksPanel'));
+const TeamCommunications = lazy(() => import('./pages/TeamCommunications'));
 const OrderDetail = lazy(() => import('./pages/OrderDetail'));
 const PostView = lazy(() => import('./pages/PostView'));
 const Chat = lazy(() => import('./pages/Chat'));
@@ -162,6 +165,9 @@ export default function App() {
 
           <Route element={<StaffLayout />}>
             <Route path="/staff" element={<StaffPanel />} />
+            <Route path="/vice-admin" element={<ViceAdminPanel />} />
+            <Route path="/staff/tasks" element={<TeamTasksPanel />} />
+            <Route path="/staff/team" element={<TeamCommunications />} />
             <Route path="/staff/tickets/:id" element={<StaffTicketThread />} />
             <Route path="/staff/reports" element={<StaffReports />} />
           </Route>
