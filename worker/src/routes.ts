@@ -200,7 +200,7 @@ function pageOffset(url: URL): number {
   return Number.isFinite(parsed) ? Math.max(0, Math.min(100_000, Math.floor(parsed))) : 0;
 }
 function errorStatus(message: string): number {
-  return /not authenticated|unauthorized|not authorized|staff only|only staff|permission|forbidden/i.test(message) ? 403 : 400;
+  return /not authenticated|unauthorized|not authorized|staff only|only staff|permission|forbidden|active team|appointment|team access/i.test(message) ? 403 : 400;
 }
 async function rpc(supabase: SupabaseClient, name: string, args: Record<string, unknown>) {
   const { data, error } = await supabase.rpc(name, args);
@@ -974,20 +974,16 @@ export async function handleAuthenticatedApi(
     const payload = accepted.data && typeof accepted.data === "object"
       ? accepted.data as Record<string, unknown> : {};
     const role = typeof payload.role === "string" ? payload.role : "";
-    if (!["support_agent","staff_member"].includes(role)) return failure("invalid_staff_role", 409, headers);
-    if (!env.D1_IDENTITY || !env.D1_INTERNAL_CALL_SECRET) return failure("staff_workspace_sync_unavailable", 503, headers);
-    try {
-      const sync = await env.D1_IDENTITY.fetch("https://d1-identity.internal/internal/v1/staff/workspace/sync", {
-        method: "POST",
-        headers: { "X-CenPaya-Internal-Secret": env.D1_INTERNAL_CALL_SECRET, "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId, role }),
-        signal: AbortSignal.timeout(4_000),
-      });
-      if (!sync.ok) return failure("staff_workspace_sync_unavailable", 503, headers);
-    } catch {
-      return failure("staff_workspace_sync_unavailable", 503, headers);
-    }
-    return success({ ok: true, role }, headers);
+    if (!["support_agent","staff_member","vice_admin"].includes(role)) return failure("invalid_staff_role", 409, headers);
+    // Supabase is the appointment authority. D1 workspace projections can be
+    // added later without blocking acceptance or granting stale role access.
+    return success({
+      ok: true, role,
+      title: payload.title ?? null,
+      department: payload.department ?? null,
+      supervisor_id: payload.supervisor_id ?? null,
+      permissions: payload.permissions ?? [],
+    }, headers);
   }
 
   const adminRole = path.match(/^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/role$/i);
