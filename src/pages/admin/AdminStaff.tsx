@@ -310,14 +310,14 @@ export default function AdminStaff() {
         </div>
       ))}
 
-      {showInvite && <InviteSheet members={teamMembers} allowViceAdmin={canAppointViceAdmin} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
+      {showInvite && <InviteSheet members={teamMembers} departments={departments} allowViceAdmin={canAppointViceAdmin} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
       {editingInvite && <EditPermissionsSheet invitation={editingInvite} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setEditingInvite(null)} onSaved={() => { setEditingInvite(null); load(); }} />}
       {editingAppointment && <EditAppointmentSheet invitation={editingAppointment} members={teamMembers} onClose={() => setEditingAppointment(null)} onSaved={() => { setEditingAppointment(null); load(); }} />}
     </div>
   );
 }
 
-function InviteSheet({ onClose, onCreated, members = [], allowViceAdmin = false, canConfigureViceAdmin = false }: any) {
+function InviteSheet({ onClose, onCreated, members = [], departments = [], allowViceAdmin = false, canConfigureViceAdmin = false }: any) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'support_agent' | 'staff_member' | 'vice_admin'>('support_agent');
   const [permissions, setPermissions] = useState<string[]>([]);
@@ -389,7 +389,8 @@ function InviteSheet({ onClose, onCreated, members = [], allowViceAdmin = false,
           </div>
           <div>
             <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Department</label>
-            <input value={department} onChange={e => setDepartment(e.target.value)} maxLength={100} placeholder="e.g. Customer Operations" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            <input value={department} onChange={e => setDepartment(e.target.value)} maxLength={100} list="available-team-departments" placeholder="e.g. Customer Operations" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            <datalist id="available-team-departments">{departments.map((d:any)=><option key={d.id} value={d.name}/>)}</datalist>
           </div>
           <div>
             <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Supervisor (optional)</label>
