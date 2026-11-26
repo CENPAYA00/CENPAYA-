@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
-import { ArrowLeft, Send, Check } from 'lucide-react';
+import { ArrowLeft, Send, Check, AlertTriangle } from 'lucide-react';
 
 export default function StaffTicketThread() {
   const { id } = useParams();
@@ -11,15 +11,21 @@ export default function StaffTicketThread() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [workspaceRole, setWorkspaceRole] = useState('');
+  const [workspaceUserId, setWorkspaceUserId] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
     if (!id) return;
     try {
-      const result = await supabaseWorkerRequest<{ data: { ticket: any; messages: any[] } }>(`/api/admin/support/tickets/${encodeURIComponent(id)}`);
-      setTicket(result.data?.ticket || null);
-      setMessages(result.data?.messages || []);
-      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {});
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/get_ticket_thread', {
+        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not load ticket.');
+      setTicket(result.data.ticket || null);
+      setMessages(result.data.messages || []);
+      const profile = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) });
+      if (profile.data?.ok) { setWorkspaceRole(profile.data.role || ''); setWorkspaceUserId(profile.data.user_id || ''); }
     } catch (error) { console.warn('Could not load support ticket', error); }
     finally { setLoading(false); }
   };
@@ -38,9 +44,10 @@ export default function StaffTicketThread() {
     if (!input.trim() || !id) return;
     setSending(true);
     try {
-      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id)}/messages`, {
-        method: 'POST', body: JSON.stringify({ body: input.trim() }),
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/send_ticket_message', {
+        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id, p_body: input.trim() } }),
       });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not send reply.');
       setInput('');
       await load();
     } catch (error: any) { alert(error.message || 'Send failed'); }
@@ -49,11 +56,38 @@ export default function StaffTicketThread() {
 
   const setStatus = async (status: 'open' | 'in_progress' | 'resolved' | 'closed') => {
     try {
-      await supabaseWorkerRequest(`/api/admin/support/tickets/${encodeURIComponent(id || '')}`, {
-        method: 'PATCH', body: JSON.stringify({ status }),
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/set_ticket_status', {
+        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id, p_status: status } }),
       });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update ticket status.');
       load();
     } catch (error: any) { alert(error.message || 'Update failed'); }
+  };
+
+  const claimTicket = async () => {
+    if (!id) return;
+    try {
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_claim_ticket', {
+        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not claim ticket.');
+      await load();
+    } catch (error: any) { alert(error.message || 'Could not claim ticket.'); }
+  };
+
+  const escalate = async () => {
+    const target = workspaceRole === 'vice_admin' ? window.prompt('Escalate to super_admin or owner:', 'super_admin') : 'vice_admin';
+    if (!target || !['vice_admin','super_admin','owner'].includes(target)) return;
+    const reason = window.prompt('Explain why this ticket needs supervisor attention:');
+    if (!reason?.trim()) return;
+    try {
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_raise_escalation', {
+        method: 'POST',
+        body: JSON.stringify({ args: { p_reason: reason.trim(), p_level: target, p_ticket_id: id, p_task_id: null, p_assigned_to: null } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not escalate ticket.');
+      alert(`Ticket escalated to ${target.replace('_',' ')}.`);
+    } catch (error: any) { alert(error.message || 'Could not escalate ticket.'); }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
@@ -71,6 +105,7 @@ export default function StaffTicketThread() {
         </div>
       </header>
 
+      {ticket.assigned_agent_id === workspaceUserId || ['owner','super_admin'].includes(workspaceRole) ? (
       <div className="flex gap-1.5 px-3 py-2 bg-white dark:bg-darkcard border-b border-gray-100 dark:border-darkline overflow-x-auto scrollbar-hide">
         {ticket.status !== 'in_progress' && (
           <button onClick={() => setStatus('in_progress')} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-blue-50 text-blue-600">
@@ -92,11 +127,23 @@ export default function StaffTicketThread() {
             Reopen
           </button>
         )}
+        <button onClick={() => void escalate()} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 flex items-center gap-1">
+          <AlertTriangle size={11}/> Escalate
+        </button>
       </div>
+      ) : (
+        <div className="px-3 py-2 bg-white dark:bg-darkcard border-b border-gray-100 dark:border-darkline flex items-center gap-2">
+          {workspaceRole === 'support_agent' && !ticket.assigned_agent_id ? (
+            <button onClick={() => void claimTicket()} className="text-[10px] font-bold px-3 py-1.5 rounded-full bg-accent text-white">Claim this ticket to reply</button>
+          ) : (
+            <p className="text-[10px] text-gray-500">This ticket is assigned to another agent. You can view it but cannot reply or change its status.</p>
+          )}
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto p-3 pb-24">
         {messages.map(m => {
-          const isStaff = m.sender_role === 'staff';
+          const isStaff = m.sender_role === 'staff' || m.sender_role === 'support' || m.sender_role === 'admin';
           return (
             <div key={m.id} className={`mb-2 flex ${isStaff ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-[12px] ${
@@ -121,6 +168,7 @@ export default function StaffTicketThread() {
         <div ref={bottomRef} />
       </main>
 
+      {ticket.assigned_agent_id === workspaceUserId || ['owner','super_admin'].includes(workspaceRole) ? (
       <form
         onSubmit={(e) => { e.preventDefault(); send(); }}
         className="fixed bottom-0 left-0 right-0 bg-white dark:bg-darkcard border-t border-gray-100 dark:border-darkline p-2 flex gap-2 z-10"
@@ -139,6 +187,7 @@ export default function StaffTicketThread() {
           <Send size={14} />
         </button>
       </form>
+      ) : null}
     </div>
   );
     }
