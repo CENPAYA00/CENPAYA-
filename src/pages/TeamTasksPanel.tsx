@@ -6,6 +6,8 @@ export default function TeamTasksPanel() {
   const [profile,setProfile] = useState<any>(null);
   const [tasks,setTasks] = useState<any[]>([]);
   const [members,setMembers] = useState<any[]>([]);
+  const [departments,setDepartments] = useState<any[]>([]);
+  const [departmentId,setDepartmentId] = useState('');
   const [title,setTitle] = useState('');
   const [description,setDescription] = useState('');
   const [assignee,setAssignee] = useState('');
@@ -17,16 +19,18 @@ export default function TeamTasksPanel() {
   const load = async () => {
     setLoading(true);
     try {
-      const [p,t,m] = await Promise.all([
+      const [p,t,m,d] = await Promise.all([
         supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/staff_my_profile',{method:'POST',body:JSON.stringify({args:{}})}),
         supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_my_tasks',{method:'POST',body:JSON.stringify({args:{}})}),
         supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_available_colleagues',{method:'POST',body:JSON.stringify({args:{}})}),
+        supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_list_departments',{method:'POST',body:JSON.stringify({args:{}})}),
       ]);
       if (!p.data?.ok) throw new Error(p.data?.error || 'Active team appointment required.');
       if (!t.data?.ok) throw new Error(t.data?.error || 'Could not load tasks.');
       setProfile(p.data);
       setTasks(t.data.tasks || []);
       setMembers(m.data?.ok ? m.data.members || [] : []);
+      setDepartments(d.data?.ok ? d.data.departments || [] : []);
     } catch(e:any) { setError(e?.message || 'Could not load team tasks.'); }
     finally { setLoading(false); }
   };
@@ -42,10 +46,10 @@ export default function TeamTasksPanel() {
     setSaving(true);
     try {
       const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_assign_task',{
-        method:'POST',body:JSON.stringify({args:{p_title:title.trim(),p_description:description.trim(),p_assigned_to:assignee,p_due_at:dueAt?new Date(dueAt).toISOString():null,p_department_id:null}})
+        method:'POST',body:JSON.stringify({args:{p_title:title.trim(),p_description:description.trim(),p_assigned_to:assignee,p_due_at:dueAt?new Date(dueAt).toISOString():null,p_department_id:departmentId||null}})
       });
       if(!r.data?.ok) throw new Error(r.data?.error || 'Task assignment failed.');
-      setTitle('');setDescription('');setAssignee('');setDueAt('');
+      setTitle('');setDescription('');setAssignee('');setDueAt('');setDepartmentId('');
       await load();
     } catch(e:any){setError(e?.message || 'Could not assign task.');}
     finally{setSaving(false);}
@@ -78,6 +82,7 @@ export default function TeamTasksPanel() {
           </select>
           <input value={title} onChange={e=>setTitle(e.target.value)} maxLength={160} placeholder="Task title" className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"/>
           <textarea value={description} onChange={e=>setDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Instructions, expected outcome and required evidence" className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"/>
+          <select value={departmentId} onChange={e=>setDepartmentId(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"><option value="">No department</option>{departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select>
           <input type="datetime-local" value={dueAt} onChange={e=>setDueAt(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"/>
           <button disabled={saving || !assignee || !title.trim()} onClick={()=>void assign()} className="w-full bg-accent text-white font-bold rounded-lg py-2.5 text-xs disabled:opacity-50">{saving?'Assigning...':'Assign task'}</button>
         </section>
