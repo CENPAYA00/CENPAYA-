@@ -14,6 +14,7 @@ const VerifyOtp = lazy(() => import('./pages/VerifyOtp'));
 const CompleteProfile = lazy(() => import('./pages/CompleteProfile')); // ADDED THIS
 
 const Home = lazy(() => import('./pages/Home'));
+const AIAssistant = lazy(() => import('./pages/AIAssistant'));
 const Market = lazy(() => import('./pages/Market'));
 const Checkout = lazy(() => import('./pages/Checkout'));
 const Wallet = lazy(() => import('./pages/Wallet'));
@@ -103,6 +104,7 @@ export default function App() {
           <Route path="/complete-profile" element={<CompleteProfile />} /> {/* ADDED THE ROUTE HERE */}
 
           <Route element={<Layout />}>
+            <Route path="/ai-assistant" element={<AIAssistant />} />
             <Route path="/home" element={<Home />} />
             <Route path="/market" element={<Market />} />
             <Route path="/checkout" element={<Checkout />} />
