@@ -118,6 +118,8 @@ revoke all on public.team_departments,public.team_tasks,public.team_task_updates
   public.team_conversations,public.team_conversation_members,public.team_messages,
   public.team_escalations from anon,authenticated;
 
+drop function if exists public.admin_invite_staff(text,text,jsonb);
+
 create or replace function public.admin_invite_staff(
   p_email text,p_role text,p_permissions jsonb default '[]'::jsonb,
   p_title text default null,p_department text default null,p_supervisor_id uuid default null
