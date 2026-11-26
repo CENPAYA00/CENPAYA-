@@ -139,6 +139,22 @@ void describe("CenPaya financial API routes", () => {
     assert.equal(payload.data.title, "Operations Supervisor");
   });
 
+  void it("allows an authenticated user to accept an invitation through the typed RPC gateway", async () => {
+    let invoked = null;
+    const supabase = {
+      rpc: async (name, args) => { invoked = { name, args }; return { data: { ok: true, role: "vice_admin" }, error: null }; },
+    };
+    const request = new Request("https://worker.test/api/v1/admin/rpc/accept_staff_invitation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ args: { p_token: "a".repeat(32) } }),
+    });
+    const response = await handleAuthenticatedApi(request, "8d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c11", supabase, new Headers(), {});
+    assert.equal(response.status, 200);
+    assert.equal(invoked.name, "accept_staff_invitation");
+    assert.equal(invoked.args.p_token, "a".repeat(32));
+  });
+
   void it("allows the extended Vice Admin invitation RPC contract", async () => {
     let invoked = null;
     const supabase = {
