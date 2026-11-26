@@ -79,7 +79,9 @@ export default function StaffPanel() {
       <div className="pb-24 max-w-4xl mx-auto pt-4">
         <div className="bg-white dark:bg-darkcard rounded-[16px] shadow-sm p-4 mb-4">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6f8077]">Your workspace</p>
-          <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize">Staff Member</p>
+          <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize">{profile?.title || 'Staff Member'}</p>
+          <p className="text-[11px] text-gray-500 mt-1">Staff Member · {profile?.appointment_status || 'active'}{profile?.department ? ' · '+profile.department : ''}</p>
+          {profile?.supervisor_username && <p className="text-[10px] text-gray-500 mt-1">Supervisor: @{profile.supervisor_username}</p>}
           <p className="text-[11px] text-gray-500 mt-1">Only tasks assigned to your account appear here.</p>
         </div>
         {tasks.length === 0 && (
@@ -138,9 +140,13 @@ export default function StaffPanel() {
       {/* Profile Card */}
       <div className="bg-white dark:bg-darkcard rounded-[16px] shadow-[0_1px_4px_rgba(10,61,43,0.08)] p-4 mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6f8077] mb-1">Your role</p>
-        <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize mb-3">
-          {profile?.role?.replace('_', ' ')}
+        <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize mb-1">
+          {profile?.title || profile?.role?.replace('_', ' ')}
         </p>
+        <p className="text-[10px] text-gray-500 mb-3">
+          {profile?.role?.replace('_',' ')} · {profile?.appointment_status || 'active'}{profile?.department ? ' · '+profile.department : ''}
+        </p>
+        {profile?.supervisor_username && <p className="text-[10px] text-gray-500 mb-3">Supervisor: @{profile.supervisor_username}</p>}
         {Array.isArray(profile?.permissions) && profile.permissions.length > 0 && (
           <>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6f8077] mb-2">Permissions</p>
