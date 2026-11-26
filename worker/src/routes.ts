@@ -59,7 +59,7 @@ const ADMIN_RPC_SCHEMAS: Record<string, AdminRpcSchema> = {
   admin_grant_permission: defineRpc(["p_target_user_id","p_permission_key"], [],
     (a) => isUuid(a.p_target_user_id) && isText(a.p_permission_key,100)),
   admin_invite_staff: defineRpc(["p_email","p_role","p_permissions"], ["p_title","p_department","p_supervisor_id"],
-    (a) => isText(a.p_email,254) && /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(String(a.p_email)) &&
+    (a) => isText(a.p_email,254) && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(a.p_email)) &&
       ["support_agent","staff_member","vice_admin"].includes(String(a.p_role)) &&
       Array.isArray(a.p_permissions) && a.p_permissions.length <= 30 &&
       nullableText(a.p_title,100) && nullableText(a.p_department,100) && nullableUuid(a.p_supervisor_id) &&
