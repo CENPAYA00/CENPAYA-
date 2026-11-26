@@ -28,6 +28,7 @@ export default function AdminStaff() {
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [canAppointViceAdmin, setCanAppointViceAdmin] = useState(false);
+  const [canManageTasks, setCanManageTasks] = useState(false);
   const [tasks, setTasks] = useState<any[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
@@ -55,6 +56,7 @@ export default function AdminStaff() {
       setTeamMembers(colleagues);
       setStaffMembers(colleagues.filter((user: any) => user.role === 'staff_member' && user.appointment_status === 'active'));
       setCanAppointViceAdmin(profileResult.data?.role === 'owner');
+      setCanManageTasks(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_tasks') || profileResult.data?.permissions?.includes('can_supervise_staff'));
       setTasks(taskResult.data?.tasks || []);
     } catch (error: any) {
       setLoadError(error?.message || 'Could not load staff administration.');
@@ -152,7 +154,7 @@ export default function AdminStaff() {
 
       {loadError && <p role="alert" className="text-[11px] text-red-600 bg-red-50 rounded-lg p-3 mb-3">{loadError}</p>}
 
-      <section className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-3 mb-4">
+      {canManageTasks && <section className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-3 mb-4">
         <h3 className="text-[13px] font-bold text-navy dark:text-white mb-2">Staff tasks</h3>
         <p className="text-[10px] text-gray-500 mb-3">Assign individual work. Staff Members can only see and update tasks assigned to their own account.</p>
         {staffMembers.length === 0 ? (
@@ -183,7 +185,7 @@ export default function AdminStaff() {
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
       {invitations.length === 0 && (
         <div className="bg-white dark:bg-darkcard p-6 rounded-xl text-center shadow-sm">
