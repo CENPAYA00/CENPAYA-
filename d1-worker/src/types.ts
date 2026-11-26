@@ -19,7 +19,8 @@ export interface Env {
   AI?: { autorag: (name: string) => { search: (options: Record<string, unknown>) => Promise<unknown> }; run?: (model: string, input: Record<string, unknown>, options?: Record<string, unknown>) => Promise<unknown> };
   AI_ASSISTANT_MODEL?: string;
   AI_ASSISTANT_GATEWAY?: string;
-  GEMINI_API_KEY?: string;\n  GEMINI_PROJECT_NUMBER?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_PROJECT_NUMBER?: string;
   SUPABASE_AI_READ_URL?: string;
   CACHE?: KVNamespace;
   UPSTASH_REDIS_REST_URL?: string;
