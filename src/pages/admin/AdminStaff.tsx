@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
-import { d1Request } from '../../lib/d1Api';
 import { UserPlus, X, Mail, Shield, Copy, Check, Ban, Clock } from 'lucide-react';
 
 const PERMISSIONS = [
@@ -27,9 +26,6 @@ export default function AdminStaff() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
-  const [officialTitle, setOfficialTitle] = useState('');
-  const [department, setDepartment] = useState('');
-  const [supervisorId, setSupervisorId] = useState('');
   const [tasks, setTasks] = useState<any[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
@@ -48,12 +44,12 @@ export default function AdminStaff() {
           method: 'POST', body: JSON.stringify({ args: {} }),
         }),
         supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/users?limit=200'),
-        d1Request<{ data: any[] }>('/api/admin/staff/tasks').catch(() => ({ data: [] })),
+        supabaseWorkerRequest<{ data: { ok?: boolean; tasks?: any[] } }>('/api/v1/admin/rpc/team_my_tasks', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { tasks: [] } })),
       ]);
       if (!invitationResult.data?.ok) throw new Error(invitationResult.data?.error || 'Could not load staff invitations.');
       setInvitations(invitationResult.data.invitations || []);
       setStaffMembers((usersResult.data || []).filter((user: any) => ['staff_member','support_agent','vice_admin'].includes(user.role) && !user.banned));
-      setTasks(taskResult.data || []);
+      setTasks(taskResult.data?.tasks || []);
     } catch (error: any) {
       setLoadError(error?.message || 'Could not load staff administration.');
       setInvitations([]);
@@ -72,14 +68,15 @@ export default function AdminStaff() {
     }
     setTaskSaving(true);
     try {
-      await d1Request('/api/admin/staff/tasks', {
+      await supabaseWorkerRequest('/api/v1/admin/rpc/team_assign_task', {
         method: 'POST',
-        body: JSON.stringify({
-          title: taskTitle.trim(),
-          description: taskDescription.trim(),
-          assigned_to_user_id: taskAssignee,
-          due_at: taskDue ? new Date(taskDue).toISOString() : null,
-        }),
+        body: JSON.stringify({ args: {
+          p_title: taskTitle.trim(),
+          p_description: taskDescription.trim(),
+          p_assigned_to: taskAssignee,
+          p_due_at: taskDue ? new Date(taskDue).toISOString() : null,
+          p_department_id: null,
+        } }),
       });
       setTaskTitle('');
       setTaskDescription('');
@@ -104,6 +101,18 @@ export default function AdminStaff() {
     } catch {
       prompt('Copy this invitation link:', url);
     }
+  };
+
+  const setAppointmentStatus = async (id: string, status: 'active' | 'suspended' | 'removed') => {
+    const action = status === 'removed' ? 'remove' : status === 'suspended' ? 'suspend' : 'reactivate';
+    if (!window.confirm(`Are you sure you want to ${action} this team appointment?`)) return;
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_set_team_member_status', {
+        method: 'POST', body: JSON.stringify({ args: { p_invitation_id: id, p_status: status } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update appointment.');
+      await load();
+    } catch (error: any) { alert(error.message || 'Could not update appointment.'); }
   };
 
   const revoke = async (id: string) => {
@@ -235,6 +244,18 @@ export default function AdminStaff() {
             <p className="text-[9px] text-green-600 mt-1.5">
               Accepted {new Date(inv.accepted_at).toLocaleDateString()}
             </p>
+          )}
+          {inv.status === 'accepted' && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {inv.appointment_status === 'suspended' ? (
+                <button onClick={() => void setAppointmentStatus(inv.id, 'active')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-green-100 text-green-700">Reactivate</button>
+              ) : inv.appointment_status !== 'removed' ? (
+                <button onClick={() => void setAppointmentStatus(inv.id, 'suspended')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-yellow-100 text-yellow-700">Suspend</button>
+              ) : null}
+              {inv.appointment_status !== 'removed' && (
+                <button onClick={() => void setAppointmentStatus(inv.id, 'removed')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-red-100 text-red-700">Remove appointment</button>
+              )}
+            </div>
           )}
         </div>
       ))}
