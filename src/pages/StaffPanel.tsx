@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { d1Request } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { MessageSquare, Check, Shield } from 'lucide-react';
 
 export default function StaffPanel() {
@@ -14,16 +15,31 @@ export default function StaffPanel() {
   const load = async () => {
     setLoading(true);
     try {
-      const profileRes = await d1Request<{ data: any }>('/api/staff/profile');
-      if (!profileRes.data) { navigate('/home'); return; }
-      setProfile(profileRes.data);
-      if (profileRes.data.role === 'staff_member') {
+      let appointment: any = null;
+      try {
+        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', {
+          method: 'POST', body: JSON.stringify({ args: {} }),
+        });
+        if (result.data?.ok) appointment = result.data;
+      } catch { /* Staff Member task access is checked by D1 below. */ }
+
+      let currentProfile = appointment;
+      if (!currentProfile) {
+        const profileRes = await d1Request<{ data: any }>('/api/staff/profile');
+        currentProfile = profileRes.data;
+      }
+      if (!currentProfile) { navigate('/home'); return; }
+      setProfile(currentProfile);
+      if (currentProfile.role === 'staff_member') {
         const taskRes = await d1Request<{ data: any[] }>('/api/staff/tasks');
         setTasks(taskRes.data || []);
         setTickets([]);
       } else {
-        const ticketsRes = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`);
-        setTickets(ticketsRes.data || []);
+        const ticketsRes = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_list_tickets', {
+          method: 'POST', body: JSON.stringify({ args: { p_scope: tab } }),
+        });
+        if (!ticketsRes.data?.ok) throw new Error(ticketsRes.data?.error || 'Could not load support tickets.');
+        setTickets(ticketsRes.data.tickets || []);
         setTasks([]);
       }
     } catch (error: any) {
@@ -46,8 +62,11 @@ export default function StaffPanel() {
 
   const claim = async (ticketId: string) => {
     try {
-      await d1Request(`/api/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
-      load();
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_claim_ticket', {
+        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: ticketId } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not claim ticket.');
+      await load();
     } catch (error: any) { alert(error.message || 'Could not claim ticket'); }
   };
 
