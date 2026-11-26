@@ -60,6 +60,21 @@ begin
  end if;
  if p_ticket_id is not null and not exists(select 1 from public.platform_tickets where id=p_ticket_id) then return jsonb_build_object('ok',false,'error','ticket not found'); end if;
  if p_task_id is not null and not exists(select 1 from public.team_tasks where id=p_task_id) then return jsonb_build_object('ok',false,'error','task not found'); end if;
+ if p_task_id is not null and v_role='staff_member'
+    and not exists(select 1 from public.team_tasks where id=p_task_id and assigned_to=v_uid) then
+   return jsonb_build_object('ok',false,'error','you may escalate only your own assigned task');
+ end if;
+ if p_task_id is not null and v_role='support_agent'
+    and not exists(select 1 from public.team_tasks where id=p_task_id and (assigned_to=v_uid or supervisor_id=v_uid)) then
+   return jsonb_build_object('ok',false,'error','task is outside your supervision scope');
+ end if;
+ if p_ticket_id is not null and v_role='staff_member' then
+   return jsonb_build_object('ok',false,'error','Staff Members must escalate through their assigned task or supervisor');
+ end if;
+ if p_ticket_id is not null and v_role='support_agent'
+    and not exists(select 1 from public.platform_tickets where id=p_ticket_id and (assigned_agent_id is null or assigned_agent_id=v_uid)) then
+   return jsonb_build_object('ok',false,'error','ticket is outside your support assignment');
+ end if;
  insert into public.team_escalations(ticket_id,task_id,raised_by,assigned_to,escalation_level,reason)
  values(p_ticket_id,p_task_id,v_uid,p_assigned_to,p_level,trim(p_reason)) returning id into v_id;
  insert into public.admin_audit_log(actor_id,action,target_table,target_id,new_value)
