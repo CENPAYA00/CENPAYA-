@@ -160,7 +160,8 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_email text; v_inv public.staff_invitations%rowtype; v_permission text;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- select email into v_email from public.users where id=v_uid;
+ select email into v_email from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false;
+ if v_email is null then return jsonb_build_object('ok',false,'error','account is unavailable'); end if;
  select * into v_inv from public.staff_invitations where invite_token=p_token and status='pending' and appointment_status='pending' for update;
  if v_inv.id is null then return jsonb_build_object('ok',false,'error','invalid or expired invitation'); end if;
  if lower(coalesce(v_email,''))<>lower(v_inv.email) then return jsonb_build_object('ok',false,'error','email does not match invitation'); end if;
@@ -190,7 +191,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_role text; v_perms jsonb; v_inv public.staff_invitations%rowtype;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- select role into v_role from public.users where id=v_uid and banned=false;
+ select role into v_role from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false;
  if v_role is null or v_role not in ('owner','super_admin','vice_admin','support_agent','staff_member') then return jsonb_build_object('ok',false,'error','not staff'); end if;
  if v_role in ('vice_admin','support_agent','staff_member') then
    select * into v_inv from public.staff_invitations where accepted_by=v_uid and appointment_status='active' order by accepted_at desc limit 1;
