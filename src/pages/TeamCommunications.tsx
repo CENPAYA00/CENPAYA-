@@ -5,6 +5,9 @@ import { MessageCircle, Send, Plus, Users } from 'lucide-react';
 export default function TeamCommunications() {
   const [conversations,setConversations]=useState<any[]>([]);
   const [members,setMembers]=useState<any[]>([]);
+  const [departments,setDepartments]=useState<any[]>([]);
+  const [departmentId,setDepartmentId]=useState('');
+  const [canManageCommunications,setCanManageCommunications]=useState(false);
   const [notifications,setNotifications]=useState<any[]>([]);
   const [selected,setSelected]=useState<any>(null);
   const [messages,setMessages]=useState<any[]>([]);
@@ -21,15 +24,19 @@ export default function TeamCommunications() {
   const [error,setError]=useState('');
 
   const loadConversations=async()=>{
-    const [c,m,n]=await Promise.all([
+    const [c,m,n,d,p]=await Promise.all([
       supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_list_conversations',{method:'POST',body:JSON.stringify({args:{}})}),
       supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_available_colleagues',{method:'POST',body:JSON.stringify({args:{}})}),
       supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_my_notifications',{method:'POST',body:JSON.stringify({args:{p_limit:30}})}),
+      supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_list_departments',{method:'POST',body:JSON.stringify({args:{}})}),
+      supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/staff_my_profile',{method:'POST',body:JSON.stringify({args:{}})}),
     ]);
     if(!c.data?.ok) throw new Error(c.data?.error || 'Could not load team conversations.');
     setConversations(c.data.conversations||[]);
     setMembers(m.data?.ok?m.data.members||[]:[]);
     setNotifications(n.data?.ok?n.data.notifications||[]:[]);
+    setDepartments(d.data?.ok?d.data.departments||[]:[]);
+    setCanManageCommunications(['owner','super_admin'].includes(p.data?.role)||p.data?.permissions?.includes('can_manage_team_communications'));
   };
   const loadMessages=async(id:string)=>{
     const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_get_messages',{method:'POST',body:JSON.stringify({args:{p_conversation_id:id}})});
@@ -41,19 +48,19 @@ export default function TeamCommunications() {
 
   const createConversation=async()=>{
     setError('');
-    if(selectedMembers.length===0){setError('Choose at least one team member.');return;}
     if(type==='direct' && selectedMembers.length!==1){setError('A direct message must have exactly one recipient.');return;}
+    if(type==='department'&&!departmentId){setError('Choose a department for this group.');return;}
     setBusy(true);
     try{
       const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_create_conversation',{
-        method:'POST',body:JSON.stringify({args:{p_type:type,p_title:title.trim()||null,p_member_ids:selectedMembers,p_department_id:null}})
+        method:'POST',body:JSON.stringify({args:{p_type:type,p_title:title.trim()||null,p_member_ids:selectedMembers,p_department_id:departmentId||null}})
       });
       if(!r.data?.ok)throw new Error(r.data?.error||'Could not create conversation.');
       await loadConversations();
       const created=(await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_list_conversations',{method:'POST',body:JSON.stringify({args:{}})})).data?.conversations||[];
       const next=created.find((x:any)=>x.id===r.data.conversation_id);
       if(next){setSelected(next);await loadMessages(next.id);}
-      setShowNew(false);setSelectedMembers([]);setTitle('');
+      setShowNew(false);setSelectedMembers([]);setTitle('');setDepartmentId('');
     }catch(e:any){setError(e?.message||'Could not create conversation.');}
     finally{setBusy(false);}
   };
@@ -121,13 +128,14 @@ export default function TeamCommunications() {
             {showNew&&<section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm mb-3 space-y-3">
         <h3 className="text-sm font-bold text-navy dark:text-white">Start internal conversation</h3>
         <select value={type} onChange={e=>setType(e.target.value as any)} className="w-full p-2 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs">
-          <option value="direct">Direct message</option><option value="department">Department group</option><option value="announcement">Announcement</option><option value="escalation">Escalation discussion</option>
+          <option value="direct">Direct message</option>{canManageCommunications&&<><option value="department">Department group</option><option value="announcement">Team announcement</option><option value="escalation">Escalation discussion</option></>}
         </select>
+        {type==='department'&&<select value={departmentId} onChange={e=>setDepartmentId(e.target.value)} className="w-full p-2 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"><option value="">Select department</option>{departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select>}
         <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Conversation title (optional)" className="w-full p-2 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"/>
         <div className="max-h-40 overflow-y-auto space-y-1">
           {members.map(m=><label key={m.id} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-gray-50 dark:bg-darkbg"><input type="checkbox" checked={selectedMembers.includes(m.id)} onChange={e=>setSelectedMembers(prev=>e.target.checked?[...prev,m.id]:prev.filter(id=>id!==m.id))}/><span>@{m.username}</span><span className="ml-auto text-[9px] text-gray-500">{m.role.replace('_',' ')}</span></label>)}
         </div>
-        <button disabled={busy||selectedMembers.length===0} onClick={()=>void createConversation()} className="w-full bg-accent text-white rounded-lg py-2.5 text-xs font-bold disabled:opacity-50">{busy?'Creating...':'Create conversation'}</button>
+        <button disabled={busy||(type==='direct'&&selectedMembers.length!==1)||(type==='department'&&!departmentId)} onClick={()=>void createConversation()} className="w-full bg-accent text-white rounded-lg py-2.5 text-xs font-bold disabled:opacity-50">{busy?'Creating...':'Create conversation'}</button>
       </section>}
       <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-3 min-h-[480px]">
         <aside className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-2 space-y-1">
