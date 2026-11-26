@@ -78,7 +78,7 @@ export default function AdminStaff() {
     }
     setTaskSaving(true);
     try {
-      await supabaseWorkerRequest('/api/v1/admin/rpc/team_assign_task', {
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_assign_task', {
         method: 'POST',
         body: JSON.stringify({ args: {
           p_title: taskTitle.trim(),
@@ -88,6 +88,7 @@ export default function AdminStaff() {
           p_department_id: null,
         } }),
       });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Task assignment was rejected.');
       setTaskTitle('');
       setTaskDescription('');
       setTaskAssignee('');
