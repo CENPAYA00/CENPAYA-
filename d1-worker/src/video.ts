@@ -149,12 +149,13 @@ export async function processVideoQueue(env:Env):Promise<void>{
   try{
    const response=await processor(env,"/v1/process",{video_id:job.video_id,source_key:job.source_key,source_bytes:job.source_bytes,mime_type:job.mime_type,max_duration_seconds:job.max_duration_seconds});
    if(!response||!response.ok)throw new Error("Processor unavailable");
-   const result=await response.json() as {status?:string;hls_key?:string;thumbnail_key?:string;duration_seconds?:number;width?:number;height?:number;sha256?:string;backup?:string};
+   const result=await response.json() as {status?:string;hls_key?:string;thumbnail_key?:string;duration_seconds?:number;width?:number;height?:number;sha256?:string;backup?:string;video_ai_indicator?:{status?:"completed"|"unavailable";classification?:"possible_ai_generated"|"no_clear_signal"|"inconclusive";confidence?:number|null;reason?:string;model?:string|null;sampled_frames?:number}};
    if(result.status!=="ready"||!result.hls_key||result.backup!=="verified"||!Number.isFinite(Number(result.duration_seconds))||Number(result.duration_seconds)>Number(job.max_duration_seconds||300))throw new Error("HLS, duration or backup verification failed");
    await env.DB.batch([
     env.DB.prepare("UPDATE video_assets SET status='ready',hls_key=?,thumbnail_key=?,duration_seconds=?,width=?,height=?,failure_code=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND status='processing'").bind(result.hls_key,result.thumbnail_key||null,result.duration_seconds||null,result.width||null,result.height||null,job.video_id),
     env.DB.prepare("UPDATE video_processing_jobs SET status='completed',last_error=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(job.job_id),
-    env.DB.prepare("INSERT OR REPLACE INTO video_backup_jobs(id,video_id,object_key,checksum_sha256,status,attempts) VALUES(?,?,?,?,'verified',1)").bind(uuid(),job.video_id,job.source_key,result.sha256||"")
+    env.DB.prepare("INSERT OR REPLACE INTO video_backup_jobs(id,video_id,object_key,checksum_sha256,status,attempts) VALUES(?,?,?,?,'verified',1)").bind(uuid(),job.video_id,job.source_key,result.sha256||""),
+    env.DB.prepare("INSERT INTO ai_video_indicator_results(video_id,status,classification,confidence,reason,model,sampled_frames,updated_at) VALUES(?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(video_id) DO UPDATE SET status=excluded.status,classification=excluded.classification,confidence=excluded.confidence,reason=excluded.reason,model=excluded.model,sampled_frames=excluded.sampled_frames,updated_at=excluded.updated_at").bind(job.video_id,result.video_ai_indicator?.status||"unavailable",result.video_ai_indicator?.classification||"inconclusive",result.video_ai_indicator?.confidence??null,result.video_ai_indicator?.reason||"Video AI analysis was not returned",result.video_ai_indicator?.model||null,Number(result.video_ai_indicator?.sampled_frames||0))
    ]);
   }catch(error){
    const current=await env.DB.prepare("SELECT attempts FROM video_processing_jobs WHERE id=?").bind(job.job_id).first<{attempts:number}>();
