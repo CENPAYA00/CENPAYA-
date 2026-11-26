@@ -10,6 +10,8 @@ export default function TeamCommunications() {
   const [messages,setMessages]=useState<any[]>([]);
   const [body,setBody]=useState('');
   const [attachmentUrl,setAttachmentUrl]=useState('');
+  const [searchQuery,setSearchQuery]=useState('');
+  const [searchResults,setSearchResults]=useState<any[]>([]);
   const [selectedMembers,setSelectedMembers]=useState<string[]>([]);
   const [title,setTitle]=useState('');
   const [type,setType]=useState<'direct'|'department'|'announcement'|'escalation'>('direct');
@@ -55,6 +57,19 @@ export default function TeamCommunications() {
     }catch(e:any){setError(e?.message||'Could not create conversation.');}
     finally{setBusy(false);}
   };
+  const searchHistory=async()=>{
+    if(searchQuery.trim().length<2){setError('Enter at least two characters to search.');return;}
+    try{
+      const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_search_messages',{method:'POST',body:JSON.stringify({args:{p_query:searchQuery.trim(),p_limit:100}})});
+      if(!r.data?.ok)throw new Error(r.data?.error||'Search failed.');
+      setSearchResults(r.data.results||[]);
+    }catch(e:any){setError(e?.message||'Could not search team history.');}
+  };
+  const openSearchResult=async(result:any)=>{
+    const conversation=conversations.find(c=>c.id===result.conversation_id);
+    if(conversation){setSelected(conversation);await loadMessages(conversation.id);}
+  };
+
   const openNotification=async(notification:any)=>{
     try{
       await supabaseWorkerRequest('/api/v1/admin/rpc/team_mark_notification_read',{method:'POST',body:JSON.stringify({args:{p_id:notification.id}})});
@@ -93,7 +108,17 @@ export default function TeamCommunications() {
           <p className="text-[11px] font-bold text-navy dark:text-white">{n.title}</p><p className="text-[10px] text-gray-500">{n.body}</p><p className="text-[9px] text-gray-400">{new Date(n.created_at).toLocaleString()}</p>
         </button>)}
       </section>}
-      {showNew&&<section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm mb-3 space-y-3">
+      <section className="bg-white dark:bg-darkcard rounded-xl p-3 shadow-sm mb-3 flex gap-2">
+        <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void searchHistory();}} placeholder="Search internal communication history..." className="flex-1 min-w-0 p-2 rounded-lg bg-gray-50 dark:bg-darkbg text-xs"/>
+        <button onClick={()=>void searchHistory()} className="bg-accent text-white rounded-lg px-3 text-[10px] font-bold">Search</button>
+      </section>
+      {searchResults.length>0&&<section className="bg-white dark:bg-darkcard rounded-xl p-3 shadow-sm mb-3 space-y-2">
+        <div className="flex justify-between items-center"><h3 className="text-xs font-bold text-navy dark:text-white">Search results ({searchResults.length})</h3><button onClick={()=>setSearchResults([])} className="text-[10px] text-accent">Clear</button></div>
+        {searchResults.map(r=><button key={r.id} onClick={()=>void openSearchResult(r)} className="w-full text-left border-t border-gray-100 dark:border-darkline pt-2">
+          <p className="text-[10px] font-bold text-accent">{r.conversation_title||'Team conversation'} · @{r.sender_name}</p><p className="text-[11px] text-navy dark:text-gray-100 line-clamp-2">{r.body}</p><p className="text-[9px] text-gray-400">{new Date(r.created_at).toLocaleString()}</p>
+        </button>)}
+      </section>}
+            {showNew&&<section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm mb-3 space-y-3">
         <h3 className="text-sm font-bold text-navy dark:text-white">Start internal conversation</h3>
         <select value={type} onChange={e=>setType(e.target.value as any)} className="w-full p-2 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs">
           <option value="direct">Direct message</option><option value="department">Department group</option><option value="announcement">Announcement</option><option value="escalation">Escalation discussion</option>
