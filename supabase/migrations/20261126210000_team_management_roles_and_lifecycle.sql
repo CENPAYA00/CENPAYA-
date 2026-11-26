@@ -127,7 +127,6 @@ begin
  if not (public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_staff')) then return jsonb_build_object('ok',false,'error','team appointment management permission required'); end if;
  if p_role not in ('support_agent','staff_member','vice_admin') then return jsonb_build_object('ok',false,'error','invalid team role'); end if;
  if p_role='vice_admin' and not public.is_owner() then return jsonb_build_object('ok',false,'error','only Owner may appoint a Vice Admin'); end if;
- if p_role='vice_admin' and not public.is_owner() then return jsonb_build_object('ok',false,'error','only Owner may appoint a Vice Admin'); end if;
  if p_email is null or p_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then return jsonb_build_object('ok',false,'error','invalid email'); end if;
  if p_permissions is null or jsonb_typeof(p_permissions)<>'array' or jsonb_array_length(p_permissions)>30 then return jsonb_build_object('ok',false,'error','invalid permissions'); end if;
  v_allowed:=case p_role
@@ -203,7 +202,7 @@ end;$function$;
 create or replace function public.admin_set_team_member_status(p_invitation_id uuid,p_status text)
 returns jsonb language plpgsql security definer set search_path=public,pg_temp
 as $function$
-declare v_uid uuid:=auth.uid(); v_inv public.staff_invitations%rowtype;
+declare v_uid uuid:=auth.uid(); v_inv public.staff_invitations%rowtype; v_permission text;
 begin
  if v_uid is null or not (public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_staff')) then return jsonb_build_object('ok',false,'error','team appointment management permission required'); end if;
  if p_status not in ('active','suspended','removed') then return jsonb_build_object('ok',false,'error','invalid appointment status'); end if;
@@ -215,7 +214,17 @@ begin
  if v_inv.role in ('owner','super_admin') then return jsonb_build_object('ok',false,'error','protected role'); end if;
  update public.staff_invitations set appointment_status=p_status,updated_at=now(),removed_at=case when p_status='removed' then now() else null end,removed_by=case when p_status='removed' then v_uid else null end where id=v_inv.id;
  if p_status='active' then
+   perform set_config('app.role_change_authorized','true',true);
    update public.users set role=v_inv.role where id=v_inv.accepted_by;
+   perform set_config('app.role_change_authorized','false',true);
+   insert into public.admin_permissions(user_id,permission_key,granted_by)
+   values(v_inv.accepted_by,v_inv.role,v_uid)
+   on conflict(user_id,permission_key) do update set granted_by=excluded.granted_by,granted_at=now(),revoked_at=null;
+   for v_permission in select value from jsonb_array_elements_text(coalesce(v_inv.permissions,'[]'::jsonb)) loop
+     insert into public.admin_permissions(user_id,permission_key,granted_by)
+     values(v_inv.accepted_by,v_permission,v_uid)
+     on conflict(user_id,permission_key) do update set granted_by=excluded.granted_by,granted_at=now(),revoked_at=null;
+   end loop;
  else
    update public.admin_permissions set revoked_at=now() where user_id=v_inv.accepted_by and permission_key not in ('owner','super_admin') and revoked_at is null;
    update public.users set role='user' where id=v_inv.accepted_by and role=v_inv.role;
@@ -245,6 +254,9 @@ begin
  or exists(select 1 from jsonb_array_elements_text(p_permissions) x(value) where x.value<>all(v_allowed)) then return jsonb_build_object('ok',false,'error','invalid permissions for role'); end if;
  update public.staff_invitations set permissions=p_permissions,updated_at=now() where id=v_inv.id;
  update public.admin_permissions set revoked_at=now() where user_id=v_inv.accepted_by and permission_key not in ('owner','super_admin') and revoked_at is null;
+ insert into public.admin_permissions(user_id,permission_key,granted_by)
+ values(v_inv.accepted_by,v_inv.role,auth.uid())
+ on conflict(user_id,permission_key) do update set granted_by=excluded.granted_by,granted_at=now(),revoked_at=null;
  insert into public.admin_permissions(user_id,permission_key,granted_by)
  select v_inv.accepted_by,value,auth.uid() from jsonb_array_elements_text(p_permissions)
  on conflict(user_id,permission_key) do update set granted_by=excluded.granted_by,granted_at=now(),revoked_at=null;
