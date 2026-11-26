@@ -110,6 +110,8 @@ begin
  if not exists(select 1 from public.team_conversation_members where conversation_id=p_conversation_id and user_id=v_uid) then return jsonb_build_object('ok',false,'error','not a conversation member'); end if;
  insert into public.team_messages(conversation_id,sender_id,body,attachment_url)
  values(p_conversation_id,v_uid,trim(p_body),p_attachment_url) returning id into v_id;
+ insert into public.admin_audit_log(actor_id,action,target_table,target_id,new_value)
+ values(v_uid,'team_message_sent','team_conversations',p_conversation_id,jsonb_build_object('message_id',v_id,'has_attachment',p_attachment_url is not null));
  return jsonb_build_object('ok',true,'message_id',v_id);
 end;$function$;
 
