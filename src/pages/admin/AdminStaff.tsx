@@ -4,11 +4,21 @@ import { d1Request } from '../../lib/d1Api';
 import { UserPlus, X, Mail, Shield, Copy, Check, Ban, Clock } from 'lucide-react';
 
 const PERMISSIONS = [
-  { key: 'can_resolve_disputes',  label: 'Resolve Disputes' },
-  { key: 'can_review_kyc',        label: 'Review KYC' },
-  { key: 'can_manage_listings',   label: 'Manage Listings' },
-  { key: 'can_manage_tickets',    label: 'Manage Support Tickets' },
-  { key: 'can_review_reports',    label: 'Review Reports' },
+  { key: 'can_resolve_disputes', label: 'Resolve Disputes' },
+  { key: 'can_review_kyc', label: 'Review KYC' },
+  { key: 'can_manage_listings', label: 'Manage Listings' },
+  { key: 'can_manage_tickets', label: 'Manage Support Tickets' },
+  { key: 'can_review_reports', label: 'Review Reports' },
+  { key: 'can_escalate', label: 'Escalate Serious Cases' },
+  { key: 'can_supervise_staff', label: 'Supervise Staff Members' },
+  { key: 'can_submit_reports', label: 'Submit Work Reports' },
+  { key: 'can_manage_support_agents', label: 'Manage Support Agents' },
+  { key: 'can_manage_staff', label: 'Manage Staff Members' },
+  { key: 'can_manage_departments', label: 'Manage Departments' },
+  { key: 'can_manage_tasks', label: 'Assign and Manage Tasks' },
+  { key: 'can_manage_escalations', label: 'Manage Escalations' },
+  { key: 'can_view_team_metrics', label: 'View Team Performance' },
+  { key: 'can_manage_team_communications', label: 'Manage Team Communications' },
 ];
 
 export default function AdminStaff() {
@@ -17,6 +27,9 @@ export default function AdminStaff() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
+  const [officialTitle, setOfficialTitle] = useState('');
+  const [department, setDepartment] = useState('');
+  const [supervisorId, setSupervisorId] = useState('');
   const [tasks, setTasks] = useState<any[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
@@ -39,7 +52,7 @@ export default function AdminStaff() {
       ]);
       if (!invitationResult.data?.ok) throw new Error(invitationResult.data?.error || 'Could not load staff invitations.');
       setInvitations(invitationResult.data.invitations || []);
-      setStaffMembers((usersResult.data || []).filter((user: any) => user.role === 'staff_member' && !user.banned));
+      setStaffMembers((usersResult.data || []).filter((user: any) => ['staff_member','support_agent','vice_admin'].includes(user.role) && !user.banned));
       setTasks(taskResult.data || []);
     } catch (error: any) {
       setLoadError(error?.message || 'Could not load staff administration.');
@@ -112,7 +125,7 @@ export default function AdminStaff() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-2xl font-bold text-navy dark:text-white">👤 Staff</h2>
-          <p className="text-[11px] text-gray-500">Invite a Support Agent or Staff Member by email. Each gets a separate workspace.</p>
+          <p className="text-[11px] text-gray-500">Manage Support Agents, Staff Members and Vice Admin appointments, permissions and tasks.</p>
         </div>
         <button
           onClick={() => setShowInvite(true)}
@@ -173,7 +186,7 @@ export default function AdminStaff() {
                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
                   inv.role === 'support_agent' ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-darkline text-gray-600 dark:text-gray-300'
                 }`}>
-                  {inv.role}
+                  {inv.role === 'vice_admin' ? 'Vice Admin' : inv.role === 'support_agent' ? 'Support Agent' : 'Staff Member'}
                 </span>
                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
                   inv.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
@@ -233,8 +246,11 @@ export default function AdminStaff() {
 
 function InviteSheet({ onClose, onCreated }: any) {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'support_agent' | 'staff_member'>('support_agent');
+  const [role, setRole] = useState<'support_agent' | 'staff_member' | 'vice_admin'>('support_agent');
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [officialTitle, setOfficialTitle] = useState('');
+  const [department, setDepartment] = useState('');
+  const [supervisorId, setSupervisorId] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -255,6 +271,9 @@ function InviteSheet({ onClose, onCreated }: any) {
           p_email: email.trim().toLowerCase(),
           p_role: role,
           p_permissions: permissions,
+          p_title: officialTitle || null,
+          p_department: department || null,
+          p_supervisor_id: supervisorId || null,
         } }),
       });
       if (!result.data?.ok || !result.data.token) throw new Error(result.data?.error || 'Invite failed.');
@@ -292,11 +311,17 @@ function InviteSheet({ onClose, onCreated }: any) {
           </div>
 
           <div>
-            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 flex items-center gap-1">
-              <Shield size={11} /> Role
-            </label>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Official title</label>
+            <input value={officialTitle} onChange={e => setOfficialTitle(e.target.value)} maxLength={100} placeholder="e.g. Regional Support Supervisor" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Department</label>
+            <input value={department} onChange={e => setDepartment(e.target.value)} maxLength={100} placeholder="e.g. Customer Operations" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 flex items-center gap-1"><Shield size={11} /> Role</label>
             <div className="grid grid-cols-2 gap-2">
-              {(['support_agent', 'staff_member'] as const).map(r => (
+              {(['support_agent', 'staff_member', 'vice_admin'] as const).map(r => (
                 <button
                   key={r}
                   onClick={() => setRole(r)}
@@ -304,19 +329,19 @@ function InviteSheet({ onClose, onCreated }: any) {
                     role === r ? 'border-accent bg-accent/5 text-accent' : 'border-gray-200 dark:border-darkline text-navy dark:text-white'
                   }`}
                 >
-                  {r === 'support_agent' ? 'Support Agent' : 'Staff Member'}
+                  {r === 'support_agent' ? 'Support Agent' : r === 'vice_admin' ? 'Vice Admin' : 'Staff Member'}
                 </button>
               ))}
             </div>
           </div>
 
-          {(role === 'support_agent' || role === 'staff_member') && (
+          {(role === 'support_agent' || role === 'staff_member' || role === 'vice_admin') && (
             <div>
               <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 block">
                 Permissions (optional)
               </label>
               <div className="space-y-1.5">
-                {PERMISSIONS.filter(p => role === 'support_agent' ? ['can_resolve_disputes','can_manage_tickets','can_review_reports'].includes(p.key) : ['can_manage_listings','can_review_reports','can_review_kyc'].includes(p.key)).map(p => (
+                {PERMISSIONS.filter(p => role === 'support_agent' ? ['can_resolve_disputes','can_manage_tickets','can_review_reports','can_escalate','can_supervise_staff'].includes(p.key) : role === 'vice_admin' ? ['can_manage_support_agents','can_manage_staff','can_manage_departments','can_manage_tasks','can_review_reports','can_manage_escalations','can_view_team_metrics','can_manage_team_communications'].includes(p.key) : ['can_manage_listings','can_review_reports','can_review_kyc','can_submit_reports'].includes(p.key)).map(p => (
                   <button
                     key={p.key}
                     onClick={() => togglePerm(p.key)}
