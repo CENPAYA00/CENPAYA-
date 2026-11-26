@@ -63,7 +63,7 @@ begin
   select exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_escalations') into v_allowed;
  end if;
  if not v_allowed then return jsonb_build_object('ok',false,'error','escalation permission required'); end if;
- if p_status not in ('open','in_progress','resolved','dismissed') then return jsonb_build_object('ok',false,'error','invalid status'); end if;
+ if p_status is null or p_status not in ('open','in_progress','resolved','dismissed') then return jsonb_build_object('ok',false,'error','invalid status'); end if;
  update public.team_escalations set status=p_status,resolution_note=nullif(trim(p_note),''),updated_at=now(),resolved_at=case when p_status in ('resolved','dismissed') then now() else null end
  where id=p_id and (v_role in ('super_admin','owner') or assigned_to=v_uid or escalation_level='vice_admin');
  if not found then return jsonb_build_object('ok',false,'error','escalation not found or not authorized'); end if;
