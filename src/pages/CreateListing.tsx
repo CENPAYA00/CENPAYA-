@@ -174,7 +174,7 @@ export default function CreateListing() {
       for (const doc of docs) docUrls.push(await uploadFile(doc, 'listings/documents'));
 
       const priceType = usePriceRange ? 'negotiable' : 'fixed';
-      const result = await d1Request<{ id: string }>('/api/market/listings', {
+      const result = await d1Request<{ id: string; ai_indicator?: { text?: { status: string; classification: string }; media?: { status: string; classification: string } } }>('/api/market/listings', {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
@@ -193,6 +193,11 @@ export default function CreateListing() {
           hide_from_friends: hideFromFriends,
         }),
       });
+
+      if (result.ai_indicator) {
+        const indicator = result.ai_indicator;
+        alert(`Listing published. AI Indicator: text ${indicator.text?.classification || 'pending'}; media ${indicator.media?.classification || 'pending'}. These are estimates, not proof of AI use.`);
+      }
 
       if (listingVideoFiles.length) {
         try {
