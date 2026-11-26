@@ -18,9 +18,11 @@ begin
  if p_title is null or char_length(trim(p_title)) not between 2 and 100 then return jsonb_build_object('ok',false,'error','title must be 2-100 characters'); end if;
  if p_department is not null and char_length(trim(p_department))>100 then return jsonb_build_object('ok',false,'error','department too long'); end if;
  if p_supervisor_id is not null and not exists(
-  select 1 from public.users u where u.id=p_supervisor_id and u.banned=false and
-   (u.role in ('owner','super_admin') or exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.role='vice_admin' and si.appointment_status='active'))
- ) then return jsonb_build_object('ok',false,'error','supervisor must be an active Vice Admin, Super Admin or Owner'); end if;
+  select 1 from public.users u where u.id=p_supervisor_id and u.banned=false and coalesce(u.is_deactivated,false)=false and
+   (u.role in ('owner','super_admin')
+    or exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.role='vice_admin' and si.appointment_status='active')
+    or (v_inv.role='staff_member' and u.role='support_agent' and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.role='support_agent' and si.appointment_status='active' and si.permissions ? 'can_supervise_staff')))
+ ) then return jsonb_build_object('ok',false,'error','supervisor must be an active authorized team supervisor'); end if;
  update public.staff_invitations set official_title=trim(p_title),department=nullif(trim(p_department),''),supervisor_id=p_supervisor_id,updated_at=now() where id=v_inv.id;
  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,old_value,new_value)
  values(v_uid,'team_appointment_details_updated',v_inv.accepted_by,'staff_invitations',v_inv.id,
