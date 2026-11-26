@@ -58,6 +58,16 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
   ]);
   return json({success:true,data:{video_id:videoId,ratings_count:Number(summary?.ratings_count||0),average_rating:Number(summary?.average_rating||0),viewer_rating:mine?.stars||null}});
  }
+ const aiMatch=path.match(/^\/api\/videos\/([0-9a-f-]{36})\/ai-indicator$/i);
+ if(aiMatch&&method==="GET"){
+  const row=await env.DB.prepare("SELECT v.id,v.owner_id,v.status,v.post_id,p.author_id,p.visibility,p.status AS post_status,p.deleted_at FROM video_assets v LEFT JOIN posts p ON p.id=v.post_id WHERE v.id=?").bind(aiMatch[1]).first<Record<string,unknown>>();
+  const owner=!!user&&row?.owner_id===user.id;
+  const publicVideo=!!row?.post_id&&row?.status==="ready"&&row?.post_status==="published"&&!row?.deleted_at&&row?.visibility==="public";
+  if(!row||(!owner&&!publicVideo))return fail("Video not found",404);
+  if(user&&!owner){const blocked=await env.DB.prepare("SELECT 1 FROM user_blocks WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)").bind(user.id,row.author_id,row.author_id,user.id).first();if(blocked)return fail("Video not found",404);}
+  const result=await env.DB.prepare("SELECT status,classification,confidence,reason,model,sampled_frames,updated_at FROM ai_video_indicator_results WHERE video_id=?").bind(aiMatch[1]).first<Record<string,unknown>>();
+  return json({success:true,data:result||{status:"unavailable",classification:"inconclusive",confidence:null,reason:"Video AI analysis is not available",sampled_frames:0,updated_at:null}});
+ }
  const m=path.match(/^\/api\/videos\/([0-9a-f-]{36})\/(complete|status|playlist)$/i);
  if(m){
   const row=await env.DB.prepare("SELECT v.id,v.owner_id,v.status,v.source_key,v.source_bytes,v.mime_type,v.hls_key,v.duration_seconds,v.thumbnail_key,v.post_id,p.author_id,p.visibility,p.status AS post_status,p.deleted_at FROM video_assets v LEFT JOIN posts p ON p.id=v.post_id WHERE v.id=?").bind(m[1]).first<Record<string,unknown>>();
