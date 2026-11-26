@@ -54,6 +54,9 @@ export default function ViceAdminPanel() {
     ['Overdue tasks', overview?.tasks_overdue ?? '—', AlertTriangle],
     ['Open escalations', overview?.open_escalations ?? escalations.length, Shield],
     ['Open support tickets', overview?.tickets_open ?? '—', MessageSquare],
+    ['Completed today', overview?.tasks_completed_today ?? '—', CheckCircle2],
+    ['Completed this week', overview?.tasks_completed_week ?? '—', CheckCircle2],
+    ['Completed this month', overview?.tasks_completed_month ?? '—', CheckCircle2],
   ] as const;
 
   return (
@@ -104,6 +107,20 @@ export default function ViceAdminPanel() {
           </article>
         ))}
       </section>
+
+      {Array.isArray(overview?.member_performance) && overview.member_performance.length > 0 && (
+        <section className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
+          <h3 className="text-sm font-bold text-navy dark:text-white mb-2">Team performance</h3>
+          <div className="space-y-2">
+            {overview.member_performance.map((member:any) => (
+              <div key={member.user_id} className="border-t border-gray-100 dark:border-darkline pt-2">
+                <p className="text-xs font-bold text-navy dark:text-white">@{member.username}</p>
+                <p className="text-[10px] text-gray-500">{member.completed}/{member.assigned} completed · {member.overdue} overdue</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="bg-white dark:bg-darkcard rounded-2xl p-4 shadow-sm">
         <h3 className="text-sm font-bold text-navy dark:text-white mb-2">Recent team audit</h3>
