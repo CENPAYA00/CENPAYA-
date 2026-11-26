@@ -9,6 +9,23 @@ alter table public.staff_invitations drop constraint if exists staff_invitations
 alter table public.staff_invitations add constraint staff_invitations_role_check
   check (role in ('support_agent','staff_member','vice_admin'));
 
+create or replace function public.role_rank(p_role text)
+returns integer
+language sql
+immutable
+set search_path = pg_catalog, public, extensions, pg_temp
+as $function$
+  select case p_role
+    when 'owner' then 100
+    when 'super_admin' then 80
+    when 'vice_admin' then 65
+    when 'support_agent' then 50
+    when 'staff_member' then 40
+    when 'user' then 10
+    else 0
+  end;
+$function$;
+
 alter table public.staff_invitations
   add column if not exists official_title text,
   add column if not exists department text,
