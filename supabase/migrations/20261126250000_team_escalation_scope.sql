@@ -49,7 +49,7 @@ begin
    select exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_escalations') into v_allowed;
  end if;
  if not v_allowed then return jsonb_build_object('ok',false,'error','escalation permission required'); end if;
- if p_level not in ('vice_admin','super_admin','owner') or p_reason is null or char_length(trim(p_reason)) not between 5 and 5000 then
+ if p_level is null or p_level not in ('vice_admin','super_admin','owner') or p_reason is null or char_length(trim(p_reason)) not between 5 and 5000 then
    return jsonb_build_object('ok',false,'error','invalid escalation');
  end if;
  if v_role in ('support_agent','staff_member') and p_level<>'vice_admin' then
