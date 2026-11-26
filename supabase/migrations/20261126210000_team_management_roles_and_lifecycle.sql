@@ -138,6 +138,11 @@ begin
    else array['can_manage_support_agents','can_manage_staff','can_manage_departments','can_manage_tasks','can_review_reports','can_manage_escalations','can_view_team_metrics','can_manage_team_communications']::text[]
  end;
  if exists(select 1 from jsonb_array_elements_text(p_permissions) x(value) where x.value<>all(v_allowed)) then return jsonb_build_object('ok',false,'error','permission is not allowed for this role'); end if;
+ if p_role='support_agent' then
+   p_permissions:=p_permissions || jsonb_build_array('can_manage_tickets','can_escalate');
+ elsif p_role='staff_member' then
+   p_permissions:=p_permissions || jsonb_build_array('can_submit_reports');
+ end if;
  if p_supervisor_id is not null and not exists(select 1 from public.users u where u.id=p_supervisor_id and u.role in ('vice_admin','super_admin','owner') and u.banned=false) then return jsonb_build_object('ok',false,'error','invalid supervisor'); end if;
  insert into public.staff_invitations(email,role,permissions,invited_by,official_title,department,supervisor_id,appointment_status)
  values(lower(trim(p_email)),p_role,p_permissions,v_uid,coalesce(nullif(trim(p_title),''),initcap(replace(p_role,'_',' '))),nullif(trim(p_department),''),p_supervisor_id,'pending')
