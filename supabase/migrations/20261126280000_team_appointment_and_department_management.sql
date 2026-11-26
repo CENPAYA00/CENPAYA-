@@ -54,7 +54,7 @@ returns jsonb language plpgsql stable security definer set search_path=public,pg
 as $function$
 declare v_uid uuid:=auth.uid(); v_rows jsonb;
 begin
- if v_uid is null or not exists(select 1 from public.users where id=v_uid and banned=false and role in ('owner','super_admin','vice_admin','support_agent','staff_member')) then
+ if v_uid is null or not exists(select 1 from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false and role in ('owner','super_admin','vice_admin','support_agent','staff_member')) then
   return jsonb_build_object('ok',false,'error','team access required');
  end if;
  select coalesce(jsonb_agg(jsonb_build_object('id',id,'name',name,'description',description) order by name),'[]'::jsonb)
