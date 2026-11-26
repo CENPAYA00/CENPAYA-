@@ -26,7 +26,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_rows jsonb;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- if not exists(select 1 from public.users where id=v_uid and role in ('owner','super_admin','vice_admin','support_agent','staff_member') and banned=false) then return jsonb_build_object('ok',false,'error','team access required'); end if;
+ if not exists(select 1 from public.users where id=v_uid and role in ('owner','super_admin','vice_admin','support_agent','staff_member') and banned=false and coalesce(is_deactivated,false)=false) then return jsonb_build_object('ok',false,'error','team access required'); end if;
  select coalesce(jsonb_agg(jsonb_build_object(
   'id',u.id,'username',u.username,'role',u.role,'title',i.official_title,
   'department',i.department,'invitation_id',i.id,'appointment_status',i.appointment_status,
