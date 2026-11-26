@@ -197,6 +197,18 @@ export default function AdminStaff() {
           ].map(([label,value])=><div key={label as string} className="bg-white dark:bg-darkcard rounded-lg p-3 shadow-sm"><p className="text-lg font-black text-navy dark:text-white">{value as any}</p><p className="text-[9px] text-gray-500">{label}</p></div>)}
         </section>
       )}
+      {overview && (Array.isArray(overview.recent_tickets) || Array.isArray(overview.recent_tasks)) && (
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div className="bg-white dark:bg-darkcard rounded-xl p-3 shadow-sm">
+            <h3 className="text-xs font-bold text-navy dark:text-white mb-2">Recent ticket handlers</h3>
+            {(overview.recent_tickets||[]).slice(0,6).map((ticket:any)=><p key={ticket.id} className="text-[10px] border-t border-gray-100 dark:border-darkline py-1.5 text-gray-600 dark:text-gray-300">{ticket.subject} · {ticket.handled_by?'@'+ticket.handled_by:'Unassigned'} · {ticket.status}</p>)}
+          </div>
+          <div className="bg-white dark:bg-darkcard rounded-xl p-3 shadow-sm">
+            <h3 className="text-xs font-bold text-navy dark:text-white mb-2">Recent staff assignments</h3>
+            {(overview.recent_tasks||[]).slice(0,6).map((task:any)=><p key={task.id} className="text-[10px] border-t border-gray-100 dark:border-darkline py-1.5 text-gray-600 dark:text-gray-300">{task.title} · @{task.assignee||'unknown'} · {task.status}</p>)}
+          </div>
+        </section>
+      )}
 
       {canManageTasks && <section className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-3 mb-4">
         <h3 className="text-[13px] font-bold text-navy dark:text-white mb-2">Staff tasks</h3>
@@ -410,7 +422,7 @@ function InviteSheet({ onClose, onCreated, members = [], departments = [], allow
             <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Supervisor (optional)</label>
             <select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs">
               <option value="">No direct supervisor</option>
-              {members.filter((m:any) => ['vice_admin','super_admin','owner'].includes(m.role) && m.appointment_status !== 'suspended').map((m:any) => <option key={m.id} value={m.id}>@{m.username} · {m.role.replace('_',' ')}</option>)}
+              {members.filter((m:any) => (['vice_admin','super_admin','owner'].includes(m.role) || (role==='staff_member' && m.role==='support_agent' && m.permissions?.includes('can_supervise_staff'))) && m.appointment_status !== 'suspended').map((m:any) => <option key={m.id} value={m.id}>@{m.username} · {m.role.replace('_',' ')}</option>)}
             </select>
           </div>
           <div>
@@ -529,7 +541,7 @@ function EditAppointmentSheet({ invitation, members = [], onClose, onSaved }: an
         <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-navy dark:text-white">Edit appointment</h3><button onClick={onClose}><X size={18}/></button></div>
         <label className="block text-[10px] font-bold text-gray-500">Official title<input value={title} onChange={e=>setTitle(e.target.value)} maxLength={100} className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"/></label>
         <label className="block text-[10px] font-bold text-gray-500">Department<input value={department} onChange={e=>setDepartment(e.target.value)} maxLength={100} list="team-departments" className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"/><datalist id="team-departments">{members.map((m:any)=>m.department).filter(Boolean).filter((v:string,i:number,a:string[])=>a.indexOf(v)===i).map((d:string)=><option key={d} value={d}/>)}</datalist></label>
-        <label className="block text-[10px] font-bold text-gray-500">Supervisor<select value={supervisorId} onChange={e=>setSupervisorId(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"><option value="">No direct supervisor</option>{members.filter((m:any)=>['vice_admin','super_admin','owner'].includes(m.role)&&m.appointment_status!=='suspended').map((m:any)=><option key={m.id} value={m.id}>@{m.username} · {m.role.replace('_',' ')}</option>)}</select></label>
+        <label className="block text-[10px] font-bold text-gray-500">Supervisor<select value={supervisorId} onChange={e=>setSupervisorId(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"><option value="">No direct supervisor</option>{members.filter((m:any)=>(['vice_admin','super_admin','owner'].includes(m.role)||(invitation.role==='staff_member'&&m.role==='support_agent'&&m.permissions?.includes('can_supervise_staff')))&&m.appointment_status!=='suspended').map((m:any)=><option key={m.id} value={m.id}>@{m.username} · {m.role.replace('_',' ')}</option>)}</select></label>
         {error&&<p className="text-xs text-red-600">{error}</p>}
         <button disabled={busy||!title.trim()} onClick={()=>void save()} className="w-full bg-accent text-white rounded-lg py-3 text-xs font-bold disabled:opacity-50">{busy?'Saving...':'Save appointment'}</button>
       </div>
