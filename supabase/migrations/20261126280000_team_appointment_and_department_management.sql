@@ -7,7 +7,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_inv public.staff_invitations%rowtype; v_role text;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- select role into v_role from public.users where id=v_uid and banned=false;
+ select role into v_role from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false;
  select * into v_inv from public.staff_invitations where id=p_invitation_id and appointment_status='active' for update;
  if v_inv.id is null then return jsonb_build_object('ok',false,'error','active appointment not found'); end if;
  if v_inv.role='vice_admin' and v_role<>'owner' then return jsonb_build_object('ok',false,'error','only Owner can change Vice Admin appointment details'); end if;
@@ -35,7 +35,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_role text; v_id uuid;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- select role into v_role from public.users where id=v_uid and banned=false;
+ select role into v_role from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false;
  if not (v_role in ('owner','super_admin') or (v_role='vice_admin' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_departments'))) then
   return jsonb_build_object('ok',false,'error','department management permission required');
  end if;
