@@ -300,19 +300,23 @@ export default function AdminStaff() {
           )}
           {inv.status === 'accepted' && (
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {(inv.role !== 'vice_admin' || canConfigureViceAdmin) && (
-                <button onClick={() => setEditingInvite(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-blue-50 text-blue-700">Edit permissions</button>
+              {((inv.role === 'support_agent' && canManageSupportAgents) || (inv.role === 'staff_member' && canManageStaffMembers) || (inv.role === 'vice_admin' && canConfigureViceAdmin)) && (
+                <>
+                  <button onClick={() => setEditingInvite(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-blue-50 text-blue-700">Edit permissions</button>
+                  <button onClick={() => setEditingAppointment(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-700">Edit appointment</button>
+                </>
               )}
-              {(inv.role !== 'vice_admin' || canConfigureViceAdmin) && (
-                <button onClick={() => setEditingAppointment(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-700">Edit appointment</button>
-              )}
-              {inv.appointment_status === 'suspended' ? (
-                <button onClick={() => void setAppointmentStatus(inv.id, 'active')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-green-100 text-green-700">Reactivate</button>
-              ) : inv.appointment_status !== 'removed' ? (
-                <button onClick={() => void setAppointmentStatus(inv.id, 'suspended')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-yellow-100 text-yellow-700">Suspend</button>
-              ) : null}
-              {inv.appointment_status !== 'removed' && (
-                <button onClick={() => void setAppointmentStatus(inv.id, 'removed')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-red-100 text-red-700">Remove appointment</button>
+              {((inv.role === 'support_agent' && canManageSupportAgents) || (inv.role === 'staff_member' && canManageStaffMembers) || (inv.role === 'vice_admin' && canAppointViceAdmin)) && (
+                <>
+                  {inv.appointment_status === 'suspended' ? (
+                    <button onClick={() => void setAppointmentStatus(inv.id, 'active')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-green-100 text-green-700">Reactivate</button>
+                  ) : inv.appointment_status !== 'removed' ? (
+                    <button onClick={() => void setAppointmentStatus(inv.id, 'suspended')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-yellow-100 text-yellow-700">Suspend</button>
+                  ) : null}
+                  {inv.appointment_status !== 'removed' && (
+                    <button onClick={() => void setAppointmentStatus(inv.id, 'removed')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-red-100 text-red-700">Remove appointment</button>
+                  )}
+                </>
               )}
             </div>
           )}
