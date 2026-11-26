@@ -240,7 +240,6 @@ begin
  or exists(select 1 from jsonb_array_elements_text(p_permissions) x(value) where x.value<>all(v_allowed)) then return jsonb_build_object('ok',false,'error','invalid permissions for role'); end if;
  update public.staff_invitations set permissions=p_permissions,updated_at=now() where id=v_inv.id;
  update public.admin_permissions set revoked_at=now() where user_id=v_inv.accepted_by and permission_key not in ('owner','super_admin') and revoked_at is null;
- for v_uid in select null::uuid where false loop null; end loop;
  insert into public.admin_permissions(user_id,permission_key,granted_by)
  select v_inv.accepted_by,value,auth.uid() from jsonb_array_elements_text(p_permissions)
  on conflict(user_id,permission_key) do update set granted_by=excluded.granted_by,granted_at=now(),revoked_at=null;
