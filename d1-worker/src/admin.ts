@@ -239,10 +239,12 @@ export async function handleAdminRoutes(
     }
 
     try {
-      const result = await env.DB.prepare(
-        "UPDATE feature_flags SET enabled = ? WHERE key = ?"
-      ).bind(body.is_enabled_globally ? 1 : 0, key).run();
-      if (!result.meta.changes) return fail("Feature setting not found. Apply D1 migration 0057 first.", 404);
+      // Upsert the central flag so the setting is durable even when no admin
+      // has opened the feature-control screen before. The feature_flags table
+      // remains the single source of truth checked by every assistant request.
+      await env.DB.prepare(
+        "INSERT INTO feature_flags(key,enabled) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET enabled=excluded.enabled"
+      ).bind(key, body.is_enabled_globally ? 1 : 0).run();
       return json({ success: true, data: { feature_key: key, is_enabled_globally: body.is_enabled_globally } });
     } catch {
       return fail("Could not update feature setting", 503);
