@@ -52,8 +52,8 @@ begin
  if p_level is null or p_level not in ('vice_admin','super_admin','owner') or p_reason is null or char_length(trim(p_reason)) not between 5 and 5000 then
    return jsonb_build_object('ok',false,'error','invalid escalation');
  end if;
- if v_role in ('support_agent','staff_member') and p_level<>'vice_admin' then
-   return jsonb_build_object('ok',false,'error','this role may escalate only to Vice Admin');
+ if v_role='staff_member' and p_level<>'vice_admin' then
+   return jsonb_build_object('ok',false,'error','Staff Members may escalate only to Vice Admin');
  end if;
  if v_role='vice_admin' and p_level not in ('super_admin','owner') then
    return jsonb_build_object('ok',false,'error','Vice Admin escalations must go to Super Admin or Owner');
