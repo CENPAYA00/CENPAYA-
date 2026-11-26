@@ -202,7 +202,7 @@ export default function AdminFeatures() {
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-2xl font-bold text-navy dark:text-white">Feature controls</h2>
-          <p className="text-xs text-gray-500 mt-1">Manage availability across the Cenpaya app.</p>
+          <p className="text-xs text-gray-500 mt-1">Owner and Super Admin controls for platform-wide feature availability.</p>
         </div>
         <button onClick={() => void load()} disabled={!!saving} aria-label="Refresh feature controls" className="p-2 rounded-xl border border-gray-200 dark:border-darkline text-gray-600 dark:text-gray-300">
           <RefreshCw size={17} />
@@ -247,7 +247,7 @@ export default function AdminFeatures() {
       {renderAssistance('call')}
       {renderAssistance('video')}
 
-      <p className="text-[10px] text-gray-500 px-1">Video publishing can be enabled once its processor is configured. AI assistance remains locked until the member-facing assistant is implemented. Live voice and video assistance require an active provider and credentials.</p>
+      <p className="text-[10px] text-gray-500 px-1">Video publishing can be enabled once its processor is configured. AI assistance is controlled centrally by the Owner and Super Admin. Changes take effect immediately and are enforced by the D1 Worker. Live voice and video assistance require an active provider and credentials.</p>
     </div>
   );
 }
