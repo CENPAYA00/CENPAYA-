@@ -157,7 +157,7 @@ export async function processVideoQueue(env:Env):Promise<void>{
   if(!claimed.meta.changes)continue;
   if(job.purpose==="post"&&Number(postFlag?.enabled||0)!==1){await env.DB.prepare("UPDATE video_processing_jobs SET status='queued',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?").bind(job.job_id).run();continue;}
   try{
-   const response=await processor(env,"/v1/process",{video_id:job.video_id,source_key:job.source_key,source_bytes:job.source_bytes,mime_type:job.mime_type,max_duration_seconds:job.max_duration_seconds});
+   const response=await processor(env,"/v1/process",{video_id:job.video_id,source_key:job.source_key,source_bytes:job.source_bytes,mime_type:job.mime_type,max_duration_seconds:job.max_duration_seconds,gemini_api_key:env.GEMINI_API_KEY||""});
    if(!response||!response.ok)throw new Error("Processor unavailable");
    const result=await response.json() as {status?:string;hls_key?:string;thumbnail_key?:string;duration_seconds?:number;width?:number;height?:number;sha256?:string;backup?:string;video_ai_indicator?:{status?:"completed"|"unavailable";classification?:"possible_ai_generated"|"no_clear_signal"|"inconclusive";confidence?:number|null;reason?:string;model?:string|null;sampled_frames?:number}};
    if(result.status!=="ready"||!result.hls_key||result.backup!=="verified"||!Number.isFinite(Number(result.duration_seconds))||Number(result.duration_seconds)>Number(job.max_duration_seconds||300))throw new Error("HLS, duration or backup verification failed");
