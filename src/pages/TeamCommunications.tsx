@@ -5,6 +5,7 @@ import { MessageCircle, Send, Plus, Users } from 'lucide-react';
 export default function TeamCommunications() {
   const [conversations,setConversations]=useState<any[]>([]);
   const [members,setMembers]=useState<any[]>([]);
+  const [notifications,setNotifications]=useState<any[]>([]);
   const [selected,setSelected]=useState<any>(null);
   const [messages,setMessages]=useState<any[]>([]);
   const [body,setBody]=useState('');
@@ -18,13 +19,15 @@ export default function TeamCommunications() {
   const [error,setError]=useState('');
 
   const loadConversations=async()=>{
-    const [c,m]=await Promise.all([
+    const [c,m,n]=await Promise.all([
       supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_list_conversations',{method:'POST',body:JSON.stringify({args:{}})}),
       supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_available_colleagues',{method:'POST',body:JSON.stringify({args:{}})}),
+      supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_my_notifications',{method:'POST',body:JSON.stringify({args:{p_limit:30}})}),
     ]);
     if(!c.data?.ok) throw new Error(c.data?.error || 'Could not load team conversations.');
     setConversations(c.data.conversations||[]);
     setMembers(m.data?.ok?m.data.members||[]:[]);
+    setNotifications(n.data?.ok?n.data.notifications||[]:[]);
   };
   const loadMessages=async(id:string)=>{
     const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_get_messages',{method:'POST',body:JSON.stringify({args:{p_conversation_id:id}})});
@@ -52,6 +55,17 @@ export default function TeamCommunications() {
     }catch(e:any){setError(e?.message||'Could not create conversation.');}
     finally{setBusy(false);}
   };
+  const openNotification=async(notification:any)=>{
+    try{
+      await supabaseWorkerRequest('/api/v1/admin/rpc/team_mark_notification_read',{method:'POST',body:JSON.stringify({args:{p_id:notification.id}})});
+      setNotifications(prev=>prev.map(n=>n.id===notification.id?{...n,read_at:new Date().toISOString()}:n));
+      if(notification.entity_type==='team_conversation'){
+        const existing=conversations.find(c=>c.id===notification.entity_id);
+        if(existing){setSelected(existing);await loadMessages(existing.id);}
+      }
+    }catch(e:any){setError(e?.message||'Could not open notification.');}
+  };
+
   const send=async()=>{
     if(!selected?.id||!body.trim())return;
     setBusy(true);
@@ -73,6 +87,12 @@ export default function TeamCommunications() {
         <button onClick={()=>setShowNew(v=>!v)} className="bg-accent text-white rounded-lg px-3 py-2 text-[10px] font-bold flex items-center gap-1"><Plus size={13}/> New</button>
       </div>
       {error&&<p role="alert" className="text-xs text-red-600 bg-red-50 rounded-lg p-3 mb-3">{error}</p>}
+      {notifications.some(n=>!n.read_at) && <section className="bg-white dark:bg-darkcard rounded-xl p-3 shadow-sm mb-3">
+        <h3 className="text-xs font-bold text-navy dark:text-white mb-2">Team notifications</h3>
+        {notifications.filter(n=>!n.read_at).slice(0,5).map(n=><button key={n.id} onClick={()=>void openNotification(n)} className="w-full text-left border-t border-gray-100 dark:border-darkline py-2">
+          <p className="text-[11px] font-bold text-navy dark:text-white">{n.title}</p><p className="text-[10px] text-gray-500">{n.body}</p><p className="text-[9px] text-gray-400">{new Date(n.created_at).toLocaleString()}</p>
+        </button>)}
+      </section>}
       {showNew&&<section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm mb-3 space-y-3">
         <h3 className="text-sm font-bold text-navy dark:text-white">Start internal conversation</h3>
         <select value={type} onChange={e=>setType(e.target.value as any)} className="w-full p-2 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs">
