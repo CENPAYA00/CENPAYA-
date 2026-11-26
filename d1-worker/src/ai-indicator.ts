@@ -139,7 +139,7 @@ export async function handleAiIndicatorRoutes(
   if (!listing || (listing.status !== "active" && listing.seller_id !== user?.id)) return fail("Listing not found", 404);
   try {
     const result = await env.DB.prepare(
-      "SELECT status,classification,confidence,reason,model,updated_at FROM ai_indicator_results WHERE listing_id=?"
+      "SELECT status,classification,confidence,reason,model,media_status,media_classification,media_confidence,media_reason,updated_at FROM ai_indicator_results WHERE listing_id=?"
     ).bind(listingId).first<Record<string, unknown>>();
     return json({ success: true, data: result || unavailable("No AI analysis is available for this listing yet") });
   } catch {
