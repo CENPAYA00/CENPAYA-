@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS ai_indicator_results (
   confidence REAL,
   reason TEXT NOT NULL DEFAULT '',
   model TEXT,
+  media_status TEXT NOT NULL DEFAULT 'unavailable' CHECK (media_status IN ('completed','unavailable')),
+  media_classification TEXT NOT NULL DEFAULT 'inconclusive' CHECK (media_classification IN ('possible_ai_generated','no_clear_signal','inconclusive')),
+  media_confidence REAL,
+  media_reason TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_indicator_results_seller_updated
