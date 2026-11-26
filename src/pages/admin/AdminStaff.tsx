@@ -26,6 +26,8 @@ export default function AdminStaff() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [canAppointViceAdmin, setCanAppointViceAdmin] = useState(false);
   const [tasks, setTasks] = useState<any[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
@@ -39,16 +41,20 @@ export default function AdminStaff() {
     setLoading(true);
     setLoadError('');
     try {
-      const [invitationResult, usersResult, taskResult] = await Promise.all([
+      const [invitationResult, usersResult, taskResult, profileResult] = await Promise.all([
         supabaseWorkerRequest<{ data: { ok?: boolean; invitations?: any[]; error?: string } }>('/api/v1/admin/rpc/admin_list_invitations', {
           method: 'POST', body: JSON.stringify({ args: {} }),
         }),
-        supabaseWorkerRequest<{ data: any[] }>('/api/v1/admin/users?limit=200'),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_available_colleagues', { method: 'POST', body: JSON.stringify({ args: {} }) }),
         supabaseWorkerRequest<{ data: { ok?: boolean; tasks?: any[] } }>('/api/v1/admin/rpc/team_my_tasks', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { tasks: [] } })),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) }),
       ]);
       if (!invitationResult.data?.ok) throw new Error(invitationResult.data?.error || 'Could not load staff invitations.');
       setInvitations(invitationResult.data.invitations || []);
-      setStaffMembers((usersResult.data || []).filter((user: any) => ['staff_member','support_agent','vice_admin'].includes(user.role) && !user.banned));
+      const colleagues = usersResult.data?.members || [];
+      setTeamMembers(colleagues);
+      setStaffMembers(colleagues.filter((user: any) => user.role === 'staff_member' && user.appointment_status === 'active'));
+      setCanAppointViceAdmin(profileResult.data?.role === 'owner');
       setTasks(taskResult.data?.tasks || []);
     } catch (error: any) {
       setLoadError(error?.message || 'Could not load staff administration.');
@@ -260,12 +266,12 @@ export default function AdminStaff() {
         </div>
       ))}
 
-      {showInvite && <InviteSheet onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
+      {showInvite && <InviteSheet members={teamMembers} allowViceAdmin={canAppointViceAdmin} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
     </div>
   );
 }
 
-function InviteSheet({ onClose, onCreated }: any) {
+function InviteSheet({ onClose, onCreated, members = [], allowViceAdmin = false }: any) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'support_agent' | 'staff_member' | 'vice_admin'>('support_agent');
   const [permissions, setPermissions] = useState<string[]>([]);
@@ -340,9 +346,16 @@ function InviteSheet({ onClose, onCreated }: any) {
             <input value={department} onChange={e => setDepartment(e.target.value)} maxLength={100} placeholder="e.g. Customer Operations" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
           </div>
           <div>
-            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 flex items-center gap-1"><Shield size={11} /> Role</label>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Supervisor (optional)</label>
+            <select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs">
+              <option value="">No direct supervisor</option>
+              {members.filter((m:any) => ['vice_admin','super_admin','owner'].includes(m.role) && m.appointment_status !== 'suspended').map((m:any) => <option key={m.id} value={m.id}>@{m.username} · {m.role.replace('_',' ')}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 flex items-center gap-1"><Shield size={11}/> Role</label>
             <div className="grid grid-cols-2 gap-2">
-              {(['support_agent', 'staff_member', 'vice_admin'] as const).map(r => (
+              {(['support_agent', 'staff_member', ...(allowViceAdmin ? ['vice_admin' as const] : [])] as const).map(r => (
                 <button
                   key={r}
                   onClick={() => setRole(r)}
