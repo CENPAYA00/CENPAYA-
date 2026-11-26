@@ -96,6 +96,7 @@ export default function Market() {
             const isBoosted = l.boosted_until && new Date(l.boosted_until) > new Date();
             const aiText = l.ai_text_classification;
             const aiMedia = l.ai_media_classification;
+            const aiVideo = l.ai_video_classification;
             return (
               <div key={l.id} className="bg-white dark:bg-darkcard rounded-[20px] shadow-sm overflow-hidden flex flex-col border border-gray-100 dark:border-darkline">
                 <button onClick={() => navigate(`/listing/${l.id}`)} className="w-full aspect-square bg-gray-100 dark:bg-darkline relative">
@@ -104,7 +105,7 @@ export default function Market() {
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-400"><Store size={24} /></div>
                   )}
-                  {(aiText === 'possible_ai_generated' || aiText === 'possible_ai_assisted' || aiMedia === 'possible_ai_generated') && <span className="absolute top-2 left-2 bg-black/75 text-white text-[9px] font-semibold px-2 py-1 rounded-md">AI indicator · review</span>}
+                  {(aiText === 'possible_ai_generated' || aiText === 'possible_ai_assisted' || aiMedia === 'possible_ai_generated' || aiVideo === 'possible_ai_generated') && <span className="absolute top-2 left-2 bg-black/75 text-white text-[9px] font-semibold px-2 py-1 rounded-md">AI indicator · review</span>}
                   {isBoosted && (
                     <span className="absolute top-2 right-2 bg-[#12935a] text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-md flex items-center gap-1">
                       <Zap size={10} fill="currentColor" /> Boosted
