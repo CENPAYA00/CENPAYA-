@@ -63,17 +63,31 @@ async function consumeAssertion(claims: Claims): Promise<boolean> {
     return result.ok;
   } catch { return false; }
 }
+function getSupabaseServerKey(): { key: string; isSecretKey: boolean } {
+  const keysJson = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (keysJson) {
+    try {
+      const keys = JSON.parse(keysJson) as Record<string, unknown>;
+      if (typeof keys.default === "string" && keys.default.startsWith("sb_secret_")) return { key: keys.default, isSecretKey: true };
+    } catch { /* Fall back to the legacy server key if configured. */ }
+  }
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  return { key: legacy, isSecretKey: false };
+}
 
 async function selectRows(table: string, params: Record<string, string>, limit: number) {
   const base = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!base || !key) throw new Error("Supabase read service is not configured");
+  const serverKey = getSupabaseServerKey();
+  if (!base || !serverKey.key) throw new Error("Supabase read service is not configured");
   const query = new URLSearchParams({ select: params.select, ...params, limit: String(limit) });
   query.delete("select");
   const url = base + "/rest/v1/" + table + "?select=" + encodeURIComponent(params.select) + "&" + query.toString();
+  const headers: Record<string, string> = { apikey: serverKey.key, Accept: "application/json" };
+  // New sb_secret keys are sent only as apikey. Legacy service_role keys are JWTs.
+  if (!serverKey.isSecretKey) headers.Authorization = "Bearer " + serverKey.key;
   const result = await fetch(url, {
     method: "GET",
-    headers: { apikey: key, Authorization: "Bearer " + key, Accept: "application/json" },
+    headers,
     signal: AbortSignal.timeout(6000),
   });
   if (!result.ok) throw new Error("Supabase read query failed: " + result.status);
@@ -126,7 +140,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return response({ success: false, error: "Method not allowed" }, 405);
   const authorization = req.headers.get("Authorization") ?? "";
-  const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
+  const token = authorization.match(/^Bearer\\s+(.+)$/i)?.[1] ?? "";
   const claims = await verifyIdentityAssertion(token);
   if (!claims) return response({ success: false, error: "Unauthorized" }, 401);
   if (!await consumeAssertion(claims)) return response({ success: false, error: "Identity assertion expired, replayed, or unavailable" }, 401);
