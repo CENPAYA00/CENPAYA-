@@ -216,7 +216,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_inv public.staff_invitations%rowtype; v_permission text;
 begin
  if v_uid is null or not (public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and (permissions ? 'can_manage_staff' or permissions ? 'can_manage_support_agents'))) then return jsonb_build_object('ok',false,'error','team appointment management permission required'); end if;
- if p_status not in ('active','suspended','removed') then return jsonb_build_object('ok',false,'error','invalid appointment status'); end if;
+ if p_status is null or p_status not in ('active','suspended','removed') then return jsonb_build_object('ok',false,'error','invalid appointment status'); end if;
  select * into v_inv from public.staff_invitations where id=p_invitation_id for update;
  if v_inv.id is null or v_inv.accepted_by is null then return jsonb_build_object('ok',false,'error','accepted appointment not found'); end if;
  if v_inv.role='vice_admin' and not (public.is_owner() or public.is_super_admin()) then return jsonb_build_object('ok',false,'error','Owner or Super Admin required to manage Vice Admin appointment'); end if;
