@@ -121,7 +121,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
  }
  if(path==="/api/reels"&&method==="GET"){
   const limit=Math.min(Math.max(Number(url.searchParams.get("limit")||10),1),20),cursor=url.searchParams.get("cursor")||"",requestedVideoId=url.searchParams.get("video_id")||"";
-  const rows=await env.DB.prepare(`SELECT v.id AS video_id,v.post_id,v.hls_key,v.thumbnail_key,v.duration_seconds,p.content,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url,
+  const rows=await env.DB.prepare(`SELECT v.id AS video_id,v.post_id,v.hls_key,v.thumbnail_key,v.duration_seconds,air.status AS ai_video_status,air.classification AS ai_video_classification,air.confidence AS ai_video_confidence,air.reason AS ai_video_reason,p.content,p.created_at,p.author_id,u.username,u.display_name,u.avatar_url,
    (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id=p.id AND r.reaction_type='like') AS likes_count,
    (SELECT COUNT(*) FROM post_comments c WHERE c.post_id=p.id AND c.status='published' AND c.deleted_at IS NULL) AS comments_count,
    (SELECT COUNT(*) FROM video_ratings vr WHERE vr.video_id=v.id) AS ratings_count,
@@ -130,7 +130,7 @@ export async function handleVideoRoutes(request:Request,env:Env,{url,path,method
    (SELECT vr.stars FROM video_ratings vr WHERE vr.video_id=v.id AND vr.user_id=?) AS viewer_rating,
    CASE WHEN EXISTS(SELECT 1 FROM post_reactions r WHERE r.post_id=p.id AND r.user_id=? AND r.reaction_type='like') THEN 1 ELSE 0 END AS is_liked,
    CASE WHEN EXISTS(SELECT 1 FROM user_follows f WHERE f.follower_id=? AND f.following_id=p.author_id) THEN 1 ELSE 0 END AS is_following_author
-   FROM video_assets v JOIN posts p ON p.id=v.post_id JOIN users u ON u.id=p.author_id
+   FROM video_assets v LEFT JOIN ai_video_indicator_results air ON air.video_id=v.id JOIN posts p ON p.id=v.post_id JOIN users u ON u.id=p.author_id
    WHERE v.status='ready' AND p.status='published' AND p.deleted_at IS NULL AND p.visibility='public'
    AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
    AND (?='' OR p.created_at<?)
