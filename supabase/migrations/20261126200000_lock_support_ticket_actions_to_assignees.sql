@@ -109,7 +109,7 @@ declare
 begin
   if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
   if not (public.is_support_or_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='vice_admin' and appointment_status='active' and permissions ? 'can_manage_tickets')) then return jsonb_build_object('ok',false,'error','staff only'); end if;
-  if p_status not in ('open','in_progress','resolved','closed') then
+  if p_status is null or p_status not in ('open','in_progress','resolved','closed') then
     return jsonb_build_object('ok',false,'error','invalid status');
   end if;
 
