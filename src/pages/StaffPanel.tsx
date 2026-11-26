@@ -11,6 +11,7 @@ export default function StaffPanel() {
   const [tab, setTab] = useState<'all' | 'mine'>('all');
   const [loading, setLoading] = useState(true);
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
+  const [taskEvidence, setTaskEvidence] = useState<Record<string, string>>({});
 
   const load = async () => {
     setLoading(true);
@@ -50,10 +51,11 @@ export default function StaffPanel() {
   const updateTask = async (taskId: string, status: string) => {
     try {
       const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_update_task', {
-        method: 'POST', body: JSON.stringify({ args: { p_task_id: taskId, p_status: status, p_body: taskNotes[taskId] || null, p_attachment_url: null } }),
+        method: 'POST', body: JSON.stringify({ args: { p_task_id: taskId, p_status: status, p_body: taskNotes[taskId] || null, p_attachment_url: taskEvidence[taskId]?.trim() || null } }),
       });
       if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update task.');
       setTaskNotes(previous => ({ ...previous, [taskId]: '' }));
+      setTaskEvidence(previous => ({ ...previous, [taskId]: '' }));
       await load();
     } catch (error: any) { alert(error.message || 'Could not update task'); }
   };
@@ -103,6 +105,13 @@ export default function StaffPanel() {
                 placeholder="Progress update, completion report or evidence notes..."
                 rows={2}
                 className="w-full mt-3 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
+              />
+              <input
+                value={taskEvidence[task.id] || ''}
+                onChange={e => setTaskEvidence(previous => ({ ...previous, [task.id]: e.target.value }))}
+                maxLength={2048}
+                placeholder="Evidence or document link (optional)"
+                className="w-full mt-2 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
               />
               <div className="flex flex-wrap gap-2 mt-2">
                 {(['todo','in_progress','blocked','submitted'] as const).filter(status => status !== task.status).map(status => (
