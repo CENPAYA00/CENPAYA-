@@ -73,6 +73,7 @@ as $function$
 declare
   v_uid uuid := auth.uid();
   v_updated uuid;
+  v_old_assignee uuid;
 begin
   if v_uid is null then
     return jsonb_build_object('ok', false, 'error', 'not authenticated');
@@ -80,6 +81,8 @@ begin
   if not public.is_support_or_admin() then
     return jsonb_build_object('ok', false, 'error', 'staff only');
   end if;
+
+  select assigned_agent_id into v_old_assignee from public.platform_tickets where id=p_ticket_id for update;
 
   update public.platform_tickets
      set assigned_agent_id = v_uid,
@@ -93,6 +96,10 @@ begin
   if v_updated is null then
     return jsonb_build_object('ok', false, 'error', 'ticket unavailable or assigned to another agent');
   end if;
+  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,old_value,new_value)
+  select v_uid,'support_ticket_claimed',user_id,'platform_tickets',v_updated,
+    jsonb_build_object('assigned_agent_id',v_old_assignee),jsonb_build_object('assigned_agent_id',v_uid,'status','in_progress')
+  from public.platform_tickets where id=v_updated;
   return jsonb_build_object('ok', true, 'ticket_id', v_updated);
 end;
 $function$;
@@ -115,7 +122,7 @@ alter table public.ticket_messages
 create or replace function public.get_ticket_thread(p_ticket_id uuid)
 returns jsonb
 language plpgsql
-stable
+volatile
 security definer
 set search_path = public
 as $function$
@@ -130,11 +137,17 @@ begin
   select * into v_ticket from public.platform_tickets where id=p_ticket_id;
   if v_ticket.id is null then return jsonb_build_object('ok',false,'error','not found'); end if;
 
-  v_is_elevated := public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='vice_admin' and appointment_status='active' and permissions ? 'can_manage_support_agents');
+  v_is_elevated := public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='vice_admin' and appointment_status='active' and (permissions ? 'can_manage_support_agents' or permissions ? 'can_manage_tickets'));
   v_is_support := public.is_support_or_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='vice_admin' and appointment_status='active' and (permissions ? 'can_manage_tickets' or permissions ? 'can_manage_support_agents'));
   if v_ticket.user_id <> v_uid and not v_is_elevated
      and not (v_is_support and (v_ticket.assigned_agent_id is null or v_ticket.assigned_agent_id=v_uid)) then
     return jsonb_build_object('ok',false,'error','not authorized');
+  end if;
+
+  if v_ticket.user_id=v_uid then
+    update public.ticket_messages set read_by_user=true where ticket_id=p_ticket_id and sender_id<>v_uid;
+  elsif v_is_support then
+    update public.ticket_messages set read_by_staff=true where ticket_id=p_ticket_id and sender_role='user';
   end if;
 
   select coalesce(jsonb_agg(jsonb_build_object(
@@ -171,6 +184,7 @@ declare
   v_assignee uuid;
   v_is_support boolean;
   v_is_elevated boolean;
+  v_message_id uuid;
 begin
   if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
   if p_body is null or char_length(trim(p_body))=0 or char_length(p_body)>10000 then
@@ -191,12 +205,15 @@ begin
   end if;
 
   insert into public.ticket_messages(ticket_id,sender_id,sender_role,body,read_by_user,read_by_staff)
-  values(p_ticket_id,v_uid,case when v_is_support then 'support' else 'user' end,trim(p_body),not v_is_support,v_is_support);
+  values(p_ticket_id,v_uid,case when v_is_support then 'support' else 'user' end,trim(p_body),not v_is_support,v_is_support)
+  returning id into v_message_id;
 
   update public.platform_tickets
      set updated_at=now(),
          status=case when v_is_support and status='open' then 'in_progress' else status end
    where id=p_ticket_id;
+  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,new_value)
+  values(v_uid,case when v_is_support then 'support_ticket_reply_sent' else 'customer_ticket_reply_sent' end,v_owner,'platform_tickets',p_ticket_id,jsonb_build_object('message_id',v_message_id));
   return jsonb_build_object('ok',true);
 end;
 $function$;
@@ -210,6 +227,8 @@ as $function$
 declare
   v_uid uuid := auth.uid();
   v_assignee uuid;
+  v_old_status text;
+  v_ticket_user uuid;
 begin
   if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
   if not (public.is_support_or_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='vice_admin' and appointment_status='active' and permissions ? 'can_manage_tickets')) then return jsonb_build_object('ok',false,'error','staff only'); end if;
@@ -217,7 +236,7 @@ begin
     return jsonb_build_object('ok',false,'error','invalid status');
   end if;
 
-  select assigned_agent_id into v_assignee
+  select assigned_agent_id,status,user_id into v_assignee,v_old_status,v_ticket_user
   from public.platform_tickets where id=p_ticket_id for update;
   if not found then return jsonb_build_object('ok',false,'error','ticket not found'); end if;
   if not (public.is_owner() or public.is_super_admin())
@@ -226,6 +245,8 @@ begin
   end if;
 
   update public.platform_tickets set status=p_status,updated_at=now() where id=p_ticket_id;
+  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,old_value,new_value)
+  values(v_uid,'support_ticket_status_updated',v_ticket_user,'platform_tickets',p_ticket_id,jsonb_build_object('status',v_old_status),jsonb_build_object('status',p_status,'assigned_agent_id',v_assignee));
   return jsonb_build_object('ok',true);
 end;
 $function$;
@@ -401,7 +422,7 @@ begin
  elsif p_role='staff_member' then
    p_permissions:=p_permissions || jsonb_build_array('can_submit_reports');
  end if;
- if p_supervisor_id is not null and not exists(select 1 from public.users u where u.id=p_supervisor_id and u.role in ('vice_admin','super_admin','owner') and u.banned=false) then return jsonb_build_object('ok',false,'error','invalid supervisor'); end if;
+ if p_supervisor_id is not null and not exists(select 1 from public.users u where u.id=p_supervisor_id and u.banned=false and coalesce(u.is_deactivated,false)=false and (u.role in ('super_admin','owner') or (u.role='vice_admin' and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active')) or (u.role='support_agent' and p_role='staff_member' and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active' and si.permissions ? 'can_supervise_staff')))) then return jsonb_build_object('ok',false,'error','invalid supervisor'); end if;
  insert into public.staff_invitations(email,role,permissions,invited_by,official_title,department,supervisor_id,appointment_status)
  values(lower(trim(p_email)),p_role,p_permissions,v_uid,coalesce(nullif(trim(p_title),''),initcap(replace(p_role,'_',' '))),nullif(trim(p_department),''),p_supervisor_id,'pending')
  returning id,invite_token into v_id,v_token;
@@ -621,6 +642,10 @@ begin
     or not exists(select 1 from public.staff_invitations where accepted_by=p_assigned_to and appointment_status='active') then
    return jsonb_build_object('ok',false,'error','assignee is not an active Staff Member');
  end if;
+ if v_role='support_agent' and not exists(
+   select 1 from public.staff_invitations where accepted_by=p_assigned_to
+   and appointment_status='active' and supervisor_id=v_uid
+ ) then return jsonb_build_object('ok',false,'error','you may assign tasks only to Staff Members under your supervision'); end if;
  insert into public.team_tasks(title,description,assigned_to,assigned_by,supervisor_id,due_at,department_id)
  values(trim(p_title),nullif(trim(p_description),''),p_assigned_to,v_uid,v_uid,p_due_at,p_department_id)
  returning id into v_id;
@@ -685,7 +710,16 @@ begin
   ) perf),
   'open_escalations',(select count(*) from public.team_escalations where status in ('open','in_progress')),
   'tickets_open',(select count(*) from public.platform_tickets where status in ('open','in_progress')),
-  'recent_audit',(select coalesce(jsonb_agg(jsonb_build_object('id',a.id,'actor_id',a.actor_id,'action',a.action,'target_user_id',a.target_user_id,'created_at',a.created_at,'new_value',a.new_value) order by a.created_at desc),'[]'::jsonb) from (select * from public.admin_audit_log where target_table in ('staff_invitations','team_tasks','team_escalations') order by created_at desc limit 30) a)
+  'recent_audit',(select coalesce(jsonb_agg(jsonb_build_object('id',a.id,'actor_id',a.actor_id,'action',a.action,'target_user_id',a.target_user_id,'target_table',a.target_table,'target_id',a.target_id,'created_at',a.created_at,'old_value',a.old_value,'new_value',a.new_value) order by a.created_at desc),'[]'::jsonb) from (select * from public.admin_audit_log where target_table in ('staff_invitations','team_tasks','team_escalations','platform_tickets','team_conversations','team_departments') order by created_at desc limit 30) a),
+  'recent_tickets',(select coalesce(jsonb_agg(jsonb_build_object(
+    'id',t.id,'subject',t.subject,'status',t.status,'customer',(select username from public.users where id=t.user_id),
+    'assigned_agent_id',t.assigned_agent_id,'handled_by',(select username from public.users where id=t.assigned_agent_id),
+    'updated_at',t.updated_at
+  ) order by t.updated_at desc),'[]'::jsonb) from (select * from public.platform_tickets order by updated_at desc limit 20) t),
+  'recent_tasks',(select coalesce(jsonb_agg(jsonb_build_object(
+    'id',t.id,'title',t.title,'status',t.status,'assignee',(select username from public.users where id=t.assigned_to),
+    'supervisor',(select username from public.users where id=t.supervisor_id),'due_at',t.due_at,'updated_at',t.updated_at
+  ) order by t.updated_at desc),'[]'::jsonb) from (select * from public.team_tasks order by updated_at desc limit 20) t)
  ) into v_result;
  return jsonb_build_object('ok',true,'overview',v_result);
 end;$function$;
@@ -917,12 +951,12 @@ begin
  if not exists(select 1 from public.users where id=v_uid and role in ('owner','super_admin','vice_admin','support_agent','staff_member') and banned=false and coalesce(is_deactivated,false)=false) then return jsonb_build_object('ok',false,'error','team access required'); end if;
  select coalesce(jsonb_agg(jsonb_build_object(
   'id',u.id,'username',u.username,'role',u.role,'title',i.official_title,
-  'department',i.department,'invitation_id',i.id,'appointment_status',i.appointment_status,
+  'department',i.department,'supervisor_id',i.supervisor_id,'invitation_id',i.id,'appointment_status',i.appointment_status,
   'permissions',coalesce(i.permissions,'[]'::jsonb)
  ) order by u.username),'[]'::jsonb)
  into v_rows
  from public.users u left join lateral (
-   select id,official_title,department,appointment_status,permissions
+   select id,official_title,department,supervisor_id,appointment_status,permissions
    from public.staff_invitations si where si.accepted_by=u.id
    order by accepted_at desc nulls last limit 1
  ) i on true
@@ -1039,8 +1073,8 @@ begin
  if p_level is null or p_level not in ('vice_admin','super_admin','owner') or p_reason is null or char_length(trim(p_reason)) not between 5 and 5000 then
    return jsonb_build_object('ok',false,'error','invalid escalation');
  end if;
- if v_role in ('support_agent','staff_member') and p_level<>'vice_admin' then
-   return jsonb_build_object('ok',false,'error','this role may escalate only to Vice Admin');
+ if v_role='staff_member' and p_level<>'vice_admin' then
+   return jsonb_build_object('ok',false,'error','Staff Members may escalate only to Vice Admin');
  end if;
  if v_role='vice_admin' and p_level not in ('super_admin','owner') then
    return jsonb_build_object('ok',false,'error','Vice Admin escalations must go to Super Admin or Owner');
@@ -1222,9 +1256,11 @@ begin
  if p_title is null or char_length(trim(p_title)) not between 2 and 100 then return jsonb_build_object('ok',false,'error','title must be 2-100 characters'); end if;
  if p_department is not null and char_length(trim(p_department))>100 then return jsonb_build_object('ok',false,'error','department too long'); end if;
  if p_supervisor_id is not null and not exists(
-  select 1 from public.users u where u.id=p_supervisor_id and u.banned=false and
-   (u.role in ('owner','super_admin') or exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.role='vice_admin' and si.appointment_status='active'))
- ) then return jsonb_build_object('ok',false,'error','supervisor must be an active Vice Admin, Super Admin or Owner'); end if;
+  select 1 from public.users u where u.id=p_supervisor_id and u.banned=false and coalesce(u.is_deactivated,false)=false and
+   (u.role in ('owner','super_admin')
+    or exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.role='vice_admin' and si.appointment_status='active')
+    or (v_inv.role='staff_member' and u.role='support_agent' and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.role='support_agent' and si.appointment_status='active' and si.permissions ? 'can_supervise_staff')))
+ ) then return jsonb_build_object('ok',false,'error','supervisor must be an active authorized team supervisor'); end if;
  update public.staff_invitations set official_title=trim(p_title),department=nullif(trim(p_department),''),supervisor_id=p_supervisor_id,updated_at=now() where id=v_inv.id;
  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,old_value,new_value)
  values(v_uid,'team_appointment_details_updated',v_inv.accepted_by,'staff_invitations',v_inv.id,
@@ -1308,7 +1344,7 @@ begin
  into v_rows from public.team_tasks t
  where t.assigned_to=v_uid
     or (v_role in ('super_admin','owner'))
-    or (v_role='vice_admin' and t.supervisor_id=v_uid and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_tasks'))
+    or (v_role='vice_admin' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_tasks'))
     or (v_role='support_agent' and t.supervisor_id=v_uid and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_supervise_staff'));
  return jsonb_build_object('ok',true,'tasks',v_rows);
 end;$function$;
@@ -1385,6 +1421,8 @@ begin
  if not exists(select 1 from public.team_conversation_members where conversation_id=p_conversation_id and user_id=v_uid) then return jsonb_build_object('ok',false,'error','not a conversation member'); end if;
  insert into public.team_messages(conversation_id,sender_id,body,attachment_url)
  values(p_conversation_id,v_uid,trim(p_body),p_attachment_url) returning id into v_id;
+ insert into public.admin_audit_log(actor_id,action,target_table,target_id,new_value)
+ values(v_uid,'team_message_sent','team_conversations',p_conversation_id,jsonb_build_object('message_id',v_id,'has_attachment',p_attachment_url is not null));
  return jsonb_build_object('ok',true,'message_id',v_id);
 end;$function$;
 
