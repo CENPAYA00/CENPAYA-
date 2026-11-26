@@ -26,6 +26,8 @@ binding = "AI"
 # FRONTEND_URL = canonical frontend origin
 # GOOGLE_REDIRECT_URI = https://<this-worker-host>/api/auth/google/callback
 # AI_SEARCH_NAME = exact existing Cenpaya AI Search index/project name
+# AI_ASSISTANT_MODEL = optional Workers AI model override (defaults to @cf/google/gemma-4-26b-a4b-it)
+# AI_ASSISTANT_GATEWAY = optional AI Gateway ID for configured gateway routing
 # SESSION_TTL_SECONDS = optional
 #
 # Configure these Worker secrets:
