@@ -195,7 +195,7 @@ begin
    if v_inv.id is null then return jsonb_build_object('ok',false,'error','appointment is not active'); end if;
  end if;
  select coalesce(jsonb_agg(permission_key),'[]'::jsonb) into v_perms from public.admin_permissions where user_id=v_uid and revoked_at is null;
- return jsonb_build_object('ok',true,'role',v_role,'permissions',v_perms,'title',v_inv.official_title,'department',v_inv.department,'supervisor_id',v_inv.supervisor_id,'appointment_status',case when v_role in ('owner','super_admin') then 'active' else v_inv.appointment_status end);
+ return jsonb_build_object('ok',true,'user_id',v_uid,'role',v_role,'permissions',v_perms,'title',v_inv.official_title,'department',v_inv.department,'supervisor_id',v_inv.supervisor_id,'appointment_status',case when v_role in ('owner','super_admin') then 'active' else v_inv.appointment_status end);
 end;$function$;
 
 create or replace function public.admin_list_invitations()
