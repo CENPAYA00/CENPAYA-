@@ -23,6 +23,7 @@ const PERMISSIONS = [
 export default function AdminStaff() {
   const [invitations, setInvitations] = useState<any[]>([]);
   const [showInvite, setShowInvite] = useState(false);
+  const [editingInvite, setEditingInvite] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
@@ -270,6 +271,9 @@ export default function AdminStaff() {
           )}
           {inv.status === 'accepted' && (
             <div className="flex flex-wrap gap-1.5 mt-2">
+              {(inv.role !== 'vice_admin' || canConfigureViceAdmin) && (
+                <button onClick={() => setEditingInvite(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-blue-50 text-blue-700">Edit permissions</button>
+              )}
               {inv.appointment_status === 'suspended' ? (
                 <button onClick={() => void setAppointmentStatus(inv.id, 'active')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-green-100 text-green-700">Reactivate</button>
               ) : inv.appointment_status !== 'removed' ? (
@@ -284,6 +288,7 @@ export default function AdminStaff() {
       ))}
 
       {showInvite && <InviteSheet members={teamMembers} allowViceAdmin={canAppointViceAdmin} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
+      {editingInvite && <EditPermissionsSheet invitation={editingInvite} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setEditingInvite(null)} onSaved={() => { setEditingInvite(null); load(); }} />}
     </div>
   );
 }
@@ -424,3 +429,40 @@ function InviteSheet({ onClose, onCreated, members = [], allowViceAdmin = false,
     </div>
   );
     }
+
+function EditPermissionsSheet({ invitation, canConfigureViceAdmin, onClose, onSaved }: any) {
+  const role = invitation.role as 'support_agent' | 'staff_member' | 'vice_admin';
+  const required = role === 'support_agent' ? ['can_manage_tickets','can_escalate','can_supervise_staff'] : role === 'staff_member' ? ['can_submit_reports'] : [];
+  const allowed = PERMISSIONS.filter(p => role === 'support_agent'
+    ? ['can_resolve_disputes','can_manage_tickets','can_review_reports','can_escalate','can_supervise_staff'].includes(p.key)
+    : role === 'vice_admin'
+      ? ['can_manage_support_agents','can_manage_staff','can_manage_departments','can_manage_tasks','can_review_reports','can_manage_escalations','can_view_team_metrics','can_manage_team_communications'].includes(p.key)
+      : ['can_manage_listings','can_review_reports','can_review_kyc','can_submit_reports'].includes(p.key));
+  const [permissions,setPermissions] = useState<string[]>(Array.isArray(invitation.permissions) ? invitation.permissions : []);
+  const [busy,setBusy] = useState(false);
+  const [error,setError] = useState('');
+  const save = async () => {
+    setBusy(true);setError('');
+    try {
+      const result = await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/admin_update_team_permissions',{
+        method:'POST',body:JSON.stringify({args:{p_invitation_id:invitation.id,p_permissions:permissions}})
+      });
+      if(!result.data?.ok)throw new Error(result.data?.error||'Permission update failed.');
+      onSaved();
+    } catch(e:any){setError(e?.message||'Could not update permissions.');}
+    finally{setBusy(false);}
+  };
+  return (
+    <div className="fixed inset-0 z-[220] bg-black/50 flex items-end" onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} className="w-full max-h-[85vh] overflow-y-auto bg-white dark:bg-darkcard rounded-t-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-navy dark:text-white">Permissions · {role.replace('_',' ')}</h3><button onClick={onClose}><X size={18}/></button></div>
+        {allowed.map(p=><label key={p.key} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-gray-50 dark:bg-darkbg text-xs">
+          <span>{p.label}{required.includes(p.key)?' (required)':''}</span>
+          <input type="checkbox" checked={permissions.includes(p.key)||required.includes(p.key)} disabled={required.includes(p.key)||busy||(role==='vice_admin'&&!canConfigureViceAdmin)} onChange={e=>setPermissions(prev=>e.target.checked?[...prev,p.key]:prev.filter(x=>x!==p.key))}/>
+        </label>)}
+        {error&&<p className="text-xs text-red-600">{error}</p>}
+        <button disabled={busy||(role==='vice_admin'&&!canConfigureViceAdmin)} onClick={()=>void save()} className="w-full bg-accent text-white rounded-lg py-3 text-xs font-bold disabled:opacity-50">{busy?'Saving...':'Save permissions'}</button>
+      </div>
+    </div>
+  );
+}
