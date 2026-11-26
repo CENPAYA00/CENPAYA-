@@ -111,7 +111,16 @@ begin
   ) perf),
   'open_escalations',(select count(*) from public.team_escalations where status in ('open','in_progress')),
   'tickets_open',(select count(*) from public.platform_tickets where status in ('open','in_progress')),
-  'recent_audit',(select coalesce(jsonb_agg(jsonb_build_object('id',a.id,'actor_id',a.actor_id,'action',a.action,'target_user_id',a.target_user_id,'created_at',a.created_at,'new_value',a.new_value) order by a.created_at desc),'[]'::jsonb) from (select * from public.admin_audit_log where target_table in ('staff_invitations','team_tasks','team_escalations') order by created_at desc limit 30) a)
+  'recent_audit',(select coalesce(jsonb_agg(jsonb_build_object('id',a.id,'actor_id',a.actor_id,'action',a.action,'target_user_id',a.target_user_id,'created_at',a.created_at,'new_value',a.new_value) order by a.created_at desc),'[]'::jsonb) from (select * from public.admin_audit_log where target_table in ('staff_invitations','team_tasks','team_escalations') order by created_at desc limit 30) a),
+  'recent_tickets',(select coalesce(jsonb_agg(jsonb_build_object(
+    'id',t.id,'subject',t.subject,'status',t.status,'customer',(select username from public.users where id=t.user_id),
+    'assigned_agent_id',t.assigned_agent_id,'handled_by',(select username from public.users where id=t.assigned_agent_id),
+    'updated_at',t.updated_at
+  ) order by t.updated_at desc),'[]'::jsonb) from (select * from public.platform_tickets order by updated_at desc limit 20) t),
+  'recent_tasks',(select coalesce(jsonb_agg(jsonb_build_object(
+    'id',t.id,'title',t.title,'status',t.status,'assignee',(select username from public.users where id=t.assigned_to),
+    'supervisor',(select username from public.users where id=t.supervisor_id),'due_at',t.due_at,'updated_at',t.updated_at
+  ) order by t.updated_at desc),'[]'::jsonb) from (select * from public.team_tasks order by updated_at desc limit 20) t)
  ) into v_result;
  return jsonb_build_object('ok',true,'overview',v_result);
 end;$function$;
