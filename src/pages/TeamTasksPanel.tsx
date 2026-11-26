@@ -78,7 +78,7 @@ export default function TeamTasksPanel() {
           <h3 className="text-sm font-bold text-navy dark:text-white flex items-center gap-2"><Plus size={15}/> Assign a task</h3>
           <select value={assignee} onChange={e=>setAssignee(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs">
             <option value="">Select active Staff Member</option>
-            {members.filter(m=>m.role==='staff_member').map(m=><option key={m.id} value={m.id}>@{m.username} {m.department ? '· '+m.department : ''}</option>)}
+            {members.filter(m=>m.role==='staff_member' && m.appointment_status==='active' && (profile?.role!=='support_agent' || m.supervisor_id===profile?.user_id)).map(m=><option key={m.id} value={m.id}>@{m.username} {m.department ? '· '+m.department : ''}</option>)}
           </select>
           <input value={title} onChange={e=>setTitle(e.target.value)} maxLength={160} placeholder="Task title" className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"/>
           <textarea value={description} onChange={e=>setDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Instructions, expected outcome and required evidence" className="w-full p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"/>
