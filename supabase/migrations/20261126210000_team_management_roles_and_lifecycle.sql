@@ -154,6 +154,7 @@ begin
  select * into v_inv from public.staff_invitations where invite_token=p_token and status='pending' and appointment_status='pending' for update;
  if v_inv.id is null then return jsonb_build_object('ok',false,'error','invalid or expired invitation'); end if;
  if lower(coalesce(v_email,''))<>lower(v_inv.email) then return jsonb_build_object('ok',false,'error','email does not match invitation'); end if;
+ if exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and id<>v_inv.id) then return jsonb_build_object('ok',false,'error','an active team appointment already exists for this account'); end if;
  if v_inv.expires_at<now() then update public.staff_invitations set status='expired',appointment_status='removed',updated_at=now() where id=v_inv.id; return jsonb_build_object('ok',false,'error','invitation expired'); end if;
  if exists(select 1 from public.users where id=v_uid and role in ('owner','super_admin')) then return jsonb_build_object('ok',false,'error','administrators cannot accept team invitations'); end if;
  perform set_config('app.role_change_authorized','true',true);
@@ -227,7 +228,9 @@ begin
    end loop;
  else
    update public.admin_permissions set revoked_at=now() where user_id=v_inv.accepted_by and permission_key not in ('owner','super_admin') and revoked_at is null;
+   perform set_config('app.role_change_authorized','true',true);
    update public.users set role='user' where id=v_inv.accepted_by and role=v_inv.role;
+   perform set_config('app.role_change_authorized','false',true);
  end if;
  insert into public.admin_audit_log(actor_id,action,target_user_id,target_table,target_id,old_value,new_value)
  values(v_uid,'team_appointment_'||p_status,v_inv.accepted_by,'staff_invitations',v_inv.id,jsonb_build_object('status',v_inv.appointment_status),jsonb_build_object('status',p_status,'role',v_inv.role));
