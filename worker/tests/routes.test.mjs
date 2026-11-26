@@ -118,6 +118,62 @@ void describe("CenPaya financial API routes", () => {
     assert.equal(invoked.args.p_key, "fee_pct_member");
   });
 
+  void it("accepts a Vice Admin appointment without requiring a D1 workspace sync", async () => {
+    let invoked = null;
+    const supabase = {
+      rpc: async (name, args) => {
+        invoked = { name, args };
+        return { data: { ok: true, role: "vice_admin", title: "Operations Supervisor", department: "Operations", permissions: [] }, error: null };
+      },
+    };
+    const request = new Request("https://worker.test/api/v1/staff/invitations/accept", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "a".repeat(32) }),
+    });
+    const response = await handleAuthenticatedApi(request, "8d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c11", supabase, new Headers(), {});
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(invoked.name, "accept_staff_invitation");
+    assert.equal(payload.data.role, "vice_admin");
+    assert.equal(payload.data.title, "Operations Supervisor");
+  });
+
+  void it("allows the extended Vice Admin invitation RPC contract", async () => {
+    let invoked = null;
+    const supabase = {
+      rpc: async (name, args) => { invoked = { name, args }; return { data: { ok: true }, error: null }; },
+    };
+    const request = new Request("https://worker.test/api/v1/admin/rpc/admin_invite_staff", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ args: {
+        p_email: "vice@example.com", p_role: "vice_admin", p_permissions: [],
+        p_title: "Operations Supervisor", p_department: "Operations", p_supervisor_id: null,
+      } }),
+    });
+    const response = await handleAuthenticatedApi(request, "8d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c11", supabase, new Headers(), {});
+    assert.equal(response.status, 200);
+    assert.equal(invoked.name, "admin_invite_staff");
+    assert.equal(invoked.args.p_role, "vice_admin");
+  });
+
+  void it("rejects malformed team task evidence before reaching Supabase", async () => {
+    let invoked = false;
+    const supabase = { rpc: async () => { invoked = true; return { data: { ok: true }, error: null }; } };
+    const request = new Request("https://worker.test/api/v1/admin/rpc/team_update_task", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ args: {
+        p_task_id: "8d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c11",
+        p_status: "submitted", p_body: "Report submitted", p_attachment_url: "javascript:alert(1)",
+      } }),
+    });
+    const response = await handleAuthenticatedApi(request, "8d4c4d42-5b92-4bd3-9f9d-8f3e8f9e5c11", supabase, new Headers(), {});
+    assert.equal(response.status, 400);
+    assert.equal(invoked, false);
+  });
+
   void it("does not expose Supabase auth/password RPCs through the generic admin route", async () => {
     let invoked = false;
     const supabase = { rpc: async () => { invoked = true; return { data: { ok: true }, error: null }; } };
