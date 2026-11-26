@@ -28,6 +28,7 @@ binding = "AI"
 # AI_SEARCH_NAME = exact existing CenPaya AI Search index/project name
 # AI_ASSISTANT_MODEL = optional Workers AI model override (defaults to @cf/google/gemma-4-26b-a4b-it)
 # AI_ASSISTANT_GATEWAY = optional AI Gateway ID for configured gateway routing
+# GEMINI_PROJECT_NUMBER = optional Google project metadata (not used for Gemini API authentication)
 # SUPABASE_AI_READ_URL = deployed Supabase cenpaya-ai-read Edge Function URL (HTTPS only)
 # SESSION_TTL_SECONDS = optional
 #
@@ -37,6 +38,7 @@ binding = "AI"
 # D1_TO_SUPABASE_HMAC_SECRET (must match the Supabase Edge Function secret; 32+ random bytes)
 # GOOGLE_CLIENT_ID
 # GOOGLE_CLIENT_SECRET
+# GEMINI_API_KEY (Gemini Developer API key; secret)
 # UPSTASH_REDIS_REST_TOKEN (optional)
 # MEDIA_URL_SIGNING_SECRET
 # UPSTASH_REDIS_REST_URL may be a variable; Redis is optional.
