@@ -1,12 +1,15 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { Home, Inbox, Flag, LogOut } from 'lucide-react';
+import { Home, Inbox, Flag, LogOut, Users, MessageCircle, AlertTriangle, LayoutDashboard } from 'lucide-react';
 import { d1Me, d1Logout } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
 export default function StaffLayout() {
   const navigate = useNavigate();
   const [checking, setChecking] = useState(true);
   const [authorized, setAuthorized] = useState(false);
+  const [workspaceRole, setWorkspaceRole] = useState('');
+  const [workspacePermissions, setWorkspacePermissions] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,13 +24,25 @@ export default function StaffLayout() {
       if (cancelled) return;
       if (!user) { navigate('/'); return; }
 
-      const role = user.role;
-      const allowed = ['support_agent', 'super_admin', 'owner'].includes(role);
+      let role = '';
+      let allowed = false;
+      try {
+        const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string; permissions?: string[] } }>(
+          '/api/v1/admin/rpc/staff_my_profile',
+          { method: 'POST', body: JSON.stringify({ args: {} }) },
+        );
+        if (appointment.data?.ok && appointment.data.role) {
+          role = appointment.data.role;
+          allowed = true;
+          setWorkspacePermissions(appointment.data.permissions || []);
+        }
+      } catch { /* No active team appointment: deny workspace access. */ }
       if (!allowed) {
-        alert(`Access denied. Your role is: ${role || 'unknown'}`);
+        alert('Access denied. No active team appointment was found.');
         navigate('/home');
         return;
       }
+      setWorkspaceRole(role);
       setAuthorized(true);
       setChecking(false);
     };
@@ -40,10 +55,27 @@ export default function StaffLayout() {
     navigate('/');
   };
 
-  const tabs = [
-    { path: '/staff',         icon: <Inbox size={15} />, label: 'Tickets' },
-    { path: '/staff/reports', icon: <Flag size={15} />,  label: 'Reports' },
-  ];
+  const tabs = workspaceRole === 'staff_member'
+    ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'My Tasks' }, { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' }]
+    : workspaceRole === 'vice_admin'
+      ? [
+          { path: '/vice-admin', icon: <LayoutDashboard size={15} />, label: 'Overview' },
+          { path: '/staff/tasks', icon: <Flag size={15} />, label: 'Team Tasks' },
+          { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' },
+          ...(['can_manage_staff','can_manage_support_agents'].some(p => workspacePermissions.includes(p)) ? [{ path: '/staff/management', icon: <Users size={15} />, label: 'Team Management' }] : []),
+        ]
+      : workspaceRole === 'support_agent'
+        ? [
+            { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
+            { path: '/staff/tasks', icon: <Flag size={15} />, label: 'Staff Tasks' },
+            { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' },
+          ]
+        : [
+            { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
+            { path: '/vice-admin', icon: <LayoutDashboard size={15} />, label: 'Overview' },
+            { path: '/staff/tasks', icon: <Flag size={15} />, label: 'Team Tasks' },
+            { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' },
+          ];
 
   if (checking) {
     return (
@@ -60,7 +92,7 @@ export default function StaffLayout() {
       <header className="bg-gradient-to-r from-brand to-brand-dark text-white px-3.5 py-2.5 flex justify-between items-center sticky top-0 z-50 shadow-md">
         <div>
           <h1 className="text-[14px] font-black tracking-tight">CenPaya</h1>
-          <p className="text-[9px] text-accent-light font-bold tracking-widest">STAFF</p>
+          <p className="text-[9px] text-accent-light font-bold tracking-widest">{workspaceRole === 'support_agent' ? 'SUPPORT AGENT' : workspaceRole === 'vice_admin' ? 'VICE ADMIN' : workspaceRole === 'owner' || workspaceRole === 'super_admin' ? 'ADMIN SUPPORT' : 'STAFF MEMBER'}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
