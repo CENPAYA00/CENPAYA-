@@ -2,3 +2,9 @@
 # signature in the function; do not disable this check or expose its secret.
 [functions.cenpaya-financial]
 verify_jwt = false
+
+# Internal AI data bridge. Supabase Auth JWT verification is disabled because
+# the function verifies short-lived, one-use D1 identity assertions itself.
+# Never expose this endpoint or its service-role credentials to the frontend.
+[functions.cenpaya-ai-read]
+verify_jwt = false
