@@ -27,9 +27,9 @@ export default function StaffAccept() {
     setStatus('accepting');
     setError('');
     try {
-      const result = await supabaseWorkerRequest<{ data: { ok: boolean; role: string; title?: string; department?: string; supervisor_id?: string; permissions?: string[]; error?: string } }>('/api/v1/admin/rpc/accept_staff_invitation', {
+      const result = await supabaseWorkerRequest<{ data: { ok: boolean; role: string; title?: string; department?: string; supervisor_id?: string; permissions?: string[]; error?: string } }>('/api/v1/staff/invitations/accept', {
         method: 'POST',
-        body: JSON.stringify({ args: { p_token: token } }),
+        body: JSON.stringify({ token }),
       });
       if (!result.data?.ok) throw new Error(result.data?.error || 'Invitation could not be accepted.');
       const acceptedRole = result.data?.role;
