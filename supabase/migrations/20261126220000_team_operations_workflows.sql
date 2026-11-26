@@ -172,7 +172,7 @@ begin
  select role into v_role from public.users where id=v_uid and banned=false;
  if v_role not in ('support_agent','staff_member','vice_admin','super_admin','owner') then return jsonb_build_object('ok',false,'error','team access required'); end if;
  if v_role='staff_member' and not exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active') then return jsonb_build_object('ok',false,'error','appointment inactive'); end if;
- if p_level not in ('vice_admin','super_admin','owner') or p_reason is null or char_length(trim(p_reason)) not between 5 and 5000 then return jsonb_build_object('ok',false,'error','invalid escalation'); end if;
+ if p_level is null or p_level not in ('vice_admin','super_admin','owner') or p_reason is null or char_length(trim(p_reason)) not between 5 and 5000 then return jsonb_build_object('ok',false,'error','invalid escalation'); end if;
  if p_level='owner' and v_role not in ('vice_admin','super_admin','owner') then return jsonb_build_object('ok',false,'error','owner escalation only for supervisors'); end if;
  insert into public.team_escalations(ticket_id,task_id,raised_by,assigned_to,escalation_level,reason)
  values(p_ticket_id,p_task_id,v_uid,p_assigned_to,p_level,trim(p_reason)) returning id into v_id;
@@ -203,7 +203,7 @@ begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
  select role into v_role from public.users where id=v_uid and banned=false;
  if v_role not in ('vice_admin','super_admin','owner') then return jsonb_build_object('ok',false,'error','supervisor access required'); end if;
- if p_status not in ('open','in_progress','resolved','dismissed') then return jsonb_build_object('ok',false,'error','invalid status'); end if;
+ if p_status is null or p_status not in ('open','in_progress','resolved','dismissed') then return jsonb_build_object('ok',false,'error','invalid status'); end if;
  update public.team_escalations set status=p_status,resolution_note=nullif(trim(p_note),''),updated_at=now(),resolved_at=case when p_status in ('resolved','dismissed') then now() else null end
  where id=p_id and (v_role in ('super_admin','owner') or assigned_to=v_uid or escalation_level='vice_admin');
  if not found then return jsonb_build_object('ok',false,'error','escalation not found or not authorized'); end if;
