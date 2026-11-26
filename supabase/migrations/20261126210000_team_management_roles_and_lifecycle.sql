@@ -250,7 +250,7 @@ returns jsonb language plpgsql security definer set search_path=public,pg_temp
 as $function$
 declare v_uid uuid:=auth.uid(); v_inv public.staff_invitations%rowtype; v_allowed text[];
 begin
- if v_uid is null or not (public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_staff')) then return jsonb_build_object('ok',false,'error','team permissions management required'); end if;
+ if v_uid is null or not (public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and (permissions ? 'can_manage_staff' or permissions ? 'can_manage_support_agents'))) then return jsonb_build_object('ok',false,'error','team permissions management required'); end if;
  select * into v_inv from public.staff_invitations where id=p_invitation_id and appointment_status='active' for update;
  if v_inv.id is null then return jsonb_build_object('ok',false,'error','active appointment not found'); end if;
  if v_inv.role='vice_admin' and not public.is_owner() then return jsonb_build_object('ok',false,'error','only Owner may change Vice Admin permissions'); end if;
@@ -263,6 +263,11 @@ begin
  end;
  if p_permissions is null or jsonb_typeof(p_permissions)<>'array' or jsonb_array_length(p_permissions)>30
  or exists(select 1 from jsonb_array_elements_text(p_permissions) x(value) where x.value<>all(v_allowed)) then return jsonb_build_object('ok',false,'error','invalid permissions for role'); end if;
+ if v_inv.role='support_agent' then
+   p_permissions:=p_permissions || jsonb_build_array('can_manage_tickets','can_escalate','can_supervise_staff');
+ elsif v_inv.role='staff_member' then
+   p_permissions:=p_permissions || jsonb_build_array('can_submit_reports');
+ end if;
  update public.staff_invitations set permissions=p_permissions,updated_at=now() where id=v_inv.id;
  update public.admin_permissions set revoked_at=now() where user_id=v_inv.accepted_by and permission_key not in ('owner','super_admin') and revoked_at is null;
  insert into public.admin_permissions(user_id,permission_key,granted_by)
