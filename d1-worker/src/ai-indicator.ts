@@ -89,6 +89,43 @@ export async function analyzeListingText(env: Env, title: string, description: s
   }
 }
 
+/**
+ * Analyze seller-uploaded listing images through Gemini. Only images already validated
+ * as owned listing media are sent. Large/unsupported files are skipped safely.
+ */
+export async function analyzeListingImages(env: Env, imageKeys: string[]): Promise<{status:"completed"|"unavailable"; classification:"possible_ai_generated"|"no_clear_signal"|"inconclusive"; confidence:number|null; reason:string; model:string|null}> {
+  if (!env.GEMINI_API_KEY) return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"AI image analysis is not configured",model:null};
+  if (!env.MEDIA_BUCKET || imageKeys.length === 0) return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"No listing images are available for analysis",model:null};
+  const parts: Array<Record<string, unknown>> = [{text:"Assess whether these public product/service listing images show visual signals of AI-generated or synthetically altered imagery. Do not claim certainty or infer authorship from polish alone. If uncertain, return inconclusive. Return only JSON with classification (possible_ai_generated, no_clear_signal, inconclusive), confidence from 0 to 1, and a short reason."}];
+  for (const key of imageKeys.slice(0,4)) {
+    try {
+      const object = await env.MEDIA_BUCKET.get(key);
+      if (!object || object.size > 4 * 1024 * 1024) continue;
+      const mime = object.httpMetadata?.contentType || "application/octet-stream";
+      if (!["image/jpeg","image/png","image/webp"].includes(mime)) continue;
+      const bytes = new Uint8Array(await object.arrayBuffer());
+      let binary = "";
+      for (let i=0;i<bytes.length;i+=0x8000) binary += String.fromCharCode(...bytes.subarray(i,i+0x8000));
+      parts.push({inlineData:{mimeType:mime,data:btoa(binary)}});
+    } catch { /* A single inaccessible image must not block the listing. */ }
+  }
+  if (parts.length===1) return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"No supported images were available for analysis",model:null};
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),9000);
+  try {
+    const response=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":env.GEMINI_API_KEY},signal:controller.signal,body:JSON.stringify({
+      contents:[{role:"user",parts}],
+      generationConfig:{temperature:0,responseMimeType:"application/json",responseSchema:{type:"OBJECT",properties:{classification:{type:"STRING",enum:["possible_ai_generated","no_clear_signal","inconclusive"]},confidence:{type:"NUMBER"},reason:{type:"STRING"}},required:["classification","confidence","reason"]}}
+    })});
+    if(!response.ok)return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"AI image analysis is temporarily unavailable",model:null};
+    const raw=await response.json() as Record<string,unknown>;
+    const parsed=parseModelResult(raw);
+    if(!parsed)return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"Image analysis returned an unreadable result",model:null};
+    return {status:"completed",classification:parsed.classification==="possible_ai_generated"?"possible_ai_generated":parsed.classification==="no_clear_signal"?"no_clear_signal":"inconclusive",confidence:parsed.confidence,reason:parsed.reason,model:MODEL};
+  } catch { return {status:"unavailable",classification:"inconclusive",confidence:null,reason:"AI image analysis is temporarily unavailable",model:null}; }
+  finally {clearTimeout(timeout);}
+}
+
 export async function handleAiIndicatorRoutes(
   request: Request, env: Env, path: string, method: string, user: User | null,
 ): Promise<Response | null> {
