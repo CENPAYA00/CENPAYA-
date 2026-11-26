@@ -47,7 +47,6 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
         }
         const { data } = await supabase.from('users').select('is_subscribed').eq('id', user.id).maybeSingle();
         setIsSubscribed(!!data?.is_subscribed);
-      } catch { setUsername('User'); }
       } catch {
         setUsername('User');
         setWorkspacePath(null);
