@@ -14,7 +14,9 @@ begin
  if not v_can then return jsonb_build_object('ok',false,'error','team appointment management permission required'); end if;
  select coalesce(jsonb_agg(to_jsonb(i) order by i.created_at desc),'[]'::jsonb) into v_rows
  from public.staff_invitations i
- where v_role in ('owner','super_admin') or i.role in ('support_agent','staff_member');
+ where v_role in ('owner','super_admin')
+    or (i.role='support_agent' and exists(select 1 from public.staff_invitations me where me.accepted_by=v_uid and me.appointment_status='active' and me.permissions ? 'can_manage_support_agents'))
+    or (i.role='staff_member' and exists(select 1 from public.staff_invitations me where me.accepted_by=v_uid and me.appointment_status='active' and me.permissions ? 'can_manage_staff'));
  return jsonb_build_object('ok',true,'invitations',v_rows);
 end;$function$;
 
@@ -63,10 +65,10 @@ begin
  insert into public.team_conversation_members(conversation_id,user_id,added_by)
  values(v_id,v_uid,v_uid) on conflict do nothing;
  insert into public.team_conversation_members(conversation_id,user_id,added_by)
- select v_id,m,v_uid from unnest(coalesce(p_member_ids,'{}'::uuid[])) m
- join public.users u on u.id=m and u.role in ('owner','super_admin')
-    or (u.id=m and u.role in ('vice_admin','support_agent','staff_member')
-        and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active'))
+ select v_id,selected.user_id,v_uid from unnest(coalesce(p_member_ids,'{}'::uuid[])) as selected(user_id)
+ join public.users u on u.id=selected.user_id and (u.role in ('owner','super_admin')
+    or (u.role in ('vice_admin','support_agent','staff_member')
+        and exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active')))
  on conflict do nothing;
  insert into public.admin_audit_log(actor_id,action,target_table,target_id,new_value)
  values(v_uid,'team_conversation_created','team_conversations',v_id,jsonb_build_object('type',p_type,'member_count',coalesce(array_length(p_member_ids,1),0)));
