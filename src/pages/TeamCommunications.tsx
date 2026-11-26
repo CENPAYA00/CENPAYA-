@@ -8,6 +8,7 @@ export default function TeamCommunications() {
   const [selected,setSelected]=useState<any>(null);
   const [messages,setMessages]=useState<any[]>([]);
   const [body,setBody]=useState('');
+  const [attachmentUrl,setAttachmentUrl]=useState('');
   const [selectedMembers,setSelectedMembers]=useState<string[]>([]);
   const [title,setTitle]=useState('');
   const [type,setType]=useState<'direct'|'department'|'announcement'|'escalation'>('direct');
@@ -56,10 +57,10 @@ export default function TeamCommunications() {
     setBusy(true);
     try{
       const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_send_message',{
-        method:'POST',body:JSON.stringify({args:{p_conversation_id:selected.id,p_body:body.trim(),p_attachment_url:null}})
+        method:'POST',body:JSON.stringify({args:{p_conversation_id:selected.id,p_body:body.trim(),p_attachment_url:attachmentUrl.trim()||null}})
       });
       if(!r.data?.ok)throw new Error(r.data?.error||'Message could not be sent.');
-      setBody('');await loadMessages(selected.id);await loadConversations();
+      setBody('');setAttachmentUrl('');await loadMessages(selected.id);await loadConversations();
     }catch(e:any){setError(e?.message||'Could not send message.');}
     finally{setBusy(false);}
   };
@@ -96,7 +97,7 @@ export default function TeamCommunications() {
             <div className="flex-1 overflow-y-auto p-3 space-y-2 max-h-[55vh]">
               {messages.map(m=><div key={m.id} className="rounded-xl bg-gray-50 dark:bg-darkbg p-2.5"><p className="text-[9px] font-bold text-accent">@{m.sender_name}</p><p className="text-xs text-navy dark:text-gray-100 whitespace-pre-wrap mt-1">{m.body}</p><p className="text-[8px] text-gray-400 mt-1">{new Date(m.created_at).toLocaleString()}</p>{m.attachment_url&&<a href={m.attachment_url} target="_blank" rel="noreferrer" className="text-[10px] text-accent underline">Open attachment</a>}</div>)}
             </div>
-            <form onSubmit={e=>{e.preventDefault();void send();}} className="p-2 border-t border-gray-100 dark:border-darkline flex gap-2"><input value={body} onChange={e=>setBody(e.target.value)} maxLength={10000} placeholder="Write an internal message..." className="flex-1 min-w-0 p-2.5 rounded-full bg-gray-50 dark:bg-darkbg text-xs"/><button disabled={busy||!body.trim()} className="w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center disabled:opacity-50"><Send size={14}/></button></form>
+            <form onSubmit={e=>{e.preventDefault();void send();}} className="p-2 border-t border-gray-100 dark:border-darkline space-y-2"><input value={body} onChange={e=>setBody(e.target.value)} maxLength={10000} placeholder="Write an internal message..." className="w-full min-w-0 p-2.5 rounded-full bg-gray-50 dark:bg-darkbg text-xs"/><div className="flex gap-2"><input value={attachmentUrl} onChange={e=>setAttachmentUrl(e.target.value)} placeholder="Attachment link (document, screenshot or report)" className="flex-1 min-w-0 p-2 rounded-lg bg-gray-50 dark:bg-darkbg text-[10px]"/><button disabled={busy||!body.trim()} className="w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center disabled:opacity-50"><Send size={14}/></button></div></form>
           </>}
         </section>
       </div>
