@@ -18,6 +18,8 @@ alter table public.staff_invitations
   add column if not exists removed_at timestamptz,
   add column if not exists removed_by uuid references public.users(id) on delete set null;
 
+update public.staff_invitations set appointment_status=case when status='accepted' then 'active' when status in ('revoked','expired') then 'removed' else 'pending' end where appointment_status='pending' and status<>'pending';
+
 alter table public.staff_invitations drop constraint if exists staff_invitations_appointment_status_check;
 alter table public.staff_invitations add constraint staff_invitations_appointment_status_check
   check (appointment_status in ('pending','active','suspended','removed'));
@@ -126,7 +128,8 @@ begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
  if not (public.is_owner() or public.is_super_admin()) and not (p_role='support_agent' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_support_agents')) and not (p_role='staff_member' and exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_staff')) then return jsonb_build_object('ok',false,'error','team appointment management permission required'); end if;
  if p_role not in ('support_agent','staff_member','vice_admin') then return jsonb_build_object('ok',false,'error','invalid team role'); end if;
- if p_role='vice_admin' and not public.is_owner() then return jsonb_build_object('ok',false,'error','only Owner may appoint a Vice Admin'); end if;
+ if p_role='vice_admin' and not (public.is_owner() or public.is_super_admin()) then return jsonb_build_object('ok',false,'error','Owner or Super Admin required to appoint a Vice Admin'); end if;
+ if p_role='vice_admin' and not public.is_owner() and jsonb_array_length(p_permissions)>0 then return jsonb_build_object('ok',false,'error','only Owner may grant Vice Admin permissions'); end if;
  if p_email is null or p_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then return jsonb_build_object('ok',false,'error','invalid email'); end if;
  if p_permissions is null or jsonb_typeof(p_permissions)<>'array' or jsonb_array_length(p_permissions)>30 then return jsonb_build_object('ok',false,'error','invalid permissions'); end if;
  v_allowed:=case p_role
@@ -209,7 +212,7 @@ begin
  if p_status not in ('active','suspended','removed') then return jsonb_build_object('ok',false,'error','invalid appointment status'); end if;
  select * into v_inv from public.staff_invitations where id=p_invitation_id for update;
  if v_inv.id is null or v_inv.accepted_by is null then return jsonb_build_object('ok',false,'error','accepted appointment not found'); end if;
- if v_inv.role='vice_admin' and not public.is_owner() then return jsonb_build_object('ok',false,'error','only Owner may manage Vice Admin appointment'); end if;
+ if v_inv.role='vice_admin' and not (public.is_owner() or public.is_super_admin()) then return jsonb_build_object('ok',false,'error','Owner or Super Admin required to manage Vice Admin appointment'); end if;
  if v_inv.role='support_agent' and not (public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_support_agents')) then return jsonb_build_object('ok',false,'error','support agent management permission required'); end if;
  if v_inv.role='staff_member' and not (public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_staff')) then return jsonb_build_object('ok',false,'error','staff management permission required'); end if;
  if v_inv.role in ('owner','super_admin') then return jsonb_build_object('ok',false,'error','protected role'); end if;
