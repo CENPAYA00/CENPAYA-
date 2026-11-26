@@ -1,7 +1,7 @@
 import type { Env, User } from "./types.js";
 import { uuid, constantTimeEqual } from "./security.js";
 import { extractMediaKey, hydratePosts, resolveMediaUrl } from "./media.js";
-import { analyzeListingText } from "./ai-indicator.js";
+import { analyzeListingImages, analyzeListingText } from "./ai-indicator.js";
 type RouteContext = { url: URL; path: string; method: string; user: User | null };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
@@ -287,13 +287,14 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     await env.DB.batch([listingStatement,...mediaStatements]);
     // AI analysis is advisory and must never prevent a valid listing from being published.
     const aiIndicator = await analyzeListingText(env,title,description,type);
+    const aiMediaIndicator = await analyzeListingImages(env,imageKeys);
     try {
-      await env.DB.prepare("INSERT INTO ai_indicator_results(listing_id,seller_id,listing_type,status,classification,confidence,reason,model,updated_at) VALUES(?,?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(listing_id) DO UPDATE SET status=excluded.status,classification=excluded.classification,confidence=excluded.confidence,reason=excluded.reason,model=excluded.model,updated_at=excluded.updated_at")
-        .bind(id,user.id,type,aiIndicator.status,aiIndicator.classification,aiIndicator.confidence,aiIndicator.reason,aiIndicator.model).run();
+      await env.DB.prepare("INSERT INTO ai_indicator_results(listing_id,seller_id,listing_type,status,classification,confidence,reason,model,media_status,media_classification,media_confidence,media_reason,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(listing_id) DO UPDATE SET status=excluded.status,classification=excluded.classification,confidence=excluded.confidence,reason=excluded.reason,model=excluded.model,media_status=excluded.media_status,media_classification=excluded.media_classification,media_confidence=excluded.media_confidence,media_reason=excluded.media_reason,updated_at=excluded.updated_at")
+        .bind(id,user.id,type,aiIndicator.status,aiIndicator.classification,aiIndicator.confidence,aiIndicator.reason,aiIndicator.model,aiMediaIndicator.status,aiMediaIndicator.classification,aiMediaIndicator.confidence,aiMediaIndicator.reason).run();
     } catch (error) {
       console.warn("AI Indicator result could not be stored; listing remains published", error instanceof Error ? error.message : "unknown");
     }
-    return json({success:true,id,status:"active",ai_indicator:aiIndicator},201);
+    return json({success:true,id,status:"active",ai_indicator:{text:aiIndicator,media:aiMediaIndicator}},201);
   }
 
   return null;
