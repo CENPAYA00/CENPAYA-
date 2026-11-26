@@ -26,7 +26,7 @@ begin
   select * into v_ticket from public.platform_tickets where id=p_ticket_id;
   if v_ticket.id is null then return jsonb_build_object('ok',false,'error','not found'); end if;
 
-  v_is_elevated := public.is_owner() or public.is_super_admin();
+  v_is_elevated := public.is_owner() or public.is_super_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='vice_admin' and appointment_status='active' and permissions ? 'can_manage_support_agents');
   v_is_support := public.is_support_or_admin() or exists(select 1 from public.staff_invitations where accepted_by=v_uid and role='vice_admin' and appointment_status='active' and (permissions ? 'can_manage_tickets' or permissions ? 'can_manage_support_agents'));
   if v_ticket.user_id <> v_uid and not v_is_elevated
      and not (v_is_support and (v_ticket.assigned_agent_id is null or v_ticket.assigned_agent_id=v_uid)) then
