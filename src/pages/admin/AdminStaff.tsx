@@ -91,7 +91,7 @@ export default function AdminStaff() {
     const description = window.prompt('Department description (optional):') || null;
     try {
       const result = await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/admin_upsert_team_department',{
-        method:'POST',body:JSON.stringify({args:{p_name:name.trim(),p_description:description.trim()||null}})
+        method:'POST',body:JSON.stringify({args:{p_name:name.trim(),p_description:(description||'').trim()||null}})
       });
       if(!result.data?.ok)throw new Error(result.data?.error||'Could not save department.');
       await load();
