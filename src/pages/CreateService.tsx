@@ -79,7 +79,7 @@ export default function CreateService() {
       for (const doc of docs) docUrls.push(await uploadFile(doc, 'services/documents'));
 
       const finalPrice = usePriceRange ? Number(priceMin) : Number(price);
-      const result = await d1Request<{ id: string }>('/api/market/listings', {
+      const result = await d1Request<{ id: string; ai_indicator?: { text?: { status: string; classification: string }; media?: { status: string; classification: string } } }>('/api/market/listings', {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
@@ -99,7 +99,9 @@ export default function CreateService() {
         }),
       });
 
-      alert('Service published!');
+      const indicator = result.ai_indicator;
+      const indicatorNote = indicator ? ` AI Indicator: text ${indicator.text?.classification || 'pending'}, media ${indicator.media?.classification || 'pending'}.` : '';
+      alert('Service published!' + indicatorNote);
       navigate(boostAfterPublish ? `/boosted?type=listing&id=${encodeURIComponent(result.id)}` : `/service/${result.id}`);
     } catch (e: any) {
       setErrorMsg(e.message || 'Could not publish service.');
