@@ -31,6 +31,7 @@ export default function AdminStaff() {
   const [canConfigureViceAdmin, setCanConfigureViceAdmin] = useState(false);
   const [canManageTasks, setCanManageTasks] = useState(false);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [overview, setOverview] = useState<any>(null);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [taskAssignee, setTaskAssignee] = useState('');
@@ -43,13 +44,14 @@ export default function AdminStaff() {
     setLoading(true);
     setLoadError('');
     try {
-      const [invitationResult, usersResult, taskResult, profileResult] = await Promise.all([
+      const [invitationResult, usersResult, taskResult, profileResult, overviewResult] = await Promise.all([
         supabaseWorkerRequest<{ data: { ok?: boolean; invitations?: any[]; error?: string } }>('/api/v1/admin/rpc/admin_list_invitations', {
           method: 'POST', body: JSON.stringify({ args: {} }),
         }),
         supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_available_colleagues', { method: 'POST', body: JSON.stringify({ args: {} }) }),
         supabaseWorkerRequest<{ data: { ok?: boolean; tasks?: any[] } }>('/api/v1/admin/rpc/team_my_tasks', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { tasks: [] } })),
         supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) }),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: null })),
       ]);
       if (!invitationResult.data?.ok) throw new Error(invitationResult.data?.error || 'Could not load staff invitations.');
       setInvitations(invitationResult.data.invitations || []);
@@ -60,6 +62,7 @@ export default function AdminStaff() {
       setCanConfigureViceAdmin(profileResult.data?.role === 'owner');
       setCanManageTasks(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_tasks') || profileResult.data?.permissions?.includes('can_supervise_staff'));
       setTasks(taskResult.data?.tasks || []);
+      setOverview(overviewResult.data?.ok ? overviewResult.data.overview : null);
     } catch (error: any) {
       setLoadError(error?.message || 'Could not load staff administration.');
       setInvitations([]);
@@ -156,6 +159,15 @@ export default function AdminStaff() {
       </div>
 
       {loadError && <p role="alert" className="text-[11px] text-red-600 bg-red-50 rounded-lg p-3 mb-3">{loadError}</p>}
+      {overview && (
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+          {[
+            ['Active',overview.active_members],['Pending',overview.pending_appointments],['Suspended',overview.suspended_members],
+            ['Open tasks',overview.tasks_pending],['Overdue',overview.tasks_overdue],['Open escalations',overview.open_escalations],
+            ['Open tickets',overview.tickets_open],['Completed this month',overview.tasks_completed_month],
+          ].map(([label,value])=><div key={label as string} className="bg-white dark:bg-darkcard rounded-lg p-3 shadow-sm"><p className="text-lg font-black text-navy dark:text-white">{value as any}</p><p className="text-[9px] text-gray-500">{label}</p></div>)}
+        </section>
+      )}
 
       {canManageTasks && <section className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-3 mb-4">
         <h3 className="text-[13px] font-bold text-navy dark:text-white mb-2">Staff tasks</h3>
