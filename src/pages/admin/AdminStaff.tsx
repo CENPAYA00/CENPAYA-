@@ -1,34 +1,139 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseWorkerRequest } from '../../lib/supabaseWorkerApi';
 import { UserPlus, X, Mail, Shield, Copy, Check, Ban, Clock } from 'lucide-react';
 
 const PERMISSIONS = [
-  { key: 'can_resolve_disputes',  label: 'Resolve Disputes' },
-  { key: 'can_ban_users',         label: 'Ban Users' },
-  { key: 'can_review_kyc',        label: 'Review KYC' },
-  { key: 'can_view_finances',     label: 'View Platform Finances' },
-  { key: 'can_manage_listings',   label: 'Manage Listings' },
-  { key: 'can_manage_tickets',    label: 'Manage Support Tickets' },
-  { key: 'can_review_reports',    label: 'Review Reports' },
+  { key: 'can_resolve_disputes', label: 'Resolve Disputes' },
+  { key: 'can_review_kyc', label: 'Review KYC' },
+  { key: 'can_manage_listings', label: 'Manage Listings' },
+  { key: 'can_manage_tickets', label: 'Manage Support Tickets' },
+  { key: 'can_review_reports', label: 'Review Reports' },
+  { key: 'can_escalate', label: 'Escalate Serious Cases' },
+  { key: 'can_supervise_staff', label: 'Supervise Staff Members' },
+  { key: 'can_submit_reports', label: 'Submit Work Reports' },
+  { key: 'can_manage_support_agents', label: 'Manage Support Agents' },
+  { key: 'can_manage_staff', label: 'Manage Staff Members' },
+  { key: 'can_manage_departments', label: 'Manage Departments' },
+  { key: 'can_manage_tasks', label: 'Assign and Manage Tasks' },
+  { key: 'can_manage_escalations', label: 'Manage Escalations' },
+  { key: 'can_view_team_metrics', label: 'View Team Performance' },
+  { key: 'can_manage_team_communications', label: 'Manage Team Communications' },
 ];
 
 export default function AdminStaff() {
   const [invitations, setInvitations] = useState<any[]>([]);
   const [showInvite, setShowInvite] = useState(false);
+  const [editingInvite, setEditingInvite] = useState<any>(null);
+  const [editingAppointment, setEditingAppointment] = useState<any>(null);
+  const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [canAppointViceAdmin, setCanAppointViceAdmin] = useState(false);
+  const [canConfigureViceAdmin, setCanConfigureViceAdmin] = useState(false);
+  const [canManageTasks, setCanManageTasks] = useState(false);
+  const [canManageSupportAgents, setCanManageSupportAgents] = useState(false);
+  const [canManageStaffMembers, setCanManageStaffMembers] = useState(false);
+  const [canManageDepartments, setCanManageDepartments] = useState(false);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [overview, setOverview] = useState<any>(null);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
+  const [taskAssignee, setTaskAssignee] = useState('');
+  const [taskDue, setTaskDue] = useState('');
+  const [taskDepartment, setTaskDepartment] = useState('');
+  const [taskError, setTaskError] = useState('');
+  const [taskSaving, setTaskSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.rpc('admin_list_invitations');
-    setInvitations(data?.invitations || []);
-    setLoading(false);
+    setLoadError('');
+    try {
+      const [invitationResult, usersResult, taskResult, profileResult, overviewResult, departmentResult] = await Promise.all([
+        supabaseWorkerRequest<{ data: { ok?: boolean; invitations?: any[]; error?: string } }>('/api/v1/admin/rpc/admin_list_invitations', {
+          method: 'POST', body: JSON.stringify({ args: {} }),
+        }),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_available_colleagues', { method: 'POST', body: JSON.stringify({ args: {} }) }),
+        supabaseWorkerRequest<{ data: { ok?: boolean; tasks?: any[] } }>('/api/v1/admin/rpc/team_my_tasks', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { tasks: [] } })),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) }),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: null })),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_list_departments', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: null })),
+      ]);
+      if (!invitationResult.data?.ok) throw new Error(invitationResult.data?.error || 'Could not load staff invitations.');
+      setInvitations(invitationResult.data.invitations || []);
+      const colleagues = usersResult.data?.members || [];
+      setTeamMembers(colleagues);
+      setStaffMembers(colleagues.filter((user: any) => user.role === 'staff_member' && user.appointment_status === 'active'));
+      setCanAppointViceAdmin(['owner','super_admin'].includes(profileResult.data?.role));
+      setCanConfigureViceAdmin(profileResult.data?.role === 'owner');
+      setCanManageTasks(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_tasks') || profileResult.data?.permissions?.includes('can_supervise_staff'));
+      setCanManageSupportAgents(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_support_agents'));
+      setCanManageStaffMembers(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_staff'));
+      setCanManageDepartments(['owner','super_admin'].includes(profileResult.data?.role) || profileResult.data?.permissions?.includes('can_manage_departments'));
+      setTasks(taskResult.data?.tasks || []);
+      setOverview(overviewResult.data?.ok ? overviewResult.data.overview : null);
+      setDepartments(departmentResult.data?.ok ? departmentResult.data.departments || [] : []);
+    } catch (error: any) {
+      setLoadError(error?.message || 'Could not load staff administration.');
+      setInvitations([]);
+      setStaffMembers([]);
+      setTasks([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createDepartment = async () => {
+    const name = window.prompt('Department name:');
+    if (!name?.trim()) return;
+    const description = window.prompt('Department description (optional):') || null;
+    try {
+      const result = await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/admin_upsert_team_department',{
+        method:'POST',body:JSON.stringify({args:{p_name:name.trim(),p_description:description}})
+      });
+      if(!result.data?.ok)throw new Error(result.data?.error||'Could not save department.');
+      await load();
+    } catch(e:any){alert(e?.message||'Could not save department.');}
+  };
+
+  const createTask = async () => {
+    setTaskError('');
+    if (!taskTitle.trim() || !taskAssignee) {
+      setTaskError('Choose a staff member and enter a task title.');
+      return;
+    }
+    setTaskSaving(true);
+    try {
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_assign_task', {
+        method: 'POST',
+        body: JSON.stringify({ args: {
+          p_title: taskTitle.trim(),
+          p_description: taskDescription.trim(),
+          p_assigned_to: taskAssignee,
+          p_due_at: taskDue ? new Date(taskDue).toISOString() : null,
+          p_department_id: taskDepartment || null,
+        } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Task assignment was rejected.');
+      setTaskTitle('');
+      setTaskDescription('');
+      setTaskAssignee('');
+      setTaskDue('');
+      setTaskDepartment('');
+      await load();
+    } catch (error: any) {
+      setTaskError(error.message || 'Could not create task.');
+    } finally {
+      setTaskSaving(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
 
   const copyLink = async (token: string, id: string) => {
-    const url = `https://cenpaya.pages.dev/staff/accept/${token}`;
+    const url = window.location.origin + `/staff/accept/${token}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(id);
@@ -38,10 +143,28 @@ export default function AdminStaff() {
     }
   };
 
+  const setAppointmentStatus = async (id: string, status: 'active' | 'suspended' | 'removed') => {
+    const action = status === 'removed' ? 'remove' : status === 'suspended' ? 'suspend' : 'reactivate';
+    if (!window.confirm(`Are you sure you want to ${action} this team appointment?`)) return;
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; error?: string } }>('/api/v1/admin/rpc/admin_set_team_member_status', {
+        method: 'POST', body: JSON.stringify({ args: { p_invitation_id: id, p_status: status } }),
+      });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update appointment.');
+      await load();
+    } catch (error: any) { alert(error.message || 'Could not update appointment.'); }
+  };
+
   const revoke = async (id: string) => {
     if (!window.confirm('Revoke this invitation?')) return;
-    await supabase.rpc('admin_revoke_invitation', { p_id: id });
-    load();
+    try {
+      await supabaseWorkerRequest('/api/v1/admin/rpc/admin_revoke_invitation', {
+        method: 'POST', body: JSON.stringify({ args: { p_id: id } }),
+      });
+      await load();
+    } catch (error: any) {
+      alert(error?.message || 'Could not revoke invitation.');
+    }
   };
 
   if (loading) return <div className="p-4 text-center text-xs">Loading...</div>;
@@ -51,15 +174,63 @@ export default function AdminStaff() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-2xl font-bold text-navy dark:text-white">👤 Staff</h2>
-          <p className="text-[11px] text-gray-500">Invite staff by email. They accept and get the assigned role.</p>
+          <p className="text-[11px] text-gray-500">Manage Support Agents, Staff Members and Vice Admin appointments, permissions and tasks.</p>
         </div>
-        <button
-          onClick={() => setShowInvite(true)}
-          className="bg-accent text-white text-[11px] font-bold px-3 py-2 rounded-lg flex items-center gap-1"
-        >
-          <UserPlus size={12} /> Invite
-        </button>
+        <div className="flex gap-2">
+          {canManageDepartments && <button onClick={() => void createDepartment()} className="bg-gray-100 dark:bg-darkline text-navy dark:text-white text-[10px] font-bold px-3 py-2 rounded-lg">Department</button>}
+          <button
+            onClick={() => setShowInvite(true)}
+            className="bg-accent text-white text-[11px] font-bold px-3 py-2 rounded-lg flex items-center gap-1"
+          >
+            <UserPlus size={12} /> Invite
+          </button>
+        </div>
       </div>
+
+      {loadError && <p role="alert" className="text-[11px] text-red-600 bg-red-50 rounded-lg p-3 mb-3">{loadError}</p>}
+      {overview && (
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+          {[
+            ['Active',overview.active_members],['Pending',overview.pending_appointments],['Suspended',overview.suspended_members],
+            ['Open tasks',overview.tasks_pending],['Overdue',overview.tasks_overdue],['Open escalations',overview.open_escalations],
+            ['Open tickets',overview.tickets_open],['Completed this month',overview.tasks_completed_month],
+          ].map(([label,value])=><div key={label as string} className="bg-white dark:bg-darkcard rounded-lg p-3 shadow-sm"><p className="text-lg font-black text-navy dark:text-white">{value as any}</p><p className="text-[9px] text-gray-500">{label}</p></div>)}
+        </section>
+      )}
+
+      {canManageTasks && <section className="bg-white dark:bg-darkcard rounded-xl shadow-sm p-3 mb-4">
+        <h3 className="text-[13px] font-bold text-navy dark:text-white mb-2">Staff tasks</h3>
+        <p className="text-[10px] text-gray-500 mb-3">Assign individual work. Staff Members can only see and update tasks assigned to their own account.</p>
+        {staffMembers.length === 0 ? (
+          <p className="text-[11px] text-gray-500">Invite and activate a Staff Member before assigning tasks.</p>
+        ) : (
+          <div className="space-y-2">
+            <select value={taskAssignee} onChange={e => setTaskAssignee(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs">
+              <option value="">Choose Staff Member</option>
+              {staffMembers.map(member => <option key={member.id} value={member.id}>@{member.username || member.email}</option>)}
+            </select>
+            <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} maxLength={160} placeholder="Task title" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            <textarea value={taskDescription} onChange={e => setTaskDescription(e.target.value)} maxLength={5000} placeholder="Instructions and expected result" rows={3} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            <select value={taskDepartment} onChange={e=>setTaskDepartment(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs"><option value="">No department</option>{departments.map((d:any)=><option key={d.id} value={d.id}>{d.name}</option>)}</select>
+                        <input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            {taskError && <p role="alert" className="text-[11px] text-red-600">{taskError}</p>}
+            <button onClick={() => void createTask()} disabled={taskSaving || !taskTitle.trim() || !taskAssignee} className="w-full bg-accent text-white font-bold py-2.5 rounded-lg text-xs disabled:opacity-50">{taskSaving ? 'Assigning...' : 'Assign task'}</button>
+          </div>
+        )}
+        {tasks.length > 0 && (
+          <div className="mt-3 border-t border-gray-100 dark:border-darkline pt-3 space-y-2">
+            {tasks.slice(0,8).map(task => (
+              <div key={task.id} className="rounded-lg bg-gray-50 dark:bg-darkbg p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold text-navy dark:text-white">{task.title}</p>
+                  <span className="text-[9px] text-gray-500">{String(task.status).replace('_',' ')}</span>
+                </div>
+                <p className="text-[9px] text-gray-500 mt-1">Assigned to @{task.assignee_username || 'staff member'}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>}
 
       {invitations.length === 0 && (
         <div className="bg-white dark:bg-darkcard p-6 rounded-xl text-center shadow-sm">
@@ -75,9 +246,9 @@ export default function AdminStaff() {
               <p className="text-[12px] font-bold text-navy dark:text-white truncate">{inv.email}</p>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                  inv.role === 'super_admin' ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-darkline text-gray-600 dark:text-gray-300'
+                  inv.role === 'support_agent' ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-darkline text-gray-600 dark:text-gray-300'
                 }`}>
-                  {inv.role}
+                  {inv.role === 'vice_admin' ? 'Vice Admin' : inv.role === 'support_agent' ? 'Support Agent' : 'Staff Member'}
                 </span>
                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
                   inv.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
@@ -127,18 +298,45 @@ export default function AdminStaff() {
               Accepted {new Date(inv.accepted_at).toLocaleDateString()}
             </p>
           )}
+          {inv.status === 'accepted' && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {((inv.role === 'support_agent' && canManageSupportAgents) || (inv.role === 'staff_member' && canManageStaffMembers) || (inv.role === 'vice_admin' && canConfigureViceAdmin)) && (
+                <>
+                  <button onClick={() => setEditingInvite(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-blue-50 text-blue-700">Edit permissions</button>
+                  <button onClick={() => setEditingAppointment(inv)} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-700">Edit appointment</button>
+                </>
+              )}
+              {((inv.role === 'support_agent' && canManageSupportAgents) || (inv.role === 'staff_member' && canManageStaffMembers) || (inv.role === 'vice_admin' && canAppointViceAdmin)) && (
+                <>
+                  {inv.appointment_status === 'suspended' ? (
+                    <button onClick={() => void setAppointmentStatus(inv.id, 'active')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-green-100 text-green-700">Reactivate</button>
+                  ) : inv.appointment_status !== 'removed' ? (
+                    <button onClick={() => void setAppointmentStatus(inv.id, 'suspended')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-yellow-100 text-yellow-700">Suspend</button>
+                  ) : null}
+                  {inv.appointment_status !== 'removed' && (
+                    <button onClick={() => void setAppointmentStatus(inv.id, 'removed')} className="text-[9px] font-bold px-2.5 py-1.5 rounded-md bg-red-100 text-red-700">Remove appointment</button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       ))}
 
-      {showInvite && <InviteSheet onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
+      {showInvite && <InviteSheet members={teamMembers} departments={departments} allowViceAdmin={canAppointViceAdmin} canConfigureViceAdmin={canConfigureViceAdmin} canManageSupportAgents={canManageSupportAgents} canManageStaffMembers={canManageStaffMembers} onClose={() => setShowInvite(false)} onCreated={() => { setShowInvite(false); load(); }} />}
+      {editingInvite && <EditPermissionsSheet invitation={editingInvite} canConfigureViceAdmin={canConfigureViceAdmin} onClose={() => setEditingInvite(null)} onSaved={() => { setEditingInvite(null); load(); }} />}
+      {editingAppointment && <EditAppointmentSheet invitation={editingAppointment} members={teamMembers} onClose={() => setEditingAppointment(null)} onSaved={() => { setEditingAppointment(null); load(); }} />}
     </div>
   );
 }
 
-function InviteSheet({ onClose, onCreated }: any) {
+function InviteSheet({ onClose, onCreated, members = [], departments = [], allowViceAdmin = false, canConfigureViceAdmin = false, canManageSupportAgents = false, canManageStaffMembers = false }: any) {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'support_agent' | 'super_admin'>('support_agent');
+  const [role, setRole] = useState<'support_agent' | 'staff_member' | 'vice_admin'>('support_agent');
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [officialTitle, setOfficialTitle] = useState('');
+  const [department, setDepartment] = useState('');
+  const [supervisorId, setSupervisorId] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -152,17 +350,26 @@ function InviteSheet({ onClose, onCreated }: any) {
     setErr('');
     if (!email.trim() || !email.includes('@')) return setErr('Enter a valid email.');
     setBusy(true);
-    const { data, error } = await supabase.rpc('admin_invite_staff', {
-      p_email: email.trim().toLowerCase(),
-      p_role: role,
-      p_permissions: permissions,
-    });
-    if (error || !data?.ok) {
-      setErr(error?.message || data?.error || 'Invite failed.');
+    try {
+      const result = await supabaseWorkerRequest<{ data: { ok?: boolean; token?: string; error?: string } }>('/api/v1/admin/rpc/admin_invite_staff', {
+        method: 'POST',
+        body: JSON.stringify({ args: {
+          p_email: email.trim().toLowerCase(),
+          p_role: role,
+          p_permissions: permissions,
+          p_title: officialTitle || null,
+          p_department: department || null,
+          p_supervisor_id: supervisorId || null,
+        } }),
+      });
+      if (!result.data?.ok || !result.data.token) throw new Error(result.data?.error || 'Invite failed.');
+      const link = window.location.origin + '/staff/accept/' + result.data.token;
+      alert('Invitation created. Share this link:\n' + link);
+    } catch (error: any) {
+      setErr(error?.message || 'Invite failed.');
       setBusy(false);
       return;
     }
-    alert(`Invitation created. Share this link:\nhttps://cenpaya.pages.dev/staff/accept/${data.token}`);
     onCreated();
   };
 
@@ -190,11 +397,25 @@ function InviteSheet({ onClose, onCreated }: any) {
           </div>
 
           <div>
-            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 flex items-center gap-1">
-              <Shield size={11} /> Role
-            </label>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Official title</label>
+            <input value={officialTitle} onChange={e => setOfficialTitle(e.target.value)} maxLength={100} placeholder="e.g. Regional Support Supervisor" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Department</label>
+            <input value={department} onChange={e => setDepartment(e.target.value)} maxLength={100} list="available-team-departments" placeholder="e.g. Customer Operations" className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs" />
+            <datalist id="available-team-departments">{departments.map((d:any)=><option key={d.id} value={d.name}/>)}</datalist>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1 block">Supervisor (optional)</label>
+            <select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="w-full p-2.5 border border-gray-200 dark:border-darkline rounded-lg bg-gray-50 dark:bg-darkbg text-xs">
+              <option value="">No direct supervisor</option>
+              {members.filter((m:any) => ['vice_admin','super_admin','owner'].includes(m.role) && m.appointment_status !== 'suspended').map((m:any) => <option key={m.id} value={m.id}>@{m.username} · {m.role.replace('_',' ')}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 flex items-center gap-1"><Shield size={11}/> Role</label>
             <div className="grid grid-cols-2 gap-2">
-              {(['support_agent', 'super_admin'] as const).map(r => (
+              {(['support_agent','staff_member',...(allowViceAdmin?['vice_admin' as const]:[])] as const).filter(r => r==='support_agent'?canManageSupportAgents:r==='staff_member'?canManageStaffMembers:allowViceAdmin).map(r => (
                 <button
                   key={r}
                   onClick={() => setRole(r)}
@@ -202,19 +423,19 @@ function InviteSheet({ onClose, onCreated }: any) {
                     role === r ? 'border-accent bg-accent/5 text-accent' : 'border-gray-200 dark:border-darkline text-navy dark:text-white'
                   }`}
                 >
-                  {r === 'support_agent' ? 'Support Agent' : 'Super Admin'}
+                  {r === 'support_agent' ? 'Support Agent' : r === 'vice_admin' ? 'Vice Admin' : 'Staff Member'}
                 </button>
               ))}
             </div>
           </div>
 
-          {role === 'support_agent' && (
+          {(role === 'support_agent' || role === 'staff_member' || (role === 'vice_admin' && canConfigureViceAdmin)) && (
             <div>
               <label className="text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1.5 block">
                 Permissions (optional)
               </label>
               <div className="space-y-1.5">
-                {PERMISSIONS.map(p => (
+                {PERMISSIONS.filter(p => role === 'support_agent' ? ['can_resolve_disputes','can_manage_tickets','can_review_reports','can_escalate','can_supervise_staff'].includes(p.key) : role === 'vice_admin' ? ['can_manage_support_agents','can_manage_staff','can_manage_departments','can_manage_tasks','can_review_reports','can_manage_escalations','can_view_team_metrics','can_manage_team_communications'].includes(p.key) : ['can_manage_listings','can_review_reports','can_review_kyc','can_submit_reports'].includes(p.key)).map(p => (
                   <button
                     key={p.key}
                     onClick={() => togglePerm(p.key)}
@@ -246,3 +467,71 @@ function InviteSheet({ onClose, onCreated }: any) {
     </div>
   );
     }
+
+function EditPermissionsSheet({ invitation, canConfigureViceAdmin, onClose, onSaved }: any) {
+  const role = invitation.role as 'support_agent' | 'staff_member' | 'vice_admin';
+  const required = role === 'support_agent' ? ['can_manage_tickets','can_escalate','can_supervise_staff'] : role === 'staff_member' ? ['can_submit_reports'] : [];
+  const allowed = PERMISSIONS.filter(p => role === 'support_agent'
+    ? ['can_resolve_disputes','can_manage_tickets','can_review_reports','can_escalate','can_supervise_staff'].includes(p.key)
+    : role === 'vice_admin'
+      ? ['can_manage_support_agents','can_manage_staff','can_manage_departments','can_manage_tasks','can_review_reports','can_manage_escalations','can_view_team_metrics','can_manage_team_communications'].includes(p.key)
+      : ['can_manage_listings','can_review_reports','can_review_kyc','can_submit_reports'].includes(p.key));
+  const [permissions,setPermissions] = useState<string[]>(Array.isArray(invitation.permissions) ? invitation.permissions : []);
+  const [busy,setBusy] = useState(false);
+  const [error,setError] = useState('');
+  const save = async () => {
+    setBusy(true);setError('');
+    try {
+      const result = await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/admin_update_team_permissions',{
+        method:'POST',body:JSON.stringify({args:{p_invitation_id:invitation.id,p_permissions:permissions}})
+      });
+      if(!result.data?.ok)throw new Error(result.data?.error||'Permission update failed.');
+      onSaved();
+    } catch(e:any){setError(e?.message||'Could not update permissions.');}
+    finally{setBusy(false);}
+  };
+  return (
+    <div className="fixed inset-0 z-[220] bg-black/50 flex items-end" onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} className="w-full max-h-[85vh] overflow-y-auto bg-white dark:bg-darkcard rounded-t-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-navy dark:text-white">Permissions · {role.replace('_',' ')}</h3><button onClick={onClose}><X size={18}/></button></div>
+        {allowed.map(p=><label key={p.key} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-gray-50 dark:bg-darkbg text-xs">
+          <span>{p.label}{required.includes(p.key)?' (required)':''}</span>
+          <input type="checkbox" checked={permissions.includes(p.key)||required.includes(p.key)} disabled={required.includes(p.key)||busy||(role==='vice_admin'&&!canConfigureViceAdmin)} onChange={e=>setPermissions(prev=>e.target.checked?[...prev,p.key]:prev.filter(x=>x!==p.key))}/>
+        </label>)}
+        {error&&<p className="text-xs text-red-600">{error}</p>}
+        <button disabled={busy||(role==='vice_admin'&&!canConfigureViceAdmin)} onClick={()=>void save()} className="w-full bg-accent text-white rounded-lg py-3 text-xs font-bold disabled:opacity-50">{busy?'Saving...':'Save permissions'}</button>
+      </div>
+    </div>
+  );
+}
+
+function EditAppointmentSheet({ invitation, members = [], onClose, onSaved }: any) {
+  const [title,setTitle]=useState(invitation.official_title||invitation.role.replace('_',' '));
+  const [department,setDepartment]=useState(invitation.department||'');
+  const [supervisorId,setSupervisorId]=useState(invitation.supervisor_id||'');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const save=async()=>{
+    setBusy(true);setError('');
+    try{
+      const result=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/admin_update_team_appointment',{
+        method:'POST',body:JSON.stringify({args:{p_invitation_id:invitation.id,p_title:title.trim(),p_department:department.trim()||null,p_supervisor_id:supervisorId||null}})
+      });
+      if(!result.data?.ok)throw new Error(result.data?.error||'Appointment update failed.');
+      onSaved();
+    }catch(e:any){setError(e?.message||'Could not update appointment.');}
+    finally{setBusy(false);}
+  };
+  return (
+    <div className="fixed inset-0 z-[220] bg-black/50 flex items-end" onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} className="w-full bg-white dark:bg-darkcard rounded-t-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-navy dark:text-white">Edit appointment</h3><button onClick={onClose}><X size={18}/></button></div>
+        <label className="block text-[10px] font-bold text-gray-500">Official title<input value={title} onChange={e=>setTitle(e.target.value)} maxLength={100} className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"/></label>
+        <label className="block text-[10px] font-bold text-gray-500">Department<input value={department} onChange={e=>setDepartment(e.target.value)} maxLength={100} list="team-departments" className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"/><datalist id="team-departments">{members.map((m:any)=>m.department).filter(Boolean).filter((v:string,i:number,a:string[])=>a.indexOf(v)===i).map((d:string)=><option key={d} value={d}/>)}</datalist></label>
+        <label className="block text-[10px] font-bold text-gray-500">Supervisor<select value={supervisorId} onChange={e=>setSupervisorId(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg border border-gray-200 dark:border-darkline text-xs"><option value="">No direct supervisor</option>{members.filter((m:any)=>['vice_admin','super_admin','owner'].includes(m.role)&&m.appointment_status!=='suspended').map((m:any)=><option key={m.id} value={m.id}>@{m.username} · {m.role.replace('_',' ')}</option>)}</select></label>
+        {error&&<p className="text-xs text-red-600">{error}</p>}
+        <button disabled={busy||!title.trim()} onClick={()=>void save()} className="w-full bg-accent text-white rounded-lg py-3 text-xs font-bold disabled:opacity-50">{busy?'Saving...':'Save appointment'}</button>
+      </div>
+    </div>
+  );
+}
