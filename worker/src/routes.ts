@@ -23,6 +23,13 @@ const isPercent = (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100;
 const isStringArray = (v: unknown) =>
   Array.isArray(v) && v.length <= 20 && v.every((item) => isText(item, 2048));
+const isUuidArray = (v: unknown) => Array.isArray(v) && v.length <= 100 && v.every(isUuid);
+const nullableText = (v: unknown, max = 2048) => v === null || v === undefined || isText(v, max);
+const nullableUuid = (v: unknown) => v === null || v === undefined || isUuid(v);
+const nullableIsoDate = (v: unknown) => v === null || v === undefined ||
+  (typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v)));
+const nullableHttpsUrl = (v: unknown) => v === null || v === undefined ||
+  (typeof v === "string" && v.length <= 2048 && /^https:\/\//i.test(v));
 const defineRpc = (
   required: string[], optional: string[], validate: (args: Record<string, unknown>) => boolean,
   genericAllowed = true,
@@ -51,14 +58,44 @@ const ADMIN_RPC_SCHEMAS: Record<string, AdminRpcSchema> = {
     (a) => isUuid(a.p_target_user_id) && isText(a.p_reason,1000,5), false),
   admin_grant_permission: defineRpc(["p_target_user_id","p_permission_key"], [],
     (a) => isUuid(a.p_target_user_id) && isText(a.p_permission_key,100)),
-  admin_invite_staff: defineRpc(["p_email","p_role","p_permissions"], [],
-    (a) => isText(a.p_email,254) && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(a.p_email)) &&
-      ["support_agent","staff_member"].includes(String(a.p_role)) &&
-      Array.isArray(a.p_permissions) && a.p_permissions.length <= 10 &&
+  admin_invite_staff: defineRpc(["p_email","p_role","p_permissions"], ["p_title","p_department","p_supervisor_id"],
+    (a) => isText(a.p_email,254) && /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(String(a.p_email)) &&
+      ["support_agent","staff_member","vice_admin"].includes(String(a.p_role)) &&
+      Array.isArray(a.p_permissions) && a.p_permissions.length <= 30 &&
+      nullableText(a.p_title,100) && nullableText(a.p_department,100) && nullableUuid(a.p_supervisor_id) &&
       a.p_permissions.every((p) => typeof p === "string" &&
         (a.p_role === "support_agent"
-          ? ["can_resolve_disputes","can_manage_tickets","can_review_reports"].includes(p)
-          : ["can_manage_listings","can_review_reports","can_review_kyc"].includes(p)))),
+          ? ["can_resolve_disputes","can_manage_tickets","can_review_reports","can_escalate","can_supervise_staff"].includes(p)
+          : a.p_role === "staff_member"
+            ? ["can_manage_listings","can_review_reports","can_review_kyc","can_submit_reports"].includes(p)
+            : ["can_manage_support_agents","can_manage_staff","can_manage_departments","can_manage_tasks","can_review_reports","can_manage_escalations","can_view_team_metrics","can_manage_team_communications"].includes(p)))),
+  accept_staff_invitation: defineRpc(["p_token"], [], (a) => isText(a.p_token,256,16)),
+  staff_my_profile: defineRpc([], [], noArgs),
+  staff_list_tickets: defineRpc(["p_scope"], [], (a) => ["all","mine"].includes(String(a.p_scope))),
+  staff_claim_ticket: defineRpc(["p_ticket_id"], [], (a) => isUuid(a.p_ticket_id)),
+  get_ticket_thread: defineRpc(["p_ticket_id"], [], (a) => isUuid(a.p_ticket_id)),
+  send_ticket_message: defineRpc(["p_ticket_id","p_body"], [], (a) => isUuid(a.p_ticket_id) && isText(a.p_body,10000)),
+  set_ticket_status: defineRpc(["p_ticket_id","p_status"], [], (a) => isUuid(a.p_ticket_id) && ["open","in_progress","resolved","closed"].includes(String(a.p_status))),
+  admin_set_team_member_status: defineRpc(["p_invitation_id","p_status"], [], (a) => isUuid(a.p_invitation_id) && ["active","suspended","removed"].includes(String(a.p_status))),
+  admin_update_team_permissions: defineRpc(["p_invitation_id","p_permissions"], [], (a) => isUuid(a.p_invitation_id) && Array.isArray(a.p_permissions) && a.p_permissions.length <= 30 && a.p_permissions.every(p => typeof p === "string" && isText(p,100))),
+  admin_update_team_appointment: defineRpc(["p_invitation_id","p_title","p_department","p_supervisor_id"], [], (a) => isUuid(a.p_invitation_id) && isText(a.p_title,100) && nullableText(a.p_department,100) && nullableUuid(a.p_supervisor_id)),
+  admin_upsert_team_department: defineRpc(["p_name","p_description"], [], (a) => isText(a.p_name,100) && nullableText(a.p_description,500)),
+  team_list_departments: defineRpc([], [], noArgs),
+  team_available_colleagues: defineRpc([], [], noArgs),
+  team_my_tasks: defineRpc([], [], noArgs),
+  team_assign_task: defineRpc(["p_title","p_description","p_assigned_to","p_due_at","p_department_id"], [], (a) => isText(a.p_title,160,3) && nullableText(a.p_description,5000) && isUuid(a.p_assigned_to) && nullableIsoDate(a.p_due_at) && nullableUuid(a.p_department_id)),
+  team_update_task: defineRpc(["p_task_id","p_status","p_body","p_attachment_url"], [], (a) => isUuid(a.p_task_id) && ["todo","in_progress","blocked","submitted","completed","cancelled"].includes(String(a.p_status)) && nullableText(a.p_body,5000) && nullableHttpsUrl(a.p_attachment_url)),
+  team_admin_overview: defineRpc([], [], noArgs),
+  team_create_conversation: defineRpc(["p_type","p_title","p_member_ids","p_department_id"], [], (a) => ["direct","department","announcement","escalation"].includes(String(a.p_type)) && nullableText(a.p_title,160) && isUuidArray(a.p_member_ids) && nullableUuid(a.p_department_id)),
+  team_list_conversations: defineRpc([], [], noArgs),
+  team_get_messages: defineRpc(["p_conversation_id"], [], (a) => isUuid(a.p_conversation_id)),
+  team_send_message: defineRpc(["p_conversation_id","p_body","p_attachment_url"], [], (a) => isUuid(a.p_conversation_id) && isText(a.p_body,10000) && nullableHttpsUrl(a.p_attachment_url)),
+  team_raise_escalation: defineRpc(["p_reason","p_level","p_ticket_id","p_task_id","p_assigned_to"], [], (a) => isText(a.p_reason,5000,5) && ["vice_admin","super_admin","owner"].includes(String(a.p_level)) && nullableUuid(a.p_ticket_id) && nullableUuid(a.p_task_id) && nullableUuid(a.p_assigned_to)),
+  team_list_escalations: defineRpc([], [], noArgs),
+  team_update_escalation: defineRpc(["p_id","p_status","p_note"], [], (a) => isUuid(a.p_id) && ["open","in_progress","resolved","dismissed"].includes(String(a.p_status)) && nullableText(a.p_note,5000)),
+  team_my_notifications: defineRpc(["p_limit"], [], (a) => integerIn(a.p_limit,1,100)),
+  team_mark_notification_read: defineRpc(["p_id"], [], (a) => isUuid(a.p_id)),
+  team_search_messages: defineRpc(["p_query","p_limit"], [], (a) => isText(a.p_query,100,2) && integerIn(a.p_limit,1,100)),
   admin_call_status: defineRpc([], [], noArgs),
   admin_video_status: defineRpc([], [], noArgs),
   admin_set_call_host: defineRpc(["p_host"], [], (a) => isText(a.p_host,80)),
