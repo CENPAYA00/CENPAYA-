@@ -93,7 +93,7 @@ async function selectRows(table: string, params: Record<string, string>, limit: 
 }
 
 async function readUserData(userId: string, intent: ReadIntent): Promise<unknown> {
-  const owner = "user_id=eq." + userId;
+  const owner = "eq." + userId;
   switch (intent) {
     case "wallet": {
       const [wallets, balances] = await Promise.all([
