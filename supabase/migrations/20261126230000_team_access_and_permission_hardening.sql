@@ -13,7 +13,7 @@ begin
    select official_title,department from public.staff_invitations si
    where si.accepted_by=u.id and si.appointment_status='active' order by accepted_at desc limit 1
  ) i on true
- where u.banned=false and (
+ where u.banned=false and coalesce(u.is_deactivated,false)=false and (
    u.role in ('owner','super_admin') or exists(select 1 from public.staff_invitations si where si.accepted_by=u.id and si.appointment_status='active')
  );
  return jsonb_build_object('ok',true,'members',v_rows);
@@ -39,7 +39,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_role text; v_rows jsonb; v_allowed boolean:=false;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- select role into v_role from public.users where id=v_uid and banned=false;
+ select role into v_role from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false;
  if v_role in ('super_admin','owner') then v_allowed:=true;
  elsif v_role='vice_admin' then
   select exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_escalations') into v_allowed;
@@ -57,7 +57,7 @@ as $function$
 declare v_uid uuid:=auth.uid(); v_role text; v_allowed boolean:=false;
 begin
  if v_uid is null then return jsonb_build_object('ok',false,'error','not authenticated'); end if;
- select role into v_role from public.users where id=v_uid and banned=false;
+ select role into v_role from public.users where id=v_uid and banned=false and coalesce(is_deactivated,false)=false;
  if v_role in ('super_admin','owner') then v_allowed:=true;
  elsif v_role='vice_admin' then
   select exists(select 1 from public.staff_invitations where accepted_by=v_uid and appointment_status='active' and permissions ? 'can_manage_escalations') into v_allowed;
