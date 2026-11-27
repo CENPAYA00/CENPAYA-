@@ -56,7 +56,7 @@ export default function Layout() {
             const teamProfile = await d1Request<{ data: { ok?: boolean; role?: string } }>('/api/team/workspace/profile');
             if (teamProfile.data?.ok && teamProfile.data.role) role = teamProfile.data.role;
           } catch { /* An account without a team appointment is expected. */ }
-          if (!role && ['vice_admin', 'support_agent', 'staff_member'].includes(user.role)) role = user.role;
+          if (!role && ['vice_admin', 'support_agent'].includes(user.role)) role = user.role;
         }
         try {
           const engineering = await d1Request<{ data: { ok?: boolean; appointments?: { role: string }[] } }>('/api/engineering/profile');
