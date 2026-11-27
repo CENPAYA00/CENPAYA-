@@ -286,7 +286,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
       .bind(id,user.id,cat.id,title,description,type,priceType,priceType==="contact"?null:priceIsRange?priceMin:Number(priceAmount),priceType==="contact"?null:currency,country,region,city,deliveryRequired,availability,hideFromFriends,priceIsRange?1:0,priceIsRange?priceMin:null,priceIsRange?priceMax:null,JSON.stringify(imageKeys),JSON.stringify(documentKeys),deliveryDays);
     await env.DB.batch([listingStatement,...mediaStatements]);
     // AI analysis is advisory and must never prevent a valid listing from being published.
-    const aiIndicator = await analyzeListingText(env,title,description,type);
+    const aiIndicator = await analyzeListingText(env,title,description,type as "product" | "service");
     const aiMediaIndicator = await analyzeListingImages(env,imageKeys);
     try {
       await env.DB.prepare("INSERT INTO ai_indicator_results(listing_id,seller_id,listing_type,status,classification,confidence,reason,model,media_status,media_classification,media_confidence,media_reason,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now')) ON CONFLICT(listing_id) DO UPDATE SET status=excluded.status,classification=excluded.classification,confidence=excluded.confidence,reason=excluded.reason,model=excluded.model,media_status=excluded.media_status,media_classification=excluded.media_classification,media_confidence=excluded.media_confidence,media_reason=excluded.media_reason,updated_at=excluded.updated_at")
