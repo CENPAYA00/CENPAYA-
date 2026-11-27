@@ -115,11 +115,10 @@ export default function StaffTicketThread() {
     const reason = window.prompt('Explain why this ticket needs supervisor attention:');
     if (!reason?.trim()) return;
     try {
-      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_raise_escalation', {
+      await d1Request('/api/team/escalations', {
         method: 'POST',
-        body: JSON.stringify({ args: { p_reason: reason.trim(), p_level: target, p_ticket_id: id, p_task_id: null, p_assigned_to: null } }),
+        body: JSON.stringify({ target_role: target, reason: reason.trim(), ticket_id: id }),
       });
-      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not escalate ticket.');
       alert(`Ticket escalated to ${target.replace('_',' ')}.`);
     } catch (error: any) { alert(error.message || 'Could not escalate ticket.'); }
   };
