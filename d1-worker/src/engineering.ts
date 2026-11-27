@@ -170,7 +170,11 @@ export async function handleEngineeringRoutes(request:Request,env:Env,{path,meth
     OR EXISTS(SELECT 1 FROM staff_workspace_members sw WHERE sw.user_id=u.id AND sw.is_active=1)
     OR EXISTS(SELECT 1 FROM engineering_appointments ea WHERE ea.user_id=u.id AND ea.status='active')
    ) ORDER BY u.username LIMIT 300`).all();
-  const members=(rows.results||[]).map((m:any)=>({...m,engineering_roles:(()=>{try{return JSON.parse(m.engineering_roles||"[]")}catch{return[]}})()} )}));
+  const members=(rows.results||[]).map((m:any)=>{
+   let roles:string[]=[];
+   try{roles=JSON.parse(m.engineering_roles||"[]");}catch{roles=[];}
+   return {...m,engineering_roles:roles};
+  });
   return ok({members});
  }
  if(path==="/api/team/chat/conversations"&&method==="POST"){
