@@ -144,7 +144,7 @@ export default function StaffPanel() {
                 maxLength={2048}
                 placeholder="Evidence or document link (optional)"
                 className="w-full mt-2 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
-              />}
+              /></>}
               <div className="flex flex-wrap gap-2 mt-2">
                 {(profile?.source === 'd1' ? (['todo','in_progress','blocked','completed'] as const) : (['todo','in_progress','blocked','submitted'] as const)).filter(status => status !== task.status).map(status => (
                   <button key={status} onClick={() => void updateTask(task.id,status)} className="text-[10px] font-bold px-3 py-2 rounded-lg bg-[#e3f7ec] text-[#12935a]">
