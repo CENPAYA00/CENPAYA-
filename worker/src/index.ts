@@ -63,4 +63,15 @@ export default {
       return jsonResponse({ success: false, error: "internal_error" }, 500, headers);
     }
   },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil((async () => {
+      const healthy = await checkDatabaseHealth(createPublicSupabaseClient(env));
+      if (!healthy) {
+        console.error("scheduled_supabase_database_probe_failed");
+        throw new Error("scheduled_supabase_database_probe_failed");
+      }
+      console.info("scheduled_supabase_database_probe_succeeded");
+    })());
+  },
 } satisfies ExportedHandler<Env>;
