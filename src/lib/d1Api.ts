@@ -14,6 +14,8 @@ export type D1User = {
   country_iso?: string | null;
   email_verified: boolean;
   phone_verified: boolean;
+  is_subscribed?: boolean;
+  is_premium?: boolean;
   role: string;
   onboarding_completed: boolean;
 };
