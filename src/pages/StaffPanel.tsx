@@ -17,30 +17,36 @@ export default function StaffPanel() {
   const load = async () => {
     setLoading(true);
     try {
-      let d1Profile: any = null;
+      let teamProfile: any = null;
       try {
         const result = await d1Request<{ data: any }>('/api/team/workspace/profile');
-        if (result.data?.ok) d1Profile = result.data;
-      } catch { /* Fall back to the existing team service for legacy appointments. */ }
+        if (result.data?.ok) teamProfile = result.data;
+      } catch { /* Older appointments may still exist in the legacy team service. */ }
 
-      if (d1Profile?.role === 'staff_member') {
-        setProfile({ ...d1Profile, source: 'd1' });
+      if (teamProfile?.role === 'vice_admin') { navigate('/vice-admin', { replace: true }); return; }
+      if (teamProfile?.role === 'staff_member') {
+        setProfile({ ...teamProfile, source: 'd1' });
         const taskRes = await d1Request<{ data: any[] }>('/api/staff/tasks');
         setTasks(taskRes.data || []);
         setTickets([]);
         return;
       }
 
-      let appointment: any = null;
-      try {
-        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', {
-          method: 'POST', body: JSON.stringify({ args: {} }),
-        });
-        if (result.data?.ok) appointment = result.data;
-      } catch { /* D1 profile was checked first. */ }
+      if (teamProfile?.role === 'support_agent' || teamProfile?.role === 'owner' || teamProfile?.role === 'super_admin') {
+        const staffProfile = await d1Request<{ data: any }>('/api/staff/profile');
+        setProfile({ ...teamProfile, ...staffProfile.data, source: 'd1' });
+        const ticketRes = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`);
+        setTickets(ticketRes.data || []);
+        setTasks([]);
+        return;
+      }
 
-      const currentProfile = appointment || d1Profile;
-      if (!currentProfile) { navigate('/home'); return; }
+      // Compatibility path for appointments that have not yet been migrated to D1.
+      const legacy = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', {
+        method: 'POST', body: JSON.stringify({ args: {} }),
+      });
+      if (!legacy.data?.ok) throw new Error('No active staff or support appointment was found.');
+      const currentProfile = legacy.data;
       if (currentProfile.role === 'vice_admin') { navigate('/vice-admin', { replace: true }); return; }
       setProfile(currentProfile);
       if (currentProfile.role === 'staff_member') {
@@ -59,7 +65,6 @@ export default function StaffPanel() {
     } catch (error: any) {
       console.warn('Could not load staff workspace', error);
       navigate('/home');
-      return;
     } finally { setLoading(false); }
   };
 
@@ -85,10 +90,14 @@ export default function StaffPanel() {
 
   const claim = async (ticketId: string) => {
     try {
-      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_claim_ticket', {
-        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: ticketId } }),
-      });
-      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not claim ticket.');
+      if (profile?.source === 'd1') {
+        await d1Request(`/api/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
+      } else {
+        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_claim_ticket', {
+          method: 'POST', body: JSON.stringify({ args: { p_ticket_id: ticketId } }),
+        });
+        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not claim ticket.');
+      }
       await load();
     } catch (error: any) { alert(error.message || 'Could not claim ticket'); }
   };
