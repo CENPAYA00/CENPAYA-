@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Me } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
@@ -41,20 +40,26 @@ export default function Wallet() {
       const { user } = await d1Me();
       if (!user) { setLoading(false); return; }
 
-      const [walletRes, userRes, countriesRes] = await Promise.all([
+      const [walletRes, prefsRes] = await Promise.all([
         supabaseWorkerRequest<{ data: any }>('/api/v1/wallet'),
-        supabase.from('users').select('username, country_iso, momo_number, momo_provider, is_subscribed').eq('id', user.id).single(),
-        supabase.from('supported_countries').select('code, name, phone_prefix, flag_emoji').eq('is_active', true).order('code'),
+        supabaseWorkerRequest<{ data: { profile: any; countries: any[] } }>('/api/v1/me/payment-preferences'),
       ]);
 
+      const profile = prefsRes.data?.profile || {};
+      const countryRows = prefsRes.data?.countries || [];
       setWallet(walletRes.data);
-      setUser(userRes.data);
+      setUser(profile);
       setEscrow(walletRes.data?.escrow_summary || null);
-      setCountries(countriesRes.data || []);
+      setCountries(countryRows.map((country: any) => ({
+        code: country.country_iso || country.code,
+        name: country.name,
+        phone_prefix: country.phone_prefix,
+        flag_emoji: country.flag_emoji,
+      })));
 
-      if (userRes.data?.momo_number) setMomoNumber(userRes.data.momo_number);
-      if (userRes.data?.momo_provider) setMomoProvider(userRes.data.momo_provider as Method);
-      if (userRes.data?.country_iso) setMomoCountry(userRes.data.country_iso);
+      if (profile.momo_number) setMomoNumber(profile.momo_number);
+      if (profile.momo_provider) setMomoProvider(profile.momo_provider as Method);
+      if (profile.country_iso) setMomoCountry(profile.country_iso);
       setLoading(false);
     };
     load();
@@ -66,15 +71,22 @@ export default function Wallet() {
     try {
       const { user } = await d1Me();
       if (!user) throw new Error('Your session has expired. Please sign in again.');
-      const { error } = await supabase.from('users').update({
-        momo_number: momoNumber.trim() || null,
-        momo_provider: momoProvider || null,
-        country_iso: momoCountry,
-      }).eq('id', user.id);
-      if (error) throw error;
+      const selected = countries.find((country: any) => country.code === momoCountry);
+      const prefix = selected?.phone_prefix || '+237';
+      const digits = momoNumber.trim().replace(/\D/g, '');
+      if (!digits) throw new Error('Enter a valid Mobile Money number.');
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/me/payment-preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          country_iso: momoCountry,
+          momo_number: `${prefix} ${digits}`,
+          momo_provider: momoProvider,
+        }),
+      });
+      if (result.data?.ok === false) throw new Error(result.data.error || 'Could not save MoMo details.');
       setUser((previous: any) => ({
         ...previous,
-        momo_number: momoNumber.trim(),
+        momo_number: `${prefix} ${digits}`,
         momo_provider: momoProvider,
         country_iso: momoCountry,
       }));
