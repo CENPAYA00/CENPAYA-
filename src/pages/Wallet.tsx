@@ -10,7 +10,7 @@ import { useI18n } from '../contexts/i18n';
 
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
 const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
-const SUPPORT_WHATSAPP = String(import.meta.env.VITE_SUPPORT_WHATSAPP ?? '237653931300').replace(/\\D/g, '');
+const SUPPORT_WHATSAPP = String(import.meta.env.VITE_SUPPORT_WHATSAPP ?? '237653931300').replace(/\D/g, '');
 const SUPPORT_EMAIL = String(import.meta.env.VITE_SUPPORT_EMAIL ?? 'support@cenpaya.com').trim();
 
 const METHOD_LABELS: Record<Method, string> = {
