@@ -19,6 +19,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   const {url,path,method,user}=context;
   const featureLabels: Record<string, { display_name: string; description: string }> = {
     voice_calls: { display_name: "Voice calls", description: "Enable or disable voice calling in chat." },
+    video_global: { display_name: "All video features", description: "Master switch for video posts, reels, and video attachments." },
     video_posts: { display_name: "Short videos", description: "Allow users to publish and view video posts." },
     ai_assistant: { display_name: "AI shopping assistant", description: "Enable the Cenpaya AI shopping assistant when it is ready." },
   };
@@ -26,13 +27,16 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if (!user) return fail("Unauthorized", 401);
     if (!["owner", "super_admin"].includes(user.role)) return fail("Forbidden", 403);
     const rows = await env.DB.prepare("SELECT key,enabled FROM feature_flags WHERE key IN ('voice_calls','video_posts','ai_assistant') ORDER BY key").all<{ key: string; enabled: number }>();
+    const videoReady=!!env.VIDEO_PROCESSOR && typeof env.VIDEO_PROCESSOR_TOKEN === "string" && env.VIDEO_PROCESSOR_TOKEN.length >= 32;
+    const videoBlockedReason=!env.VIDEO_PROCESSOR ? "The FFmpeg video processor service binding is not configured." :
+      !(typeof env.VIDEO_PROCESSOR_TOKEN === "string" && env.VIDEO_PROCESSOR_TOKEN.length >= 32)
+        ? "The video processor authentication secret is not configured." : null;
     const readiness: Record<string, { ready: boolean; reason: string | null }> = {
       voice_calls: { ready: true, reason: null },
+      video_global: { ready: videoReady, reason: videoBlockedReason },
       video_posts: {
-        ready: !!env.VIDEO_PROCESSOR && typeof env.VIDEO_PROCESSOR_TOKEN === "string" && env.VIDEO_PROCESSOR_TOKEN.length >= 32,
-        reason: !env.VIDEO_PROCESSOR ? "The FFmpeg video processor service binding is not configured." :
-          !(typeof env.VIDEO_PROCESSOR_TOKEN === "string" && env.VIDEO_PROCESSOR_TOKEN.length >= 32)
-            ? "The video processor authentication secret is not configured." : null,
+        ready: videoReady,
+        reason: videoBlockedReason,
       },
       ai_assistant: {
         ready: !!env.CENPAYA_API,
@@ -59,7 +63,7 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     if (!Object.prototype.hasOwnProperty.call(featureLabels, key)) return fail("Unknown feature flag", 404);
     const b = await body(request);
     if (!b || Object.keys(b).length !== 1 || typeof b.is_enabled_globally !== "boolean") return fail("Invalid feature flag value");
-    if (b.is_enabled_globally && key === "video_posts" &&
+    if (b.is_enabled_globally && (key === "video_global" || key === "video_posts") &&
       (!env.VIDEO_PROCESSOR || typeof env.VIDEO_PROCESSOR_TOKEN !== "string" || env.VIDEO_PROCESSOR_TOKEN.length < 32)) {
       return fail("Video processing is not configured. Connect the FFmpeg processor service and authentication secret first.", 409);
     }
