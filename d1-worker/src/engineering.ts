@@ -18,6 +18,8 @@ async function isEngineer(db:D1Database,id:string){return !!(await db.prepare("S
 async function isTeam(db:D1Database,id:string){
  const row=await db.prepare("SELECT role FROM users WHERE id=? AND banned=0 AND deleted_at IS NULL").bind(id).first<{role:string}>();
  if(row&&ACTIVE_TEAM_ROLES.includes(row.role))return true;
+ const team=await db.prepare("SELECT 1 AS yes FROM team_workspace_members WHERE user_id=? AND status='active'").bind(id).first().catch(()=>null);
+ if(team)return true;
  const staff=await db.prepare("SELECT 1 AS yes FROM staff_workspace_members WHERE user_id=? AND is_active=1").bind(id).first().catch(()=>null);
  return !!staff;
 }
@@ -38,6 +40,7 @@ async function ensureGeneralRoom(db:D1Database,actor:string){
  SELECT ?,u.id,? FROM users u
  WHERE u.banned=0 AND u.deleted_at IS NULL AND (
   u.role IN ('owner','super_admin','vice_admin','support_agent','staff_member')
+  OR EXISTS(SELECT 1 FROM team_workspace_members tw WHERE tw.user_id=u.id AND tw.status='active')
   OR EXISTS(SELECT 1 FROM staff_workspace_members sw WHERE sw.user_id=u.id AND sw.is_active=1)
   OR EXISTS(SELECT 1 FROM engineering_appointments ea WHERE ea.user_id=u.id AND ea.status='active')
  )`).bind(room.id,actor).run();
@@ -167,6 +170,7 @@ export async function handleEngineeringRoutes(request:Request,env:Env,{path,meth
    (SELECT json_group_array(ea.engineering_role) FROM engineering_appointments ea WHERE ea.user_id=u.id AND ea.status='active') AS engineering_roles
    FROM users u WHERE u.banned=0 AND u.deleted_at IS NULL AND (
     u.role IN ('owner','super_admin','vice_admin','support_agent','staff_member')
+    OR EXISTS(SELECT 1 FROM team_workspace_members tw WHERE tw.user_id=u.id AND tw.status='active')
     OR EXISTS(SELECT 1 FROM staff_workspace_members sw WHERE sw.user_id=u.id AND sw.is_active=1)
     OR EXISTS(SELECT 1 FROM engineering_appointments ea WHERE ea.user_id=u.id AND ea.status='active')
    ) ORDER BY u.username LIMIT 300`).all();
