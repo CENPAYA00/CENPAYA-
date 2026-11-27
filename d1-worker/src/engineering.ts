@@ -21,7 +21,7 @@ async function isTeam(db:D1Database,id:string){
  const staff=await db.prepare("SELECT 1 AS yes FROM staff_workspace_members WHERE user_id=? AND is_active=1").bind(id).first().catch(()=>null);
  return !!staff;
 }
-async function canUseChat(db:D1Database,id:string){return isAdmin({id,role:"owner"} as User)||isTeam(db,id)||isEngineer(db,id);}
+async function canUseChat(db:D1Database,id:string){const row=await db.prepare("SELECT role FROM users WHERE id=? AND banned=0 AND deleted_at IS NULL").bind(id).first<{role:string}>();return !!row&&(ACTIVE_TEAM_ROLES.includes(row.role)||await isTeam(db,id)||await isEngineer(db,id));}
 async function audit(db:D1Database,actor:string,target:string|null,action:string,details:Record<string,unknown>){
  await db.prepare("INSERT INTO engineering_audit_logs(id,actor_user_id,target_user_id,action,details_json) VALUES(?,?,?,?,?)")
  .bind(uuid(),actor,target,action,JSON.stringify(details)).run();
