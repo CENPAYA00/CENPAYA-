@@ -11,20 +11,20 @@ const ROLES=[
 ];
 export default function EngineeringManagement(){
  const [profile,setProfile]=useState<any>(null),[users,setUsers]=useState<any[]>([]),[appointments,setAppointments]=useState<any[]>([]);
- const [userId,setUserId]=useState(''),[role,setRole]=useState(ROLES[0].id),[lead,setLead]=useState(false);
+ const [userId,setUserId]=useState(''),[role,setRole]=useState(ROLES[0].id),[lead,setLead]=useState(false);\n const [taskTitle,setTaskTitle]=useState(''),[taskDescription,setTaskDescription]=useState(''),[taskAssignee,setTaskAssignee]=useState(''),[taskDue,setTaskDue]=useState('');
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[success,setSuccess]=useState('');
  const load=async()=>{
   setLoading(true);setError('');
   try{
    const [p,m,a]=await Promise.all([
     supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/staff_my_profile',{method:'POST',body:JSON.stringify({args:{}})}),
-    supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_available_colleagues',{method:'POST',body:JSON.stringify({args:{}})}),
+    supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_available_users',{method:'POST',body:JSON.stringify({args:{}})}),
     supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_admin_list',{method:'POST',body:JSON.stringify({args:{}})}),
    ]);
    if(!['owner','super_admin'].includes(p.data?.role))throw new Error('Only Owner or Super Admin can manage engineering appointments.');
    if(!m.data?.ok)throw new Error(m.data?.error||'Could not load users.');
    if(!a.data?.ok)throw new Error(a.data?.error||'Could not load engineering appointments.');
-   setProfile(p.data);setUsers(m.data.members||[]);setAppointments(a.data.appointments||[]);
+   setProfile(p.data);setUsers(m.data.users||[]);setAppointments(a.data.appointments||[]);
   }catch(e:any){setError(e?.message||'Could not load engineering management.');}
   finally{setLoading(false);}
  };
@@ -37,6 +37,16 @@ export default function EngineeringManagement(){
    setSuccess('Engineering appointment activated. The member can now open their workspace.');
    setUserId('');setLead(false);await load();
   }catch(e:any){setError(e?.message||'Could not appoint member.');}
+  finally{setBusy(false);}
+ };
+ const assignTask=async()=>{
+  setBusy(true);setError('');setSuccess('');
+  try{
+   const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_assign_task',{method:'POST',body:JSON.stringify({args:{p_title:taskTitle.trim(),p_description:taskDescription.trim()||null,p_assigned_to:taskAssignee,p_due_at:taskDue?new Date(taskDue).toISOString():null}})});
+   if(!r.data?.ok)throw new Error(r.data?.error||'Task assignment failed.');
+   setTaskTitle('');setTaskDescription('');setTaskAssignee('');setTaskDue('');
+   setSuccess('Engineering task assigned to the selected member.');
+  }catch(e:any){setError(e?.message||'Could not assign engineering task.');}
   finally{setBusy(false);}
  };
  const remove=async(a:any)=>{
@@ -55,12 +65,20 @@ export default function EngineeringManagement(){
   {error&&<p role="alert" className="text-xs text-red-700 bg-red-50 p-3 rounded-lg">{error}</p>}{success&&<p role="status" className="text-xs text-green-700 bg-green-50 p-3 rounded-lg">{success}</p>}
   <section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm space-y-3">
    <h3 className="text-sm font-bold text-navy dark:text-white flex items-center gap-2"><UserPlus size={15}/> Appoint engineering member</h3>
-   <label className="block text-[10px] font-bold text-gray-500">Select existing CenPaya user<select value={userId} onChange={e=>setUserId(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg text-xs"><option value="">Choose user</option>{users.map(u=><option key={u.id} value={u.id}>@{u.username} · {String(u.role).replaceAll('_',' ')}{u.engineering_roles?.length?' · already engineering':''}</option>)}</select></label>
+   <label className="block text-[10px] font-bold text-gray-500">Select existing CenPaya user<select value={userId} onChange={e=>setUserId(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg text-xs"><option value="">Choose user</option>{users.map(u=><option key={u.id} value={u.id}>@{u.username||u.email} · {String(u.role).replaceAll('_',' ')}</option>)}</select></label>
    <label className="block text-[10px] font-bold text-gray-500">Engineering function<select value={role} onChange={e=>setRole(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg text-xs">{ROLES.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
    <p className="text-[10px] text-gray-500">{ROLES.find(r=>r.id===role)?.desc}</p>
    <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={lead} onChange={e=>setLead(e.target.checked)}/> Also appoint as Lead Engineer (one active lead at a time)</label>
    {lead&&profile?.role!=='owner'&&<p className="text-[10px] text-amber-700">Lead Engineer designation is restricted to the Owner.</p>}
    <button disabled={busy||!userId||(lead&&profile?.role!=='owner')} onClick={()=>void appoint()} className="w-full rounded-lg bg-accent text-white p-3 text-xs font-bold disabled:opacity-50">{busy?'Processing...':'Activate engineering appointment'}</button>
+  </section>
+  <section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm space-y-2">
+   <h3 className="text-sm font-bold text-navy dark:text-white">Assign engineering work</h3>
+   <select value={taskAssignee} onChange={e=>setTaskAssignee(e.target.value)} className="w-full p-2.5 rounded-lg text-xs"><option value="">Select an appointed engineer</option>{appointments.filter(a=>a.status==='active').map(a=><option key={a.id} value={a.user_id}>@{a.username} · {ROLES.find(r=>r.id===a.engineering_role)?.name||a.engineering_role}</option>)}</select>
+   <input value={taskTitle} onChange={e=>setTaskTitle(e.target.value)} maxLength={160} placeholder="Task title" className="w-full p-2.5 rounded-lg text-xs"/>
+   <textarea value={taskDescription} onChange={e=>setTaskDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Instructions, expected result and review requirements" className="w-full p-2.5 rounded-lg text-xs"/>
+   <input type="datetime-local" value={taskDue} onChange={e=>setTaskDue(e.target.value)} className="w-full p-2.5 rounded-lg text-xs"/>
+   <button disabled={busy||!taskAssignee||!taskTitle.trim()} onClick={()=>void assignTask()} className="w-full rounded-lg bg-accent text-white p-3 text-xs font-bold disabled:opacity-50">Assign engineering task</button>
   </section>
   <section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm">
    <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-navy dark:text-white">Engineering appointments</h3><button onClick={()=>void load()} className="text-accent"><RefreshCw size={15}/></button></div>
