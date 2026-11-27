@@ -9,8 +9,8 @@ import { useI18n } from '../contexts/i18n';
 
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
 const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
-const SUPPORT_WHATSAPP = String(import.meta.env.VITE_SUPPORT_WHATSAPP ?? '237653931300').replace(/\D/g, '');
-const SUPPORT_EMAIL = String(import.meta.env.VITE_SUPPORT_EMAIL ?? 'support@cenpaya.com').trim();
+const SUPPORT_WHATSAPP = String(import.meta.env.VITE_SUPPORT_WHATSAPP ?? '').replace(/\D/g, '');
+const SUPPORT_EMAIL = String(import.meta.env.VITE_SUPPORT_EMAIL ?? '').trim();
 
 const METHOD_LABELS: Record<Method, string> = {
   mtn_momo: 'MTN MoMo',
@@ -245,6 +245,7 @@ export default function Wallet() {
 
       <div className="mx-3 mt-4">
         <p className="text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-2">Community</p>
+        {SUPPORT_WHATSAPP && (
         <button
           onClick={() => window.open(`https://wa.me/${SUPPORT_WHATSAPP}`, '_blank', 'noopener,noreferrer')}
           className="w-full bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3 active:bg-gray-50 cursor-pointer"
@@ -255,6 +256,7 @@ export default function Wallet() {
           <span className="flex-1 text-left text-[11px] font-bold text-navy dark:text-white">WhatsApp</span>
           <ChevronRight size={14} className="text-gray-400" />
         </button>
+        )}
         <button
           onClick={() => navigate('/contact-admin')}
           className="w-full bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3 active:bg-gray-50 cursor-pointer"
@@ -265,6 +267,7 @@ export default function Wallet() {
           <span className="flex-1 text-left text-[11px] font-bold text-navy dark:text-white">Contact Admin</span>
           <ChevronRight size={14} className="text-gray-400" />
         </button>
+        {SUPPORT_EMAIL && (
         <button
           onClick={() => window.open(`mailto:${SUPPORT_EMAIL}`, '_blank', 'noopener,noreferrer')}
           className="w-full bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3 active:bg-gray-50 cursor-pointer"
@@ -275,6 +278,7 @@ export default function Wallet() {
           <span className="flex-1 text-left text-[11px] font-bold text-navy dark:text-white">Email Support</span>
           <ChevronRight size={14} className="text-gray-400" />
         </button>
+        )}
       </div>
     </div>
   );
