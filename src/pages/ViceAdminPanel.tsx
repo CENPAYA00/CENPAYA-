@@ -106,9 +106,9 @@ export default function ViceAdminPanel() {
           <article key={item.id} className="border-t border-gray-100 dark:border-darkline py-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-xs font-bold text-navy dark:text-white">{String(item.escalation_level || '').replace('_',' ').toUpperCase()} escalation</p>
+                <p className="text-xs font-bold text-navy dark:text-white">{String(item.target_role || item.escalation_level || 'vice_admin').replace('_',' ').toUpperCase()} escalation</p>
                 <p className="text-[11px] text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{item.reason}</p>
-                <p className="text-[9px] text-gray-400 mt-1">{item.status} · {new Date(item.created_at).toLocaleString()}</p>
+                <p className="text-[9px] text-gray-400 mt-1">Raised by @{item.raised_by_username || 'team member'} · {item.status} · {new Date(item.created_at).toLocaleString()}</p>{item.ticket_subject && <p className="text-[10px] text-gray-500 mt-1">Ticket: {item.ticket_subject}</p>}
               </div>
               <span className="text-[9px] rounded-full px-2 py-1 bg-amber-50 text-amber-700">{item.status}</span>
             </div>
