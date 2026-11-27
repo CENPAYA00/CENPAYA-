@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS team_chat_conversations (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   is_archived INTEGER NOT NULL DEFAULT 0 CHECK(is_archived IN (0,1))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_team_chat_single_general_room ON team_chat_conversations(conversation_type) WHERE conversation_type='general' AND is_archived=0;
+
 CREATE TABLE IF NOT EXISTS team_chat_members (
   conversation_id TEXT NOT NULL REFERENCES team_chat_conversations(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
