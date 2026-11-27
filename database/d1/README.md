@@ -23,6 +23,8 @@ Supabase remains authoritative for country financial prices, fees, provider read
 
 The D1 Worker's Wrangler configuration points `migrations_dir` to this canonical directory using `../database/d1/migrations`. Do not create a second migration directory under `d1-worker/`.
 
+Migration **0077_cross_worker_contract_alignment.sql** records the D1 contract alignment reported as already applied on 2026-11-27. It permits `super_admin` in the D1 user-role validation triggers and appends the seller/price fields required by the Supabase checkout quote endpoint to `public_marketplace_search`. This is a source-control record, not authorization to replay it against production. Before any application, verify the remote `cenpaya_migrations` tracker and confirm the intervening migration history; do not assume migrations 75–76 are present or absent based only on this file.
+
 The export also contains backup tables and user/profile/listing data. Backup tables and exported row data are intentionally not copied into source control. Do not commit `data.sql`, `full_dump.sql`, CSV/JSON data exports, credentials, or personal user records.
 
 For the complete service-binding and deployment sequence, see [the country configuration rollout runbook](../../docs/CLOUDFLARE_COUNTRY_CONFIGURATION_ROLLOUT.md). That runbook is preparation only; no Cloudflare deployment or remote D1 migration is performed by this change.
