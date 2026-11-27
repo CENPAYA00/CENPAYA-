@@ -45,19 +45,31 @@ export default function Layout() {
 
     const refreshStaffWorkspace = async () => {
       let role = '';
+      let engineeringRoles: string[] = [];
       try {
-        const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string } }>(
-          '/api/v1/admin/rpc/staff_my_profile',
-          { method: 'POST', body: JSON.stringify({ args: {} }) },
-        );
-        if (appointment.data?.ok && appointment.data.role) role = appointment.data.role;
-      } catch { /* Ordinary users have no team appointment. */ }
-      if (!active) return;
+        const { user } = await d1Me();
+        if (!active || !user) return;
+        if (user.role === 'owner' || user.role === 'super_admin') {
+          role = user.role;
+        } else {
+          try {
+            const teamProfile = await d1Request<{ data: { ok?: boolean; role?: string } }>('/api/team/workspace/profile');
+            if (teamProfile.data?.ok && teamProfile.data.role) role = teamProfile.data.role;
+          } catch { /* An account without a team appointment is expected. */ }
+          if (!role && ['vice_admin', 'support_agent', 'staff_member'].includes(user.role)) role = user.role;
+        }
+        try {
+          const engineering = await d1Request<{ data: { ok?: boolean; appointments?: { role: string }[] } }>('/api/engineering/profile');
+          if (engineering.data?.ok) engineeringRoles = (engineering.data.appointments || []).map(a => a.role);
+        } catch { /* No active engineering appointment. */ }
+        if (!role && engineeringRoles.length) role = 'engineering_member';
+      } catch { /* Session restoration can be retried on the next polling cycle. */ }
 
-      const validRoles = ['support_agent', 'staff_member', 'super_admin', 'owner'];
+      if (!active) return;
+      const validRoles = ['support_agent', 'staff_member', 'vice_admin', 'super_admin', 'owner', 'engineering_member'];
       const nextRole = validRoles.includes(role) ? role : null;
       setStaffRole(nextRole);
-      if (!nextRole || nextRole === 'staff_member') {
+      if (!nextRole || nextRole === 'staff_member' || nextRole === 'engineering_member') {
         setStaffBadge(0);
         return;
       }
@@ -105,6 +117,7 @@ export default function Layout() {
   const goToPanel = () => {
     if (staffRole === 'owner' || staffRole === 'super_admin') navigate('/admin');
     else if (staffRole === 'vice_admin') navigate('/vice-admin');
+    else if (staffRole === 'engineering_member') navigate('/engineering');
     else if (staffRole === 'support_agent' || staffRole === 'staff_member') navigate('/staff');
   };
 
