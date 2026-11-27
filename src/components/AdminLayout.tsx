@@ -32,6 +32,19 @@ export default function AdminLayout() {
       if (cancelled) return;
       if (!user) { navigate('/'); return; }
 
+      // Engineering management is served by the D1 Worker control plane.
+      // Authorize this route from the authenticated D1 session, without requiring the legacy Supabase Worker.
+      if (window.location.pathname === '/admin/engineering') {
+        if (!['owner','super_admin'].includes(user.role)) {
+          navigate('/home');
+          return;
+        }
+        setAdminRole(user.role);
+        setAuthorized(true);
+        setChecking(false);
+        return;
+      }
+
       let role = '';
       try {
         const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string; error?: string } }>('/api/v1/admin/rpc/staff_my_profile', {
