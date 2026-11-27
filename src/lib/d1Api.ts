@@ -2,6 +2,7 @@ const API_BASE = String(import.meta.env.VITE_D1_API_URL ?? '').trim().replace(/\
 let sessionToken: string | null = null;
 let sessionTokenExpiresAt = 0;
 let refreshInFlight: Promise<string | null> | null = null;
+let refreshInFlightGeneration = -1;
 let sessionGeneration = 0;
 
 export type D1User = {
@@ -37,13 +38,15 @@ export function setD1Token(token: string | null) {
   sessionGeneration += 1;
   sessionToken = token;
   sessionTokenExpiresAt = token ? Date.now() + 900_000 : 0;
+  // Detach any refresh started under the previous session generation.
+  refreshInFlight = null;
+  refreshInFlightGeneration = -1;
 }
 
 export function refreshD1Session(force = false): Promise<string | null> {
   if (!force && getD1Token()) return Promise.resolve(sessionToken);
-  if (refreshInFlight) return refreshInFlight;
-
   const generationAtStart = sessionGeneration;
+  if (refreshInFlight && refreshInFlightGeneration === generationAtStart) return refreshInFlight;
   const refresh = (async (): Promise<string | null> => {
     try {
       const response = await fetch(getD1ApiUrl('/api/auth/refresh'), {
@@ -56,14 +59,20 @@ export function refreshD1Session(force = false): Promise<string | null> {
         sessionToken = nextToken;
         sessionTokenExpiresAt = nextToken ? Date.now() + Math.max(60, Number(payload.expires_in) || 900) * 1000 : 0;
       }
-      return sessionGeneration === generationAtStart ? sessionToken : sessionToken;
+      return sessionGeneration === generationAtStart ? nextToken : sessionToken;
     } catch {
       if (sessionGeneration === generationAtStart) { sessionToken = null; sessionTokenExpiresAt = 0; }
       return sessionToken;
     }
   })();
   refreshInFlight = refresh;
-  void refresh.finally(() => { if (refreshInFlight === refresh) refreshInFlight = null; });
+  refreshInFlightGeneration = generationAtStart;
+  void refresh.finally(() => {
+    if (refreshInFlight === refresh) {
+      refreshInFlight = null;
+      refreshInFlightGeneration = -1;
+    }
+  });
   return refresh;
 }
 
@@ -75,11 +84,19 @@ export function getD1ApiUrl(path: string): string {
 export async function d1Request<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  const token = getD1Token();
-  if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
+  const run = async (token: string | null): Promise<Response> => {
+    const requestHeaders = new Headers(options.headers);
+    if (options.body && !requestHeaders.has('Content-Type')) requestHeaders.set('Content-Type', 'application/json');
+    if (token) requestHeaders.set('Authorization', `Bearer ${token}`);
+    return fetch(getD1ApiUrl(path), { ...options, headers: requestHeaders, credentials: 'include' });
+  };
   let response: Response;
   try {
-    response = await fetch(getD1ApiUrl(path), { ...options, headers, credentials: 'include' });
+    response = await run(getD1Token());
+    if (response.status === 401) {
+      const refreshed = await refreshD1Session(true);
+      if (refreshed) response = await run(refreshed);
+    }
   } catch {
     throw new Error('Unable to reach CenPaya services. Check your connection and D1 API configuration.');
   }
