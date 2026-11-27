@@ -38,19 +38,17 @@ export default function StaffLayout() {
           setWorkspacePermissions(appointment.data.permissions || []);
         }
       } catch { /* Continue to the independent engineering appointment check. */ }
-      if (!allowed) {
-        try {
-          const engineering = await supabaseWorkerRequest<{ data: { ok?: boolean; appointments?: { role: string }[] } }>(
-            '/api/v1/admin/rpc/engineering_my_profile',
-            { method: 'POST', body: JSON.stringify({ args: {} }) },
-          );
-          if (engineering.data?.ok && engineering.data.appointments?.length) {
-            role = 'engineering_member';
-            setEngineeringRoles(engineering.data.appointments.map(a => a.role));
-            allowed = true;
-          }
-        } catch { /* No active engineering appointment: deny access. */ }
-      }
+      try {
+        const engineering = await supabaseWorkerRequest<{ data: { ok?: boolean; appointments?: { role: string }[] } }>(
+          '/api/v1/admin/rpc/engineering_my_profile',
+          { method: 'POST', body: JSON.stringify({ args: {} }) },
+        );
+        if (engineering.data?.ok && engineering.data.appointments?.length) {
+          setEngineeringRoles(engineering.data.appointments.map(a => a.role));
+          if (!allowed) role = 'engineering_member';
+          allowed = true;
+        }
+      } catch { /* No active engineering appointment. Existing app team access remains unchanged. */ }
       if (!allowed) {
         alert('Access denied. No active team or engineering appointment was found.');
         navigate('/home');
@@ -93,6 +91,10 @@ export default function StaffLayout() {
             { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' },
           ];
 
+  const visibleTabs = engineeringRoles.length && workspaceRole !== 'engineering_member'
+    ? [...tabs, { path: '/engineering', icon: <LayoutDashboard size={15} />, label: 'Engineering' }]
+    : tabs;
+
   if (checking) {
     return (
       <div className="min-h-screen bg-offwhite dark:bg-darkbg flex items-center justify-center">
@@ -127,7 +129,7 @@ export default function StaffLayout() {
       </header>
 
       <nav className="bg-white dark:bg-darkcard border-b border-gray-100 dark:border-darkline flex sticky top-[57px] z-40 shadow-sm">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <NavLink
             key={tab.path}
             to={tab.path}
