@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Send, Check, AlertTriangle } from 'lucide-react';
 
 export default function StaffTicketThread() {
@@ -18,14 +19,26 @@ export default function StaffTicketThread() {
   const load = async () => {
     if (!id) return;
     try {
-      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/get_ticket_thread', {
-        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id } }),
-      });
-      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not load ticket.');
-      setTicket(result.data.ticket || null);
-      setMessages(result.data.messages || []);
-      const profile = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) });
-      if (profile.data?.ok) { setWorkspaceRole(profile.data.role || ''); setWorkspaceUserId(profile.data.user_id || ''); }
+      try {
+        const [thread, profile] = await Promise.all([
+          d1Request<{ data: any }>(`/api/staff/tickets/${encodeURIComponent(id)}`),
+          d1Request<{ data: any }>('/api/staff/profile'),
+        ]);
+        setTicket(thread.data?.ticket || null);
+        setMessages(thread.data?.messages || []);
+        setWorkspaceRole(profile.data?.role || '');
+        setWorkspaceUserId(profile.data?.id || '');
+      } catch {
+        // Compatibility path for team appointments that still live in the legacy service.
+        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/get_ticket_thread', {
+          method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id } }),
+        });
+        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not load ticket.');
+        setTicket(result.data.ticket || null);
+        setMessages(result.data.messages || []);
+        const profile = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) });
+        if (profile.data?.ok) { setWorkspaceRole(profile.data.role || ''); setWorkspaceUserId(profile.data.user_id || ''); }
+      }
     } catch (error) { console.warn('Could not load support ticket', error); }
     finally { setLoading(false); }
   };
@@ -44,10 +57,16 @@ export default function StaffTicketThread() {
     if (!input.trim() || !id) return;
     setSending(true);
     try {
-      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/send_ticket_message', {
-        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id, p_body: input.trim() } }),
-      });
-      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not send reply.');
+      try {
+        await d1Request(`/api/staff/tickets/${encodeURIComponent(id)}/messages`, {
+          method: 'POST', body: JSON.stringify({ body: input.trim() }),
+        });
+      } catch {
+        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/send_ticket_message', {
+          method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id, p_body: input.trim() } }),
+        });
+        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not send reply.');
+      }
       setInput('');
       await load();
     } catch (error: any) { alert(error.message || 'Send failed'); }
@@ -56,10 +75,16 @@ export default function StaffTicketThread() {
 
   const setStatus = async (status: 'open' | 'in_progress' | 'resolved' | 'closed') => {
     try {
-      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/set_ticket_status', {
-        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id, p_status: status } }),
-      });
-      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update ticket status.');
+      try {
+        await d1Request(`/api/staff/tickets/${encodeURIComponent(id)}`, {
+          method: 'PATCH', body: JSON.stringify({ status }),
+        });
+      } catch {
+        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/set_ticket_status', {
+          method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id, p_status: status } }),
+        });
+        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update ticket status.');
+      }
       load();
     } catch (error: any) { alert(error.message || 'Update failed'); }
   };
@@ -67,10 +92,14 @@ export default function StaffTicketThread() {
   const claimTicket = async () => {
     if (!id) return;
     try {
-      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_claim_ticket', {
-        method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id } }),
-      });
-      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not claim ticket.');
+      try {
+        await d1Request(`/api/staff/tickets/${encodeURIComponent(id)}/claim`, { method: 'POST' });
+      } catch {
+        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_claim_ticket', {
+          method: 'POST', body: JSON.stringify({ args: { p_ticket_id: id } }),
+        });
+        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not claim ticket.');
+      }
       await load();
     } catch (error: any) { alert(error.message || 'Could not claim ticket.'); }
   };
@@ -147,7 +176,8 @@ export default function StaffTicketThread() {
 
       <main className="flex-1 overflow-y-auto p-3 pb-24">
         {messages.map(m => {
-          const isStaff = m.sender_role === 'staff' || m.sender_role === 'support' || m.sender_role === 'admin';
+          const senderRole = m.sender_role || m.sender_type;
+          const isStaff = senderRole === 'staff' || senderRole === 'support' || senderRole === 'admin';
           return (
             <div key={m.id} className={`mb-2 flex ${isStaff ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-[12px] ${
