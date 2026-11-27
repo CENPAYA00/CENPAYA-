@@ -121,7 +121,7 @@ export default function StaffPanel() {
               </div>
               {task.description && <p className="text-[12px] text-gray-600 dark:text-gray-300 mt-2 whitespace-pre-wrap">{task.description}</p>}
               {task.due_at && <p className="text-[10px] text-gray-500 mt-2">Due {new Date(task.due_at).toLocaleString()}</p>}
-              {profile?.source !== 'd1' && <textarea
+              {profile?.source !== 'd1' && <><textarea
                 value={taskNotes[task.id] || ''}
                 onChange={e => setTaskNotes(previous => ({ ...previous, [task.id]: e.target.value }))}
                 maxLength={5000}
@@ -139,7 +139,7 @@ export default function StaffPanel() {
               <div className="flex flex-wrap gap-2 mt-2">
                 {(profile?.source === 'd1' ? (['todo','in_progress','blocked','completed'] as const) : (['todo','in_progress','blocked','submitted'] as const)).filter(status => status !== task.status).map(status => (
                   <button key={status} onClick={() => void updateTask(task.id,status)} className="text-[10px] font-bold px-3 py-2 rounded-lg bg-[#e3f7ec] text-[#12935a]">
-                    {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : 'Submit report'}
+                    {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : status === 'completed' ? 'Mark complete' : 'Submit report'}
                   </button>
                 ))}
               </div>
