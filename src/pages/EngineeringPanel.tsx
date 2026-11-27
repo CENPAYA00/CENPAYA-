@@ -13,6 +13,11 @@ export default function EngineeringPanel() {
   const navigate=useNavigate();
   const [profile,setProfile]=useState<any>(null);
   const [tasks,setTasks]=useState<any[]>([]);
+  const [members,setMembers]=useState<any[]>([]);
+  const [taskTitle,setTaskTitle]=useState('');
+  const [taskDescription,setTaskDescription]=useState('');
+  const [taskAssignee,setTaskAssignee]=useState('');
+  const [taskDue,setTaskDue]=useState('');
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
   const [notes,setNotes]=useState<Record<string,string>>({});
@@ -29,6 +34,10 @@ export default function EngineeringPanel() {
       if(!p.data?.ok)throw new Error(p.data?.error||'Active engineering appointment required.');
       if(!t.data?.ok)throw new Error(t.data?.error||'Could not load engineering tasks.');
       setProfile(p.data);setTasks(t.data.tasks||[]);
+      if((p.data.appointments||[]).some((a:any)=>a.is_lead)){
+        const roster=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_available_colleagues',{method:'POST',body:JSON.stringify({args:{}})});
+        setMembers(roster.data?.ok?roster.data.members||[]:[]);
+      }
     } catch(e:any){setError(e?.message||'Could not load engineering workspace.');}
     finally{setLoading(false);}
   };
@@ -47,6 +56,20 @@ export default function EngineeringPanel() {
     finally{setBusy(null);}
   };
 
+  const assignEngineeringTask=async()=>{
+    if(!taskTitle.trim()||!taskAssignee)return;
+    setBusy('assign');setError('');
+    try{
+      const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_assign_task',{
+        method:'POST',body:JSON.stringify({args:{p_title:taskTitle.trim(),p_description:taskDescription.trim()||null,p_assigned_to:taskAssignee,p_due_at:taskDue?new Date(taskDue).toISOString():null}})
+      });
+      if(!r.data?.ok)throw new Error(r.data?.error||'Task assignment failed.');
+      setTaskTitle('');setTaskDescription('');setTaskAssignee('');setTaskDue('');
+      await load();
+    }catch(e:any){setError(e?.message||'Could not assign engineering task.');}
+    finally{setBusy(null);}
+  };
+
   if(loading)return <div className="p-8 text-center text-xs text-gray-500">Loading engineering workspace...</div>;
   if(error&&!profile)return <div className="max-w-3xl mx-auto p-4"><p role="alert" className="rounded-xl bg-red-50 text-red-700 p-3 text-xs">{error}</p><button onClick={()=>navigate('/home')} className="mt-3 text-xs font-bold text-accent">Back to app</button></div>;
 
@@ -60,6 +83,18 @@ export default function EngineeringPanel() {
       <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-black text-navy dark:text-white">{LABELS[a.role]||a.role}</h3>{a.is_lead&&<span className="text-[9px] font-bold rounded-full px-2 py-1 bg-amber-100 text-amber-800">Lead Engineer</span>}</div>
       <p className="text-[11px] text-gray-600 dark:text-gray-300 mt-2">{a.description}</p>
     </section>)}
+    {(profile?.appointments||[]).some((a:any)=>a.is_lead)&&<section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm space-y-2">
+      <h3 className="text-sm font-bold text-navy dark:text-white">Lead Engineer · Assign work</h3>
+      <p className="text-[10px] text-gray-500">You can assign and review tasks for active engineering members only.</p>
+      <select value={taskAssignee} onChange={e=>setTaskAssignee(e.target.value)} className="w-full p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg text-xs">
+        <option value="">Select an engineering teammate</option>
+        {members.filter(m=>m.id!==profile?.user_id&&(m.engineering_roles||[]).length>0).map(m=><option key={m.id} value={m.id}>@{m.username}</option>)}
+      </select>
+      <input value={taskTitle} onChange={e=>setTaskTitle(e.target.value)} maxLength={160} placeholder="Task title" className="w-full p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg text-xs"/>
+      <textarea value={taskDescription} onChange={e=>setTaskDescription(e.target.value)} maxLength={5000} rows={3} placeholder="Instructions and expected result" className="w-full p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg text-xs"/>
+      <input type="datetime-local" value={taskDue} onChange={e=>setTaskDue(e.target.value)} className="w-full p-2.5 rounded-lg bg-gray-50 dark:bg-darkbg text-xs"/>
+      <button disabled={busy==='assign'||!taskAssignee||!taskTitle.trim()} onClick={()=>void assignEngineeringTask()} className="w-full bg-accent text-white rounded-lg p-3 text-xs font-bold disabled:opacity-50">{busy==='assign'?'Assigning...':'Assign engineering task'}</button>
+    </section>}
     <section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm">
       <div className="flex items-center justify-between"><h3 className="text-sm font-bold text-navy dark:text-white flex items-center gap-2"><ClipboardList size={16}/> My assigned engineering tasks</h3><span className="text-[10px] text-gray-500">{tasks.length} tasks</span></div>
       {error&&<p role="alert" className="text-xs text-red-600 mt-2">{error}</p>}
