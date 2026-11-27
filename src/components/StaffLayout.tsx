@@ -28,16 +28,26 @@ export default function StaffLayout() {
       let role = '';
       let allowed = false;
       try {
-        const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string; permissions?: string[] } }>(
-          '/api/v1/admin/rpc/staff_my_profile',
-          { method: 'POST', body: JSON.stringify({ args: {} }) },
-        );
-        if (appointment.data?.ok && appointment.data.role) {
-          role = appointment.data.role;
+        const teamProfile = await d1Request<{ data: { ok?: boolean; role?: string; permissions?: string[] } }>('/api/team/workspace/profile');
+        if (teamProfile.data?.ok && teamProfile.data.role) {
+          role = teamProfile.data.role;
           allowed = true;
-          setWorkspacePermissions(appointment.data.permissions || []);
+          setWorkspacePermissions(teamProfile.data.permissions || []);
         }
-      } catch { /* Continue to the independent engineering appointment check. */ }
+      } catch { /* Older team appointments may still be served by the existing team service. */ }
+      if (!allowed) {
+        try {
+          const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string; permissions?: string[] } }>(
+            '/api/v1/admin/rpc/staff_my_profile',
+            { method: 'POST', body: JSON.stringify({ args: {} }) },
+          );
+          if (appointment.data?.ok && appointment.data.role) {
+            role = appointment.data.role;
+            allowed = true;
+            setWorkspacePermissions(appointment.data.permissions || []);
+          }
+        } catch { /* Continue to the independent engineering appointment check. */ }
+      }
       try {
         const engineering = await d1Request<{ data: { ok?: boolean; appointments?: { role: string }[] } }>('/api/engineering/profile');
         if (engineering.data?.ok && engineering.data.appointments?.length) {
