@@ -66,12 +66,12 @@ export default function EngineeringManagement(){
   {error&&<p role="alert" className="text-xs text-red-700 bg-red-50 p-3 rounded-lg">{error}</p>}{success&&<p role="status" className="text-xs text-green-700 bg-green-50 p-3 rounded-lg">{success}</p>}
   <section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm space-y-3">
    <h3 className="text-sm font-bold text-navy dark:text-white flex items-center gap-2"><UserPlus size={15}/> Appoint engineering member</h3>
-   <label className="block text-[10px] font-bold text-gray-500">Select existing CenPaya user<select value={userId} onChange={e=>setUserId(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg text-xs"><option value="">Choose user</option>{users.map(u=><option key={u.id} value={u.id}>@{u.username||u.email} · {String(u.role).replaceAll('_',' ')}</option>)}</select></label>
+   <label className="block text-[10px] font-bold text-gray-500">Select existing CenPaya user<select value={userId} onChange={e=>setUserId(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg text-xs"><option value="">Choose user</option>{users.map(u=><option key={u.id} value={u.id}>@{u.username||u.email} · {String(u.role).replace(/_/g,' ')}</option>)}</select></label>
    <label className="block text-[10px] font-bold text-gray-500">Engineering function<select value={role} onChange={e=>setRole(e.target.value)} className="w-full mt-1 p-2.5 rounded-lg text-xs">{ROLES.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
    <p className="text-[10px] text-gray-500">{ROLES.find(r=>r.id===role)?.desc}</p>
    <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={lead} onChange={e=>setLead(e.target.checked)}/> Also appoint as Lead Engineer (one active lead at a time)</label>
    {lead&&profile?.role!=='owner'&&<p className="text-[10px] text-amber-700">Lead Engineer designation is restricted to the Owner.</p>}
-   <button disabled={busy||!userId||(lead&&profile?.role!=='owner')} onClick={()=>void appoint()} className="w-full rounded-lg bg-accent text-white p-3 text-xs font-bold disabled:opacity-50">{busy?'Processing...':'Activate engineering appointment'}</button>
+   <button disabled={busy||!userId||} onClick={()=>void appoint()} className="w-full rounded-lg bg-accent text-white p-3 text-xs font-bold disabled:opacity-50">{busy?'Processing...':'Activate engineering appointment'}</button>
   </section>
   <section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm space-y-2">
    <h3 className="text-sm font-bold text-navy dark:text-white">Assign engineering work</h3>
