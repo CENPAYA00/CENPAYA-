@@ -74,6 +74,7 @@ export default function StaffTicketThread() {
   };
 
   const setStatus = async (status: 'open' | 'in_progress' | 'resolved' | 'closed') => {
+    if (!id) return;
     try {
       try {
         await d1Request(`/api/staff/tickets/${encodeURIComponent(id)}`, {
