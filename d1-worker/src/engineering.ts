@@ -50,8 +50,23 @@ async function memberOf(db:D1Database,conversationId:string,userId:string){
  return !!(await db.prepare("SELECT 1 AS yes FROM team_chat_members WHERE conversation_id=? AND user_id=?").bind(conversationId,userId).first());
 }
 export async function handleEngineeringRoutes(request:Request,env:Env,{path,method,user}:Context):Promise<Response|null>{
- if(path.startsWith("/api/engineering/")||path.startsWith("/api/admin/engineering/")||path.startsWith("/api/team/chat/")){
+ if(path.startsWith("/api/engineering/")||path.startsWith("/api/admin/engineering/")||path.startsWith("/api/team/chat/")||path==="/api/team/workspace/profile"){
   if(!user)return fail("Authentication required",401);
+ }
+ if(path==="/api/team/workspace/profile"&&method==="GET"){
+  const admin=ACTIVE_TEAM_ROLES.includes(user!.role)&&["owner","super_admin"].includes(user!.role);
+  if(admin)return ok({role:user!.role,title:user!.role==="owner"?"Owner":"Super Admin",permissions:[]});
+  const appointment=await env.DB.prepare("SELECT workspace_role,appointment_title,responsibilities_json,permissions_json,supervisor_user_id,status FROM team_workspace_members WHERE user_id=? AND status='active'").bind(user!.id).first<any>().catch(()=>null);
+  if(appointment){
+   let permissions:string[]=[];let responsibilities:string[]=[];
+   try{permissions=JSON.parse(appointment.permissions_json||"[]");}catch{}
+   try{responsibilities=JSON.parse(appointment.responsibilities_json||"[]");}catch{}
+   return ok({role:appointment.workspace_role,title:appointment.appointment_title,permissions,responsibilities,supervisor_user_id:appointment.supervisor_user_id,appointment_status:appointment.status});
+  }
+  const staff=await env.DB.prepare("SELECT 1 AS active FROM staff_workspace_members WHERE user_id=? AND is_active=1").bind(user!.id).first().catch(()=>null);
+  if(staff)return ok({role:"staff_member",title:"Staff Member",permissions:[],appointment_status:"active"});
+  if(["vice_admin","support_agent"].includes(user!.role))return ok({role:user!.role,title:user!.role.replace(/_/g," "),permissions:[]});
+  return fail("No active team workspace appointment",403);
  }
  if(path==="/api/engineering/profile"&&method==="GET"){
   const rows=await env.DB.prepare("SELECT id,engineering_role AS role,description,is_lead,status,appointed_at FROM engineering_appointments WHERE user_id=? AND status='active' ORDER BY appointed_at").bind(user!.id).all();
