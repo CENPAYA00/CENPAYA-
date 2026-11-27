@@ -87,14 +87,14 @@ export default function StaffLayout() {
     : workspaceRole === 'vice_admin'
       ? [
           { path: '/vice-admin', icon: <LayoutDashboard size={15} />, label: 'Overview' },
-          { path: '/staff/tasks', icon: <Flag size={15} />, label: 'Team Tasks' },
+          ...(workspacePermissions.includes('can_manage_tasks') ? [{ path: '/staff/tasks', icon: <Flag size={15} />, label: 'Team Tasks' }] : []),
           { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' },
           ...(['can_manage_staff','can_manage_support_agents'].some(p => workspacePermissions.includes(p)) ? [{ path: '/staff/management', icon: <Users size={15} />, label: 'Team Management' }] : []),
         ]
       : workspaceRole === 'support_agent'
         ? [
             { path: '/staff', icon: <Inbox size={15} />, label: 'Tickets' },
-            { path: '/staff/tasks', icon: <Flag size={15} />, label: 'Staff Tasks' },
+            ...(workspacePermissions.includes('can_supervise_staff') ? [{ path: '/staff/tasks', icon: <Flag size={15} />, label: 'Staff Tasks' }] : []),
             { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' },
           ]
         : [
