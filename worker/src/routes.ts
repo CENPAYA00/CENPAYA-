@@ -15,7 +15,7 @@ const integerIn = (value: unknown, min: number, max: number) =>
 const isText = (v: unknown, max = 500, min = 1) =>
   typeof v === "string" && v.trim().length >= min && v.length <= max;
 const isUuid = (v: unknown) =>
-  typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+  typeof v === "string" && /^(?:00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(v);
 const isBool = (v: unknown) => typeof v === "boolean";
 const isNumericAmount = (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 1_000_000_000_000;
