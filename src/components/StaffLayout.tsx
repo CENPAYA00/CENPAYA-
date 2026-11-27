@@ -46,6 +46,10 @@ export default function StaffLayout() {
           allowed = true;
         }
       } catch { /* No active engineering appointment. Existing app team access remains unchanged. */ }
+      if (!allowed && ['owner','super_admin'].includes(user.role)) {
+        role = user.role;
+        allowed = true;
+      }
       if (!allowed) {
         alert('Access denied. No active team or engineering appointment was found.');
         navigate('/home');
@@ -64,7 +68,9 @@ export default function StaffLayout() {
     navigate('/');
   };
 
-  const tabs = workspaceRole === 'engineering_member'
+  const tabs = workspaceRole === 'owner' || workspaceRole === 'super_admin'
+    ? [{ path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' }]
+    : workspaceRole === 'engineering_member'
     ? [{ path: '/engineering', icon: <LayoutDashboard size={15} />, label: 'My Engineering Work' }, { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' }]
     : workspaceRole === 'staff_member'
     ? [{ path: '/staff', icon: <Inbox size={15} />, label: 'My Tasks' }, { path: '/staff/team', icon: <MessageCircle size={15} />, label: 'Team Chat' }]
@@ -107,7 +113,7 @@ export default function StaffLayout() {
       <header className="bg-gradient-to-r from-brand to-brand-dark text-white px-3.5 py-2.5 flex justify-between items-center sticky top-0 z-50 shadow-md">
         <div>
           <h1 className="text-[14px] font-black tracking-tight">CenPaya</h1>
-          <p className="text-[9px] text-accent-light font-bold tracking-widest">{workspaceRole === 'engineering_member' ? 'ENGINEERING DEPARTMENT' : workspaceRole === 'support_agent' ? 'SUPPORT AGENT' : workspaceRole === 'vice_admin' ? 'VICE ADMIN' : workspaceRole === 'owner' || workspaceRole === 'super_admin' ? 'ADMIN SUPPORT' : 'STAFF MEMBER'}</p>
+          <p className="text-[9px] text-accent-light font-bold tracking-widest">{workspaceRole === 'engineering_member' ? 'ENGINEERING DEPARTMENT' : workspaceRole === 'owner' || workspaceRole === 'super_admin' ? 'ADMIN TEAM CHAT' : workspaceRole === 'support_agent' ? 'SUPPORT AGENT' : workspaceRole === 'vice_admin' ? 'VICE ADMIN' : workspaceRole === 'owner' || workspaceRole === 'super_admin' ? 'ADMIN SUPPORT' : 'STAFF MEMBER'}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
