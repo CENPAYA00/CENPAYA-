@@ -69,20 +69,65 @@ export default function Layout() {
           if (active) setStaffBadge(ticketCount + reportCount);
         }
       }
-      const refreshNotifications = async () => {
-        try {
-          const result = await d1Request<{ data: any[] }>('/api/notifications?limit=100');
-          if (!active) return;
-          const next = (result.data || []).filter((notification: any) => !notification.is_read).length;
-          setUnreadNotifs(previous => {
-            if (next > previous) play('notification_received');
-            return next;
-          });
-        } catch { /* Retry on the next polling cycle. */ }
-      };
-      await refreshNotifications();
-      timer = window.setInterval(() => { void refreshNotifications(); }, 15000);
+  useEffect(() => {
+    let active = true;
+    let timer: number | undefined;
+
+    const refreshStaffWorkspace = async () => {
+      let role = '';
+      try {
+        const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string } }>(
+          '/api/v1/admin/rpc/staff_my_profile',
+          { method: 'POST', body: JSON.stringify({ args: {} }) },
+        );
+        if (appointment.data?.ok && appointment.data.role) role = appointment.data.role;
+      } catch { /* Ordinary users have no team appointment. */ }
+      if (!active) return;
+
+      const validRoles = ['support_agent', 'staff_member', 'super_admin', 'owner'];
+      const nextRole = validRoles.includes(role) ? role : null;
+      setStaffRole(nextRole);
+      if (!nextRole || nextRole === 'staff_member') {
+        setStaffBadge(0);
+        return;
+      }
+
+      const [ticketsRes, reportsRes] = await Promise.all([
+        supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
+        supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
+      ]);
+      if (!active) return;
+      const ticketCount = (ticketsRes.data || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
+      const reportCount = (reportsRes.data || []).length;
+      setStaffBadge(ticketCount + reportCount);
     };
+
+    const refreshNotifications = async () => {
+      try {
+        const result = await d1Request<{ data: any[] }>('/api/notifications?limit=100');
+        if (!active) return;
+        const next = (result.data || []).filter((notification: any) => !notification.is_read).length;
+        setUnreadNotifs(previous => {
+          if (next > previous) play('notification_received');
+          return next;
+        });
+      } catch { /* Retry on the next polling cycle. */ }
+    };
+
+    const init = async () => {
+      try {
+        const { user } = await d1Me();
+        if (!user || !active) return;
+        setUserId(user.id);
+        await Promise.all([refreshStaffWorkspace(), refreshNotifications()]);
+        if (!active) return;
+        timer = window.setInterval(() => {
+          void refreshStaffWorkspace();
+          void refreshNotifications();
+        }, 15000);
+      } catch { /* The layout can render while session restoration is retried elsewhere. */ }
+    };
+
     void init();
     return () => { active = false; if (timer) window.clearInterval(timer); };
   }, [play]);
