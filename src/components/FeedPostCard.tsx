@@ -8,7 +8,7 @@ import { d1Request } from '../lib/d1Api';
 import ImageGrid from './ImageGrid';
 import DocumentCard from './DocumentCard';
 import ReportSheet from './ReportSheet';
-import PostFollowButton from './PostFollowButton';
+import FollowButton from './FollowButton';
 import ShareSheet from './ShareSheet';
 import DemoBadge from './DemoBadge';
 import { useSound } from '../contexts/sound';
@@ -230,10 +230,11 @@ export default function FeedPostCard({
           >
             <MessageCircle size={15} />
           </button>
-          <PostFollowButton 
-            authorId={post.user_id} 
-            initialFollowing={isFollowingAuthor} 
+          <FollowButton
+            targetId={post.user_id}
+            initialFollowing={isFollowingAuthor}
             onFollowToggle={onFollowToggle}
+            variant="post"
           />
         </>
       )}
