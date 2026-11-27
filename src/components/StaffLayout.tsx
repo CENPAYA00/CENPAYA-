@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Home, Inbox, Flag, LogOut, Users, MessageCircle, AlertTriangle, LayoutDashboard } from 'lucide-react';
-import { d1Me, d1Logout } from '../lib/d1Api';
+import { d1Me, d1Logout, d1Request } from '../lib/d1Api';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
 export default function StaffLayout() {
@@ -39,10 +39,7 @@ export default function StaffLayout() {
         }
       } catch { /* Continue to the independent engineering appointment check. */ }
       try {
-        const engineering = await supabaseWorkerRequest<{ data: { ok?: boolean; appointments?: { role: string }[] } }>(
-          '/api/v1/admin/rpc/engineering_my_profile',
-          { method: 'POST', body: JSON.stringify({ args: {} }) },
-        );
+        const engineering = await d1Request<{ data: { ok?: boolean; appointments?: { role: string }[] } }>('/api/engineering/profile');
         if (engineering.data?.ok && engineering.data.appointments?.length) {
           setEngineeringRoles(engineering.data.appointments.map(a => a.role));
           if (!allowed) role = 'engineering_member';
