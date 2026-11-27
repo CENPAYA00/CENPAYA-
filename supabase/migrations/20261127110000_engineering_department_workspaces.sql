@@ -98,9 +98,7 @@ begin
   if not exists(select 1 from public.users where id=p_user_id and banned=false and coalesce(is_deactivated,false)=false) then
     return jsonb_build_object('ok',false,'error','Selected user account is unavailable');
   end if;
-  if p_is_lead and v_role<>'owner' then
-    return jsonb_build_object('ok',false,'error','Only the Owner can appoint the Lead Engineer');
-  end if;
+  -- Owner and Super Admin may appoint the Lead Engineer.
   if p_is_lead and exists(select 1 from public.engineering_appointments where status='active' and is_lead and user_id<>p_user_id) then
     return jsonb_build_object('ok',false,'error','A Lead Engineer is already appointed');
   end if;
@@ -242,14 +240,14 @@ begin
   if p_type='direct' and coalesce(array_length(p_member_ids,1),0)<>1 then return jsonb_build_object('ok',false,'error','direct message requires exactly one recipient'); end if;
   if p_type='department' and p_department_id is null then return jsonb_build_object('ok',false,'error','department required for department conversation'); end if;
   if p_title is not null and char_length(p_title)>160 then return jsonb_build_object('ok',false,'error','conversation title too long'); end if;
-  insert into public.team_conversations(conversation_type,title,department_id,created_by)
-  values(p_type,nullif(trim(p_title),''),p_department_id,v_uid) returning id into v_id;
-  insert into public.team_conversation_members(conversation_id,user_id,added_by)
-  values(v_id,v_uid,v_uid) on conflict do nothing;
   if exists(
     select 1 from unnest(coalesce(p_member_ids,'{}'::uuid[])) s(user_id)
     where not public.is_active_team_member(s.user_id)
   ) then return jsonb_build_object('ok',false,'error','one or more recipients are not active team members'); end if;
+  insert into public.team_conversations(conversation_type,title,department_id,created_by)
+  values(p_type,nullif(trim(p_title),''),p_department_id,v_uid) returning id into v_id;
+  insert into public.team_conversation_members(conversation_id,user_id,added_by)
+  values(v_id,v_uid,v_uid) on conflict do nothing;
   insert into public.team_conversation_members(conversation_id,user_id,added_by)
   select v_id,s.user_id,v_uid from unnest(coalesce(p_member_ids,'{}'::uuid[])) s(user_id)
   on conflict do nothing;
