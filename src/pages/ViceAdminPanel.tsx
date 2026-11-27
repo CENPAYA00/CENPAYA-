@@ -35,7 +35,7 @@ export default function ViceAdminPanel() {
       const [d1Overview, summary, queue] = await Promise.all([
         canSeeMetrics ? d1Request<{data:any}>('/api/team/workspace/overview').catch(() => ({data:{ok:false}})) : Promise.resolve({data:{ok:false}}),
         canSeeMetrics ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { ok: false } })) : Promise.resolve({ data: { ok: true, overview: null } }),
-        canManageEscalations ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_list_escalations', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { ok: false } })) : Promise.resolve({ data: { ok: true, escalations: [] } }),
+        canManageEscalations ? d1Request<{data:any}>('/api/team/escalations').catch(() => ({data:{ok:false}})) : Promise.resolve({data:{ok:true,escalations:[]}}),
       ]);
       setOverview(d1Overview.data?.ok ? d1Overview.data.overview : summary.data?.ok ? summary.data.overview || null : null);
       setEscalations(queue.data?.ok ? queue.data.escalations || [] : []);
@@ -50,10 +50,9 @@ export default function ViceAdminPanel() {
     const note = status === 'resolved' ? window.prompt('Resolution note (required):') : null;
     if (status === 'resolved' && !note?.trim()) return;
     try {
-      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_update_escalation', {
-        method: 'POST', body: JSON.stringify({ args: { p_id: id, p_status: status, p_note: note } }),
+      await d1Request(`/api/team/escalations/${id}`, {
+        method: 'PATCH', body: JSON.stringify({ status, resolution_note: note }),
       });
-      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update escalation.');
       await load();
     } catch (e: any) { alert(e?.message || 'Could not update escalation.'); }
   };
