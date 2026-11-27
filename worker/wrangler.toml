@@ -23,3 +23,7 @@ service = "cenpaya-d1-worker"
 # HS256: SUPABASE_JWT_SECRET
 # RS256/ES256: SUPABASE_JWT_PRIVATE_JWK
 # Optional: SUPABASE_JWT_KID
+
+[triggers]
+# Lightweight Supabase database activity/health probe every five hours.
+crons = ["0 */5 * * *"]
