@@ -42,36 +42,6 @@ export default function Layout() {
   useEffect(() => {
     let active = true;
     let timer: number | undefined;
-    const init = async () => {
-      let user;
-      try { ({ user } = await d1Me()); } catch { return; }
-      if (!user || !active) return;
-      setUserId(user.id);
-      let role = '';
-      // The active Supabase appointment is authoritative; stale D1 role values
-      // must never keep a suspended or removed team member's panel shortcut alive.
-      try {
-        const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string } }>(
-          '/api/v1/admin/rpc/staff_my_profile',
-          { method: 'POST', body: JSON.stringify({ args: {} }) },
-        );
-        if (appointment.data?.ok && appointment.data.role) role = appointment.data.role;
-      } catch { /* Ordinary users have no team appointment. */ }
-      if (['support_agent', 'staff_member', 'super_admin', 'owner'].includes(role)) {
-        setStaffRole(role);
-        if (role !== 'staff_member') {
-          const [ticketsRes, reportsRes] = await Promise.all([
-            supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
-            supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
-          ]);
-          const ticketCount = (ticketsRes.data || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
-          const reportCount = (reportsRes.data || []).length;
-          if (active) setStaffBadge(ticketCount + reportCount);
-        }
-      }
-  useEffect(() => {
-    let active = true;
-    let timer: number | undefined;
 
     const refreshStaffWorkspace = async () => {
       let role = '';
@@ -125,7 +95,7 @@ export default function Layout() {
           void refreshStaffWorkspace();
           void refreshNotifications();
         }, 15000);
-      } catch { /* The layout can render while session restoration is retried elsewhere. */ }
+      } catch { /* Session restoration can be retried by the authentication layer. */ }
     };
 
     void init();
