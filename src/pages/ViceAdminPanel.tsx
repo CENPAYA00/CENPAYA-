@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Request } from '../lib/d1Api';
 import { Shield, Users, ClipboardList, AlertTriangle, MessageSquare, CheckCircle2, Clock } from 'lucide-react';
 
 export default function ViceAdminPanel() {
@@ -13,19 +14,29 @@ export default function ViceAdminPanel() {
     setLoading(true);
     setError('');
     try {
-      const profile = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) });
-      if (!profile.data?.ok) throw new Error(profile.data?.error || 'An active team appointment is required.');
-      setProfile(profile.data);
-      const role = profile.data.role;
-      const permissions: string[] = profile.data.permissions || [];
+      let workspaceProfile: any = null;
+      try {
+        const d1Profile = await d1Request<{ data: any }>('/api/team/workspace/profile');
+        if (d1Profile.data?.ok) workspaceProfile = d1Profile.data;
+      } catch { /* Legacy appointments may still be served by the existing team service. */ }
+      if (!workspaceProfile) {
+        const legacyProfile = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', { method: 'POST', body: JSON.stringify({ args: {} }) });
+        if (!legacyProfile.data?.ok) throw new Error(legacyProfile.data?.error || 'An active team appointment is required.');
+        workspaceProfile = legacyProfile.data;
+      }
+      if (workspaceProfile.role !== 'vice_admin' && !['owner','super_admin'].includes(workspaceProfile.role)) {
+        throw new Error('Vice Admin or higher team authority is required.');
+      }
+      setProfile(workspaceProfile);
+      const role = workspaceProfile.role;
+      const permissions: string[] = workspaceProfile.permissions || [];
       const canSeeMetrics = ['owner','super_admin'].includes(role) || permissions.includes('can_view_team_metrics');
       const canManageEscalations = ['owner','super_admin'].includes(role) || permissions.includes('can_manage_escalations');
       const [summary, queue] = await Promise.all([
-        canSeeMetrics ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }) : Promise.resolve({ data: { ok: true, overview: null } }),
-        canManageEscalations ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_list_escalations', { method: 'POST', body: JSON.stringify({ args: {} }) }) : Promise.resolve({ data: { ok: true, escalations: [] } }),
+        canSeeMetrics ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { ok: false } })) : Promise.resolve({ data: { ok: true, overview: null } }),
+        canManageEscalations ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_list_escalations', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { ok: false } })) : Promise.resolve({ data: { ok: true, escalations: [] } }),
       ]);
-      if (!summary.data?.ok) throw new Error(summary.data?.error || 'Could not load team oversight.');
-      setOverview(summary.data.overview || null);
+      setOverview(summary.data?.ok ? summary.data.overview || null : null);
       setEscalations(queue.data?.ok ? queue.data.escalations || [] : []);
     } catch (e: any) {
       setError(e?.message || 'Could not load Vice Admin workspace.');
