@@ -50,11 +50,92 @@ function definitions(env: Env): FeatureDefinition[] {
   ];
 }
 
+async function getTeamTaskContext(env: Env, user: User) {
+  const isAdmin = ["owner", "super_admin"].includes(user.role);
+  const appointment = await env.DB.prepare(
+    "SELECT workspace_role,permissions_json,supervisor_user_id FROM team_workspace_members WHERE user_id=? AND status='active'"
+  ).bind(user.id).first<{workspace_role:string;permissions_json:string;supervisor_user_id:string|null}>().catch(() => null);
+  let permissions: string[] = [];
+  try { permissions = JSON.parse(appointment?.permissions_json || "[]"); } catch { permissions = []; }
+  const role = isAdmin ? user.role : appointment?.workspace_role || user.role;
+  const canAssign = isAdmin ||
+    (role === "vice_admin" && permissions.includes("can_manage_tasks")) ||
+    (role === "support_agent" && permissions.includes("can_supervise_staff"));
+  return { isAdmin, role, permissions, supervisorUserId: appointment?.supervisor_user_id || null, canAssign };
+}
+
 export async function handleAdminRoutes(
   request: Request,
   env: Env,
   { path, method, user }: Context,
 ): Promise<Response | null> {
+  if (path === "/api/team/tasks" && method === "GET") {
+    if (!user) return fail("Team authentication required", 401);
+    const access = await getTeamTaskContext(env, user);
+    if (!access.canAssign) return fail("Task supervision permission required", 403);
+    try {
+      const taskQuery = access.isAdmin
+        ? "SELECT t.id,t.title,t.description,t.status,t.due_at,t.created_at,t.updated_at,t.completed_at,t.assigned_to_user_id,u.username AS assignee_username FROM staff_tasks t JOIN users u ON u.id=t.assigned_to_user_id ORDER BY t.updated_at DESC LIMIT 300"
+        : "SELECT t.id,t.title,t.description,t.status,t.due_at,t.created_at,t.updated_at,t.completed_at,t.assigned_to_user_id,u.username AS assignee_username FROM staff_tasks t JOIN users u ON u.id=t.assigned_to_user_id WHERE t.created_by_user_id=? OR t.assigned_to_user_id IN (SELECT user_id FROM team_workspace_members WHERE supervisor_user_id=? AND status='active' AND workspace_role='staff_member') ORDER BY t.updated_at DESC LIMIT 300";
+      const tasks = access.isAdmin
+        ? await env.DB.prepare(taskQuery).all()
+        : await env.DB.prepare(taskQuery).bind(user.id,user.id).all();
+      const members = await env.DB.prepare(
+        "SELECT u.id,u.username,'staff_member' AS role,'active' AS appointment_status,tw.supervisor_user_id AS supervisor_id FROM users u JOIN team_workspace_members tw ON tw.user_id=u.id WHERE tw.workspace_role='staff_member' AND tw.status='active' AND u.banned=0 AND u.deleted_at IS NULL AND (?=1 OR tw.supervisor_user_id=?) ORDER BY u.username LIMIT 300"
+      ).bind(access.isAdmin?1:0,user.id).all();
+      return json({success:true,data:{ok:true,role:access.role,permissions:access.permissions,can_assign:true,tasks:tasks.results||[],members:members.results||[]}});
+    } catch { return fail("Team task workspace is unavailable. Apply D1 migrations 0064 and 0074.",503); }
+  }
+
+  if (path === "/api/team/tasks" && method === "POST") {
+    if (!user) return fail("Team authentication required", 401);
+    const access = await getTeamTaskContext(env, user);
+    if (!access.canAssign) return fail("Task assignment permission required", 403);
+    const contentType = request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+    if (contentType !== "application/json") return fail("JSON body required", 415);
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body || Object.keys(body).some(key => !["title","description","assigned_to_user_id","due_at"].includes(key))) return fail("Invalid task payload");
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const description = typeof body.description === "string" ? body.description.trim() : "";
+    const assignee = typeof body.assigned_to_user_id === "string" ? body.assigned_to_user_id : "";
+    const dueAt = body.due_at === null || body.due_at === undefined || body.due_at === "" ? null : body.due_at;
+    if (title.length < 2 || title.length > 160 || description.length > 5000 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assignee)) return fail("Valid title, description and active Staff Member are required");
+    if (dueAt !== null && (typeof dueAt !== "string" || !Number.isFinite(Date.parse(dueAt)))) return fail("Invalid due date");
+    try {
+      const target = await env.DB.prepare(
+        "SELECT u.id FROM users u JOIN team_workspace_members tw ON tw.user_id=u.id WHERE u.id=? AND u.banned=0 AND u.deleted_at IS NULL AND tw.workspace_role='staff_member' AND tw.status='active' AND (?=1 OR tw.supervisor_user_id=?)"
+      ).bind(assignee,access.isAdmin?1:0,user.id).first<{id:string}>();
+      if (!target) return fail("Staff Member is not active or is outside your supervision scope",403);
+      const id = uuid();
+      await env.DB.prepare("INSERT INTO staff_tasks(id,title,description,assigned_to_user_id,created_by_user_id,due_at) VALUES(?,?,?,?,?,?)")
+        .bind(id,title,description,assignee,user.id,dueAt ? new Date(String(dueAt)).toISOString() : null).run();
+      await env.DB.prepare("INSERT INTO team_audit_logs(id,actor_user_id,target_user_id,action,details_json) VALUES(?,?,?,?,?)")
+        .bind(uuid(),user.id,assignee,"staff_task_assigned",JSON.stringify({task_id:id,title})).run().catch(() => {});
+      return json({success:true,data:{id}},201);
+    } catch { return fail("Could not assign team task. Check D1 migrations 0064 and 0074.",503); }
+  }
+
+  const teamTaskMatch = path.match(/^\/api\/team\/tasks\/([0-9a-f-]{36})$/i);
+  if (teamTaskMatch && method === "PATCH") {
+    if (!user) return fail("Team authentication required",401);
+    const access = await getTeamTaskContext(env,user);
+    if (!access.canAssign) return fail("Task review permission required",403);
+    const body = await request.json().catch(() => null) as Record<string,unknown>|null;
+    const status = typeof body?.status === "string" ? body.status : "";
+    if (!body || Object.keys(body).some(key => key !== "status") || !["todo","in_progress","blocked","completed"].includes(status)) return fail("Invalid task status");
+    const task = await env.DB.prepare("SELECT id,assigned_to_user_id,created_by_user_id FROM staff_tasks WHERE id=?").bind(teamTaskMatch[1]).first<{id:string;assigned_to_user_id:string;created_by_user_id:string}>();
+    if (!task) return fail("Task not found",404);
+    const supervised = access.isAdmin || task.created_by_user_id === user.id || !!(await env.DB.prepare(
+      "SELECT 1 AS allowed FROM team_workspace_members WHERE user_id=? AND supervisor_user_id=? AND workspace_role='staff_member' AND status='active'"
+    ).bind(task.assigned_to_user_id,user.id).first());
+    if (!supervised) return fail("Task is outside your supervision scope",403);
+    await env.DB.prepare("UPDATE staff_tasks SET status=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),completed_at=CASE WHEN ?='completed' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END WHERE id=?")
+      .bind(status,status,task.id).run();
+    await env.DB.prepare("INSERT INTO team_audit_logs(id,actor_user_id,target_user_id,action,details_json) VALUES(?,?,?,?,?)")
+      .bind(uuid(),user.id,task.assigned_to_user_id,"staff_task_status_updated",JSON.stringify({task_id:task.id,status})).run().catch(() => {});
+    return json({success:true});
+  }
+
   if (path === "/api/staff/tasks" && method === "GET") {
     if (!user) return fail("Staff Member access required", 403);
     const [legacyWorkspace, teamWorkspace] = await Promise.all([
