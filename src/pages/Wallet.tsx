@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
-import { d1Me } from '../lib/d1Api';
+import { d1Me, d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, Send, Headphones, MessageCircle, ChevronRight, Phone, Clock } from 'lucide-react';
 import { PaymentMethodLogo } from '../components/PaymentMethodLogo';
@@ -40,13 +40,16 @@ export default function Wallet() {
       const { user } = await d1Me();
       if (!user) { setLoading(false); return; }
 
-      const [walletRes, prefsRes] = await Promise.all([
+      const [walletRes, prefsRes, countryRes] = await Promise.all([
         supabaseWorkerRequest<{ data: any }>('/api/v1/wallet'),
         supabaseWorkerRequest<{ data: { profile: any; countries: any[] } }>('/api/v1/me/payment-preferences'),
+        // Country availability is non-financial configuration and belongs to the D1 Worker.
+        // Fall back to the existing response until migration 0067 is applied to the D1 database.
+        d1Request<{ data: any[] }>('/api/countries').catch(() => ({ data: [] })),
       ]);
 
       const profile = prefsRes.data?.profile || {};
-      const countryRows = prefsRes.data?.countries || [];
+      const countryRows = countryRes.data?.length ? countryRes.data : (prefsRes.data?.countries || []);
       setWallet(walletRes.data);
       setUser(profile);
       setEscrow(walletRes.data?.escrow_summary || null);
