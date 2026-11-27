@@ -69,6 +69,47 @@ export async function handleAdminRoutes(
   env: Env,
   { path, method, user }: Context,
 ): Promise<Response | null> {
+  if (path === "/api/team/workspace/overview" && method === "GET") {
+    if (!user) return fail("Team authentication required",401);
+    const access = await getTeamTaskContext(env,user);
+    const canView = access.isAdmin || access.role === "vice_admin" && access.permissions.includes("can_view_team_metrics");
+    if (!canView) return fail("Team metrics permission required",403);
+    const scoped = !access.isAdmin;
+    const tasksWhere = scoped
+      ? "WHERE (t.assigned_to_user_id IN (SELECT user_id FROM team_workspace_members WHERE supervisor_user_id=? AND status='active') OR t.created_by_user_id=?)"
+      : "";
+    const ticketWhere = scoped
+      ? "WHERE t.assigned_to_user_id IN (SELECT user_id FROM team_workspace_members WHERE supervisor_user_id=? AND status='active' AND workspace_role='support_agent')"
+      : "";
+    const taskBinds = scoped ? [user.id,user.id] : [];
+    const ticketBinds = scoped ? [user.id] : [];
+    try {
+      const [memberCount,pendingInvites,taskCounts,ticketCount,performance,recentTasks,recentTickets,audit] = await Promise.all([
+        scoped
+          ? env.DB.prepare("SELECT COUNT(*) AS total FROM team_workspace_members WHERE supervisor_user_id=? AND status='active'").bind(user.id).first<any>()
+          : env.DB.prepare("SELECT (SELECT COUNT(*) FROM team_workspace_members WHERE status='active') + (SELECT COUNT(*) FROM staff_workspace_members WHERE is_active=1 AND user_id NOT IN (SELECT user_id FROM team_workspace_members WHERE status='active')) AS total").first<any>(),
+        scoped
+          ? env.DB.prepare("SELECT COUNT(*) AS total FROM team_workspace_invitations WHERE invited_by_user_id=? AND status='pending'").bind(user.id).first<any>()
+          : env.DB.prepare("SELECT COUNT(*) AS total FROM team_workspace_invitations WHERE status='pending'").first<any>(),
+        env.DB.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status NOT IN ('completed','cancelled') THEN 1 ELSE 0 END) AS pending,SUM(CASE WHEN status NOT IN ('completed','cancelled') AND due_at IS NOT NULL AND due_at<strftime('%Y-%m-%dT%H:%M:%fZ','now') THEN 1 ELSE 0 END) AS overdue,SUM(CASE WHEN status='completed' AND date(completed_at)=date('now') THEN 1 ELSE 0 END) AS completed_today,SUM(CASE WHEN status='completed' AND completed_at>=datetime('now','-7 days') THEN 1 ELSE 0 END) AS completed_week,SUM(CASE WHEN status='completed' AND completed_at>=datetime('now','start of month') THEN 1 ELSE 0 END) AS completed_month FROM staff_tasks t "+tasksWhere).bind(...taskBinds).first<any>(),
+        env.DB.prepare("SELECT COUNT(*) AS total FROM support_tickets t "+ticketWhere+" "+(scoped?"AND ":"WHERE ")+"t.status IN ('open','in_progress','waiting','waiting_for_user')").bind(...ticketBinds).first<any>(),
+        env.DB.prepare("SELECT u.id AS user_id,u.username,COUNT(t.id) AS assigned,SUM(CASE WHEN t.status='completed' THEN 1 ELSE 0 END) AS completed,SUM(CASE WHEN t.status NOT IN ('completed','cancelled') AND t.due_at IS NOT NULL AND t.due_at<strftime('%Y-%m-%dT%H:%M:%fZ','now') THEN 1 ELSE 0 END) AS overdue FROM staff_tasks t JOIN users u ON u.id=t.assigned_to_user_id "+tasksWhere+" GROUP BY u.id,u.username ORDER BY assigned DESC LIMIT 30").bind(...taskBinds).all(),
+        env.DB.prepare("SELECT t.id,t.title,t.status,t.updated_at,u.username AS assignee FROM staff_tasks t JOIN users u ON u.id=t.assigned_to_user_id "+tasksWhere+" ORDER BY t.updated_at DESC LIMIT 20").bind(...taskBinds).all(),
+        env.DB.prepare("SELECT t.id,t.subject,t.status,t.updated_at,u.username AS customer,a.username AS handled_by FROM support_tickets t JOIN users u ON u.id=t.user_id LEFT JOIN users a ON a.id=t.assigned_to_user_id "+ticketWhere+" ORDER BY t.updated_at DESC LIMIT 20").bind(...ticketBinds).all(),
+        scoped
+          ? env.DB.prepare("SELECT id,action,created_at FROM team_audit_logs WHERE actor_user_id=? OR target_user_id=? ORDER BY created_at DESC LIMIT 30").bind(user.id,user.id).all()
+          : env.DB.prepare("SELECT id,action,created_at FROM team_audit_logs ORDER BY created_at DESC LIMIT 30").all(),
+      ]);
+      return json({success:true,data:{ok:true,overview:{
+        active_members:Number(memberCount?.total||0),pending_appointments:Number(pendingInvites?.total||0),
+        tasks_pending:Number(taskCounts?.pending||0),tasks_overdue:Number(taskCounts?.overdue||0),
+        tasks_completed_today:Number(taskCounts?.completed_today||0),tasks_completed_week:Number(taskCounts?.completed_week||0),
+        tasks_completed_month:Number(taskCounts?.completed_month||0),tickets_open:Number(ticketCount?.total||0),
+        member_performance:performance.results||[],recent_tasks:recentTasks.results||[],recent_tickets:recentTickets.results||[],recent_audit:audit.results||[],
+      }}});
+    } catch { return fail("Team overview is unavailable. Apply D1 migrations 0062, 0064, 0074 and the support ticket migrations.",503); }
+  }
+
   if (path === "/api/team/tasks" && method === "GET") {
     if (!user) return fail("Team authentication required", 401);
     const access = await getTeamTaskContext(env, user);
