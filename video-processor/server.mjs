@@ -73,7 +73,8 @@ async function processVideo(d){
    const outWidth=Math.min(1280,Math.floor((Number(video.width)*outHeight/Number(video.height))/2)*2);
    outputs.push({...r,folder,width:outWidth,height:outHeight});
   }
-  const videoAiIndicator=await analyzeVideoFrames(input,duration,dir,d.gemini_api_key);\n  const thumb=join(dir,"thumbnail.jpg");
+  const videoAiIndicator=await analyzeVideoFrames(input,duration,dir,d.gemini_api_key);
+  const thumb=join(dir,"thumbnail.jpg");
   await ff(["-y","-ss",String(Math.min(1,Math.max(0,duration/4))),"-i",input,"-frames:v","1","-vf","scale=w=640:h=-2","-q:v","4",thumb],dir);
   const master=["#EXTM3U","#EXT-X-VERSION:3",...outputs.flatMap(r=>[`#EXT-X-STREAM-INF:BANDWIDTH=${r.bandwidth},RESOLUTION=${r.width}x${r.height}`,r.name+"/index.m3u8"])].join("\n")+"\n";
   const prefix="videos/hls/"+d.video_id+"/",playlist=Buffer.from(master);
