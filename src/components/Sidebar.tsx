@@ -5,7 +5,6 @@ import {
   Video, Bookmark, Settings, Shield, ChevronRight,
   MessageCircle, HeadphonesIcon, Globe, Link2, Crown, FileText, Briefcase, PlusCircle, Zap, Ticket
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { d1Me, d1Request } from '../lib/d1Api';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
@@ -50,8 +49,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           setWorkspacePath(null);
           setWorkspaceLabel('');
         }
-        const { data } = await supabase.from('users').select('is_subscribed').eq('id', user.id).maybeSingle();
-        setIsSubscribed(!!data?.is_subscribed);
+        setIsSubscribed(!!user.is_subscribed);
       } catch { setUsername('User'); }
     };
     load();
