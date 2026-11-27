@@ -10,6 +10,8 @@ import { useI18n } from '../contexts/i18n';
 
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
 const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
+const SUPPORT_WHATSAPP = String(import.meta.env.VITE_SUPPORT_WHATSAPP ?? '237653931300').replace(/\\D/g, '');
+const SUPPORT_EMAIL = String(import.meta.env.VITE_SUPPORT_EMAIL ?? 'support@cenpaya.com').trim();
 
 const METHOD_LABELS: Record<Method, string> = {
   mtn_momo: 'MTN MoMo',
@@ -32,6 +34,7 @@ export default function Wallet() {
   const [momoProvider, setMomoProvider] = useState<Method | ''>('');
   const [momoCountry, setMomoCountry] = useState('CM');
   const [savingMomo, setSavingMomo] = useState(false);
+  const [momoMessage, setMomoMessage] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -59,16 +62,28 @@ export default function Wallet() {
 
   const saveMomo = async () => {
     setSavingMomo(true);
-    const { user } = await d1Me();
-    if (!user) { setSavingMomo(false); return; }
-    await supabase.from('users').update({
-      momo_number: momoNumber.trim() || null,
-      momo_provider: momoProvider || null,
-      country_iso: momoCountry,
-    }).eq('id', user.id);
-    setUser({ ...user, momo_number: momoNumber, momo_provider: momoProvider, country_iso: momoCountry });
-    setSavingMomo(false);
-    alert('MoMo details saved');
+    setMomoMessage('');
+    try {
+      const { user } = await d1Me();
+      if (!user) throw new Error('Your session has expired. Please sign in again.');
+      const { error } = await supabase.from('users').update({
+        momo_number: momoNumber.trim() || null,
+        momo_provider: momoProvider || null,
+        country_iso: momoCountry,
+      }).eq('id', user.id);
+      if (error) throw error;
+      setUser((previous: any) => ({
+        ...previous,
+        momo_number: momoNumber.trim(),
+        momo_provider: momoProvider,
+        country_iso: momoCountry,
+      }));
+      setMomoMessage('MoMo details saved.');
+    } catch (error) {
+      setMomoMessage(error instanceof Error ? error.message : 'Could not save MoMo details.');
+    } finally {
+      setSavingMomo(false);
+    }
   };
 
   if (loading) {
@@ -206,6 +221,7 @@ export default function Wallet() {
           ))}
         </div>
 
+        {momoMessage && <p role="status" className="text-[10px] mb-2 text-red-600">{momoMessage}</p>}
         <button
           onClick={saveMomo}
           disabled={!momoNumber.trim() || !momoProvider || savingMomo}
@@ -218,7 +234,7 @@ export default function Wallet() {
       <div className="mx-3 mt-4">
         <p className="text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-2">Community</p>
         <button
-          onClick={() => window.open('https://wa.me/237653931300', '_blank')}
+          onClick={() => window.open(`https://wa.me/${SUPPORT_WHATSAPP}`, '_blank', 'noopener,noreferrer')}
           className="w-full bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3 active:bg-gray-50 cursor-pointer"
         >
           <div className="w-8 h-8 rounded-lg bg-green-500 text-white flex items-center justify-center">
@@ -238,7 +254,7 @@ export default function Wallet() {
           <ChevronRight size={14} className="text-gray-400" />
         </button>
         <button
-          onClick={() => window.open('mailto:samuelsenviter589@gmail.com', '_blank')}
+          onClick={() => window.open(`mailto:${SUPPORT_EMAIL}`, '_blank', 'noopener,noreferrer')}
           className="w-full bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3 active:bg-gray-50 cursor-pointer"
         >
           <div className="w-8 h-8 rounded-lg bg-red-500 text-white flex items-center justify-center">
