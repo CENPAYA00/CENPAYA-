@@ -49,11 +49,11 @@ export default function Login() {
           <div className="mb-4">
             <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Email or Phone Number</label>
             <input
-              type="email"
+              type="text"
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="Email address or phone number"
-              autoComplete="email"
+              autoComplete="username" inputMode="email"
               className="w-full p-3 border border-gray-200 dark:border-darkline rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent bg-gray-50 dark:bg-darkbg text-navy dark:text-white"
               required
             />
