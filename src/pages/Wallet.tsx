@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
-import { d1Me } from '../lib/d1Api';
+import { d1Me, d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, Send, Headphones, MessageCircle, ChevronRight, Phone, Clock } from 'lucide-react';
 import { PaymentMethodLogo } from '../components/PaymentMethodLogo';
@@ -10,6 +9,8 @@ import { useI18n } from '../contexts/i18n';
 
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
 const METHODS: Method[] = ['mtn_momo', 'orange_money', 'airtel_money', 'moov_money'];
+const SUPPORT_WHATSAPP = String(import.meta.env.VITE_SUPPORT_WHATSAPP ?? '').replace(/\D/g, '');
+const SUPPORT_EMAIL = String(import.meta.env.VITE_SUPPORT_EMAIL ?? '').trim();
 
 const METHOD_LABELS: Record<Method, string> = {
   mtn_momo: 'MTN MoMo',
@@ -32,26 +33,36 @@ export default function Wallet() {
   const [momoProvider, setMomoProvider] = useState<Method | ''>('');
   const [momoCountry, setMomoCountry] = useState('CM');
   const [savingMomo, setSavingMomo] = useState(false);
+  const [momoMessage, setMomoMessage] = useState('');
 
   useEffect(() => {
     const load = async () => {
       const { user } = await d1Me();
       if (!user) { setLoading(false); return; }
 
-      const [walletRes, userRes, countriesRes] = await Promise.all([
+      const [walletRes, prefsRes, countryRes] = await Promise.all([
         supabaseWorkerRequest<{ data: any }>('/api/v1/wallet'),
-        supabase.from('users').select('username, country_iso, momo_number, momo_provider, is_subscribed').eq('id', user.id).single(),
-        supabase.from('supported_countries').select('code, name, phone_prefix, flag_emoji').eq('is_active', true).order('code'),
+        supabaseWorkerRequest<{ data: { profile: any; countries: any[] } }>('/api/v1/me/payment-preferences'),
+        // Country availability is non-financial configuration and belongs to the D1 Worker.
+        // Fall back to the existing response until migration 0067 is applied to the D1 database.
+        d1Request<{ data: any[] }>('/api/countries').catch(() => ({ data: [] })),
       ]);
 
+      const profile = prefsRes.data?.profile || {};
+      const countryRows = countryRes.data?.length ? countryRes.data : (prefsRes.data?.countries || []);
       setWallet(walletRes.data);
-      setUser(userRes.data);
+      setUser(profile);
       setEscrow(walletRes.data?.escrow_summary || null);
-      setCountries(countriesRes.data || []);
+      setCountries(countryRows.map((country: any) => ({
+        code: country.country_iso || country.code,
+        name: country.name,
+        phone_prefix: country.phone_prefix,
+        flag_emoji: country.flag_emoji,
+      })));
 
-      if (userRes.data?.momo_number) setMomoNumber(userRes.data.momo_number);
-      if (userRes.data?.momo_provider) setMomoProvider(userRes.data.momo_provider as Method);
-      if (userRes.data?.country_iso) setMomoCountry(userRes.data.country_iso);
+      if (profile.momo_number) setMomoNumber(profile.momo_number);
+      if (profile.momo_provider) setMomoProvider(profile.momo_provider as Method);
+      if (profile.country_iso) setMomoCountry(profile.country_iso);
       setLoading(false);
     };
     load();
@@ -59,16 +70,35 @@ export default function Wallet() {
 
   const saveMomo = async () => {
     setSavingMomo(true);
-    const { user } = await d1Me();
-    if (!user) { setSavingMomo(false); return; }
-    await supabase.from('users').update({
-      momo_number: momoNumber.trim() || null,
-      momo_provider: momoProvider || null,
-      country_iso: momoCountry,
-    }).eq('id', user.id);
-    setUser({ ...user, momo_number: momoNumber, momo_provider: momoProvider, country_iso: momoCountry });
-    setSavingMomo(false);
-    alert('MoMo details saved');
+    setMomoMessage('');
+    try {
+      const { user } = await d1Me();
+      if (!user) throw new Error('Your session has expired. Please sign in again.');
+      const selected = countries.find((country: any) => country.code === momoCountry);
+      const prefix = selected?.phone_prefix || '+237';
+      const digits = momoNumber.trim().replace(/\D/g, '');
+      if (!digits) throw new Error('Enter a valid Mobile Money number.');
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/me/payment-preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          country_iso: momoCountry,
+          momo_number: `${prefix} ${digits}`,
+          momo_provider: momoProvider,
+        }),
+      });
+      if (result.data?.ok === false) throw new Error(result.data.error || 'Could not save MoMo details.');
+      setUser((previous: any) => ({
+        ...previous,
+        momo_number: `${prefix} ${digits}`,
+        momo_provider: momoProvider,
+        country_iso: momoCountry,
+      }));
+      setMomoMessage('MoMo details saved.');
+    } catch (error) {
+      setMomoMessage(error instanceof Error ? error.message : 'Could not save MoMo details.');
+    } finally {
+      setSavingMomo(false);
+    }
   };
 
   if (loading) {
@@ -206,6 +236,7 @@ export default function Wallet() {
           ))}
         </div>
 
+        {momoMessage && <p role="status" className="text-[10px] mb-2 text-red-600">{momoMessage}</p>}
         <button
           onClick={saveMomo}
           disabled={!momoNumber.trim() || !momoProvider || savingMomo}
@@ -217,8 +248,9 @@ export default function Wallet() {
 
       <div className="mx-3 mt-4">
         <p className="text-[9px] uppercase tracking-widest text-gray-400 font-bold mb-2">Community</p>
+        {SUPPORT_WHATSAPP && (
         <button
-          onClick={() => window.open('https://wa.me/237653931300', '_blank')}
+          onClick={() => window.open(`https://wa.me/${SUPPORT_WHATSAPP}`, '_blank', 'noopener,noreferrer')}
           className="w-full bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3 active:bg-gray-50 cursor-pointer"
         >
           <div className="w-8 h-8 rounded-lg bg-green-500 text-white flex items-center justify-center">
@@ -227,6 +259,7 @@ export default function Wallet() {
           <span className="flex-1 text-left text-[11px] font-bold text-navy dark:text-white">WhatsApp</span>
           <ChevronRight size={14} className="text-gray-400" />
         </button>
+        )}
         <button
           onClick={() => navigate('/contact-admin')}
           className="w-full bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3 active:bg-gray-50 cursor-pointer"
@@ -237,8 +270,9 @@ export default function Wallet() {
           <span className="flex-1 text-left text-[11px] font-bold text-navy dark:text-white">Contact Admin</span>
           <ChevronRight size={14} className="text-gray-400" />
         </button>
+        {SUPPORT_EMAIL && (
         <button
-          onClick={() => window.open('mailto:samuelsenviter589@gmail.com', '_blank')}
+          onClick={() => window.open(`mailto:${SUPPORT_EMAIL}`, '_blank', 'noopener,noreferrer')}
           className="w-full bg-white dark:bg-darkcard rounded-xl shadow-sm mb-2 p-3 flex items-center gap-3 active:bg-gray-50 cursor-pointer"
         >
           <div className="w-8 h-8 rounded-lg bg-red-500 text-white flex items-center justify-center">
@@ -247,6 +281,7 @@ export default function Wallet() {
           <span className="flex-1 text-left text-[11px] font-bold text-navy dark:text-white">Email Support</span>
           <ChevronRight size={14} className="text-gray-400" />
         </button>
+        )}
       </div>
     </div>
   );
