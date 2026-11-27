@@ -1,5 +1,5 @@
 import { useEffect,useState } from 'react';
-import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Request, d1Me } from '../lib/d1Api';
 import { UserPlus,ShieldCheck,Trash2,RefreshCw } from 'lucide-react';
 
 const ROLES=[
@@ -18,14 +18,14 @@ export default function EngineeringManagement(){
   setLoading(true);setError('');
   try{
    const [p,m,a]=await Promise.all([
-    supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/staff_my_profile',{method:'POST',body:JSON.stringify({args:{}})}),
-    supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_available_users',{method:'POST',body:JSON.stringify({args:{}})}),
-    supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_admin_list',{method:'POST',body:JSON.stringify({args:{}})}),
+    d1Me(),
+    d1Request<{data:any}>('/api/admin/engineering/users'),
+    d1Request<{data:any}>('/api/admin/engineering/appointments'),
    ]);
-   if(!['owner','super_admin'].includes(p.data?.role))throw new Error('Only Owner or Super Admin can manage engineering appointments.');
-   if(!m.data?.ok)throw new Error(m.data?.error||'Could not load users.');
-   if(!a.data?.ok)throw new Error(a.data?.error||'Could not load engineering appointments.');
-   setProfile(p.data);setUsers(m.data.users||[]);setAppointments(a.data.appointments||[]);
+   if(!['owner','super_admin'].includes(p.user?.role))throw new Error('Only Owner or Super Admin can manage engineering appointments.');
+   if(!m.data?.ok)throw new Error('Could not load users.');
+   if(!a.data?.ok)throw new Error('Could not load engineering appointments.');
+   setProfile(p.user);setUsers(m.data.users||[]);setAppointments(a.data.appointments||[]);
   }catch(e:any){setError(e?.message||'Could not load engineering management.');}
   finally{setLoading(false);}
  };
@@ -33,8 +33,8 @@ export default function EngineeringManagement(){
  const appoint=async()=>{
   setBusy(true);setError('');setSuccess('');
   try{
-   const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_appoint_member',{method:'POST',body:JSON.stringify({args:{p_user_id:userId,p_engineering_role:role,p_is_lead:lead}})});
-   if(!r.data?.ok)throw new Error(r.data?.error||'Appointment failed.');
+   const r=await d1Request<{data:any}>('/api/admin/engineering/appointments',{method:'POST',body:JSON.stringify({user_id:userId,engineering_role:role,is_lead:lead})});
+   if(!r.data?.ok)throw new Error('Appointment failed.');
    setSuccess('Engineering appointment activated. The member can now open their workspace.');
    setUserId('');setLead(false);await load();
   }catch(e:any){setError(e?.message||'Could not appoint member.');}
@@ -43,8 +43,8 @@ export default function EngineeringManagement(){
  const assignTask=async()=>{
   setBusy(true);setError('');setSuccess('');
   try{
-   const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_assign_task',{method:'POST',body:JSON.stringify({args:{p_title:taskTitle.trim(),p_description:taskDescription.trim()||null,p_assigned_to:taskAssignee,p_due_at:taskDue?new Date(taskDue).toISOString():null}})});
-   if(!r.data?.ok)throw new Error(r.data?.error||'Task assignment failed.');
+   const r=await d1Request<{data:any}>('/api/engineering/tasks',{method:'POST',body:JSON.stringify({title:taskTitle.trim(),description:taskDescription.trim(),assigned_to_user_id:taskAssignee,due_at:taskDue?new Date(taskDue).toISOString():null})});
+   if(!r.data?.ok)throw new Error('Task assignment failed.');
    setTaskTitle('');setTaskDescription('');setTaskAssignee('');setTaskDue('');
    setSuccess('Engineering task assigned to the selected member.');
   }catch(e:any){setError(e?.message||'Could not assign engineering task.');}
@@ -54,8 +54,8 @@ export default function EngineeringManagement(){
   if(!window.confirm('Remove this engineering appointment? The app account role and historical tasks will remain unchanged.'))return;
   setBusy(true);setError('');setSuccess('');
   try{
-   const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_remove_member',{method:'POST',body:JSON.stringify({args:{p_appointment_id:a.id}})});
-   if(!r.data?.ok)throw new Error(r.data?.error||'Removal failed.');
+   const r=await d1Request<{data:any}>(`/api/admin/engineering/appointments/${a.id}`,{method:'DELETE'});
+   if(!r.data?.ok)throw new Error('Removal failed.');
    setSuccess('Engineering appointment removed and workspace access revoked.');await load();
   }catch(e:any){setError(e?.message||'Could not remove appointment.');}
   finally{setBusy(false);}
