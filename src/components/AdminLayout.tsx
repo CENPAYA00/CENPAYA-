@@ -45,26 +45,14 @@ export default function AdminLayout() {
         return;
       }
 
-      let role = '';
-      try {
-        const appointment = await supabaseWorkerRequest<{ data: { ok?: boolean; role?: string; error?: string } }>('/api/v1/admin/rpc/staff_my_profile', {
-          method: 'POST', body: JSON.stringify({ args: {} }),
-        });
-        if (!appointment.data?.ok) throw new Error(appointment.data?.error || 'No active admin appointment.');
-        role = appointment.data.role || '';
-      } catch {
-        if (!cancelled) {
-          alert('Access denied. An active Owner or Super Admin appointment is required.');
-          navigate('/home');
-        }
+      // D1 is the active account authority for this branch. Do not make panel access
+      // depend on the legacy staff-profile RPC.
+      const role = user.role || '';
+      if (!['owner', 'super_admin'].includes(role)) {
+        if (!cancelled) navigate('/home');
         return;
       }
       setAdminRole(role);
-      if (role !== 'owner' && role !== 'super_admin') {
-        alert(`Access denied. Your role is: ${role || 'unknown'}`);
-        navigate('/home');
-        return;
-      }
 
       try {
         const passwordStatus = await supabaseWorkerRequest<{ data: { ok?: boolean; has_password?: boolean; error?: string } }>('/api/v1/admin/security/password/status');
