@@ -226,7 +226,7 @@ export default function StaffPanel() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[15px] font-bold text-[#0a3d2b] dark:text-white truncate">{t.subject}</p>
-                <p className="text-[12px] text-[#6f8077] font-medium mt-0.5">@{t.username}</p>
+                <p className="text-[12px] text-[#6f8077] font-medium mt-0.5">@{t.username || 'member'}</p>
                 
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <span className="text-[10px] font-bold bg-[#fff9e0] text-[#8a5a00] px-2 py-0.5 rounded-md border border-[#f3e08a]">

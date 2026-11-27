@@ -175,3 +175,28 @@ html.dark input, html.dark select {
   background-color: #0d1511 !important;
   border-color: #26332c !important;
 }
+
+
+/* CenPaya reference UI palette: navy surfaces, crisp blue actions. */
+:root {
+  --cenpaya-bg: #f3f6fc;
+  --cenpaya-surface: #ffffff;
+  --cenpaya-ink: #101c32;
+  --cenpaya-muted: #6c7890;
+  --cenpaya-line: #e3eaf5;
+  --cenpaya-primary: #2864f0;
+  --cenpaya-primary-strong: #1748c7;
+}
+html, body { background-color: var(--cenpaya-bg); color: var(--cenpaya-ink); }
+html.dark {
+  --cenpaya-bg: #081426;
+  --cenpaya-surface: #111d32;
+  --cenpaya-ink: #edf3ff;
+  --cenpaya-muted: #9aa9c1;
+  --cenpaya-line: #263955;
+  --cenpaya-primary: #4d83ff;
+  --cenpaya-primary-strong: #2459d6;
+  color-scheme: dark;
+}
+html.dark body { background-color: var(--cenpaya-bg); color: var(--cenpaya-ink); }
+html:not(.dark) body { background-color: var(--cenpaya-bg); color: var(--cenpaya-ink); }

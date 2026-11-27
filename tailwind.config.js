@@ -9,21 +9,21 @@ export default {
     extend: {
       colors: {
         brand: {
-          DEFAULT: '#12935a', // The exact bright green from Claude
-          dark: '#0a3d2b',    // Deep green
-          deeper: '#06281c',  // Almost black green
+          DEFAULT: '#2864f0', // The exact bright green from Claude
+          dark: '#1748c7',    // Deep green
+          deeper: '#0c245e',  // Almost black green
         },
         // Claude's Dark Mode Colors
-        darkbg: '#0d1511', 
-        darkcard: '#17211c',
-        darkline: '#26332c',
+        darkbg: '#081426', 
+        darkcard: '#111d32',
+        darkline: '#263955',
         
         // Claude's Light Mode Colors
-        offwhite: '#eef2f0',
-        navy: '#16221c',
-        ink: '#16221c',
-        mute: '#7a8a82',
-        chip: '#eaf6ef',
+        offwhite: '#f3f6fc',
+        navy: '#101c32',
+        ink: '#101c32',
+        mute: '#6c7890',
+        chip: '#eaf0ff',
         
         gold: '#f5a524',
         danger: '#e5484d',
