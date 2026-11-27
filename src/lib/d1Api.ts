@@ -1,6 +1,8 @@
 const API_BASE = String(import.meta.env.VITE_D1_API_URL ?? '').trim().replace(/\/$/, '');
 let sessionToken: string | null = null;
 let sessionTokenExpiresAt = 0;
+let refreshInFlight: Promise<string | null> | null = null;
+let sessionGeneration = 0;
 
 export type D1User = {
   id: string;
@@ -31,19 +33,38 @@ export function getD1Token(): string | null {
   return sessionToken;
 }
 
-export function setD1Token(token: string | null) { sessionToken = token; sessionTokenExpiresAt = token ? Date.now() + 900_000 : 0; }
+export function setD1Token(token: string | null) {
+  sessionGeneration += 1;
+  sessionToken = token;
+  sessionTokenExpiresAt = token ? Date.now() + 900_000 : 0;
+}
 
-export async function refreshD1Session(force = false): Promise<string | null> {
-  if (!force && getD1Token()) return sessionToken;
-  try {
-    const response = await fetch(getD1ApiUrl('/api/auth/refresh'), {
-      method: 'POST', credentials: 'include', cache: 'no-store',
-    });
-    const payload = await response.json().catch(() => ({})) as { token?: string; expires_in?: number };
-    sessionToken = response.ok && typeof payload.token === 'string' ? payload.token : null;
-    sessionTokenExpiresAt = sessionToken ? Date.now() + Math.max(60, Number(payload.expires_in) || 900) * 1000 : 0;
-    return sessionToken;
-  } catch { sessionToken = null; sessionTokenExpiresAt = 0; return null; }
+export function refreshD1Session(force = false): Promise<string | null> {
+  if (!force && getD1Token()) return Promise.resolve(sessionToken);
+  if (refreshInFlight) return refreshInFlight;
+
+  const generationAtStart = sessionGeneration;
+  const refresh = (async (): Promise<string | null> => {
+    try {
+      const response = await fetch(getD1ApiUrl('/api/auth/refresh'), {
+        method: 'POST', credentials: 'include', cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({})) as { token?: string; expires_in?: number };
+      const nextToken = response.ok && typeof payload.token === 'string' ? payload.token : null;
+      // A logout or newer explicit token update must not be overwritten by a stale refresh.
+      if (sessionGeneration === generationAtStart) {
+        sessionToken = nextToken;
+        sessionTokenExpiresAt = nextToken ? Date.now() + Math.max(60, Number(payload.expires_in) || 900) * 1000 : 0;
+      }
+      return sessionGeneration === generationAtStart ? sessionToken : sessionToken;
+    } catch {
+      if (sessionGeneration === generationAtStart) { sessionToken = null; sessionTokenExpiresAt = 0; }
+      return sessionToken;
+    }
+  })();
+  refreshInFlight = refresh;
+  void refresh.finally(() => { if (refreshInFlight === refresh) refreshInFlight = null; });
+  return refresh;
 }
 
 export function getD1ApiUrl(path: string): string {
