@@ -42,7 +42,7 @@ void describe("central AI assistant feature control", () => {
       path: "/api/admin/features", method: "GET", user: owner,
     });
     assert.equal(ownerResponse?.status, 200);
-    const data = (await ownerResponse!.json()).data;
+    const data = (await ownerResponse.json()).data;
     assert.equal(data.find((row) => row.feature_key === "ai_assistant").ready, true);
   });
 
