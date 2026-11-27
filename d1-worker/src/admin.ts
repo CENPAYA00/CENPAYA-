@@ -57,8 +57,11 @@ export async function handleAdminRoutes(
 ): Promise<Response | null> {
   if (path === "/api/staff/tasks" && method === "GET") {
     if (!user) return fail("Staff Member access required", 403);
-    const workspace = await env.DB.prepare("SELECT 1 AS active FROM staff_workspace_members WHERE user_id=? AND is_active=1 AND workspace_role='staff_member'").bind(user.id).first();
-    if (!workspace) return fail("Staff Member access required", 403);
+    const [legacyWorkspace, teamWorkspace] = await Promise.all([
+      env.DB.prepare("SELECT 1 AS active FROM staff_workspace_members WHERE user_id=? AND is_active=1 AND workspace_role='staff_member'").bind(user.id).first().catch(() => null),
+      env.DB.prepare("SELECT 1 AS active FROM team_workspace_members WHERE user_id=? AND status='active' AND workspace_role='staff_member'").bind(user.id).first().catch(() => null),
+    ]);
+    if (!legacyWorkspace && !teamWorkspace) return fail("Staff Member access required", 403);
     try {
       const rows = await env.DB.prepare(
         "SELECT id,title,description,status,due_at,created_at,updated_at,completed_at FROM staff_tasks WHERE assigned_to_user_id=? ORDER BY CASE status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'blocked' THEN 2 ELSE 3 END,COALESCE(due_at,'9999-12-31'),updated_at DESC LIMIT 200"
@@ -70,8 +73,11 @@ export async function handleAdminRoutes(
   const staffTask = path.match(/^\/api\/staff\/tasks\/([0-9a-f-]{36})$/i);
   if (staffTask && method === "PATCH") {
     if (!user) return fail("Staff Member access required", 403);
-    const workspace = await env.DB.prepare("SELECT 1 AS active FROM staff_workspace_members WHERE user_id=? AND is_active=1 AND workspace_role='staff_member'").bind(user.id).first();
-    if (!workspace) return fail("Staff Member access required", 403);
+    const [legacyWorkspace, teamWorkspace] = await Promise.all([
+      env.DB.prepare("SELECT 1 AS active FROM staff_workspace_members WHERE user_id=? AND is_active=1 AND workspace_role='staff_member'").bind(user.id).first().catch(() => null),
+      env.DB.prepare("SELECT 1 AS active FROM team_workspace_members WHERE user_id=? AND status='active' AND workspace_role='staff_member'").bind(user.id).first().catch(() => null),
+    ]);
+    if (!legacyWorkspace && !teamWorkspace) return fail("Staff Member access required", 403);
     const contentType = request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
     if (contentType !== "application/json") return fail("JSON body required", 415);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
