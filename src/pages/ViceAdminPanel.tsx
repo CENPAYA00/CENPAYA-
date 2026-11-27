@@ -32,11 +32,12 @@ export default function ViceAdminPanel() {
       const permissions: string[] = workspaceProfile.permissions || [];
       const canSeeMetrics = ['owner','super_admin'].includes(role) || permissions.includes('can_view_team_metrics');
       const canManageEscalations = ['owner','super_admin'].includes(role) || permissions.includes('can_manage_escalations');
-      const [summary, queue] = await Promise.all([
+      const [d1Overview, summary, queue] = await Promise.all([
+        canSeeMetrics ? d1Request<{data:any}>('/api/team/workspace/overview').catch(() => ({data:{ok:false}})) : Promise.resolve({data:{ok:false}}),
         canSeeMetrics ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_admin_overview', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { ok: false } })) : Promise.resolve({ data: { ok: true, overview: null } }),
         canManageEscalations ? supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_list_escalations', { method: 'POST', body: JSON.stringify({ args: {} }) }).catch(() => ({ data: { ok: false } })) : Promise.resolve({ data: { ok: true, escalations: [] } }),
       ]);
-      setOverview(summary.data?.ok ? summary.data.overview || null : null);
+      setOverview(d1Overview.data?.ok ? d1Overview.data.overview : summary.data?.ok ? summary.data.overview || null : null);
       setEscalations(queue.data?.ok ? queue.data.escalations || [] : []);
     } catch (e: any) {
       setError(e?.message || 'Could not load Vice Admin workspace.');
