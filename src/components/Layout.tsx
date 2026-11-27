@@ -2,7 +2,6 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Store, MessageCircle, User, Plus, Bell, Search, Menu, Shield, Briefcase } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { d1Me, d1Request } from '../lib/d1Api';
-import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import Sidebar from './Sidebar';
 import { useSound } from '../contexts/sound';
 import { MessageToast } from './MessageToast';
@@ -74,14 +73,19 @@ export default function Layout() {
         return;
       }
 
-      const [ticketsRes, reportsRes] = await Promise.all([
-        supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
-        supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
-      ]);
-      if (!active) return;
-      const ticketCount = (ticketsRes.data || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
-      const reportCount = (reportsRes.data || []).length;
-      setStaffBadge(ticketCount + reportCount);
+      if (nextRole === 'support_agent') {
+        const tickets = await d1Request<{ data: any[] }>('/api/staff/tickets?scope=mine').catch(() => ({ data: [] }));
+        if (!active) return;
+        setStaffBadge((tickets.data || []).reduce((sum: number, ticket: any) => sum + (Number(ticket.unread) || 0), 0));
+        return;
+      }
+      if (nextRole === 'owner' || nextRole === 'super_admin') {
+        const reports = await d1Request<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] }));
+        if (!active) return;
+        setStaffBadge((reports.data || []).length);
+        return;
+      }
+      setStaffBadge(0);
     };
 
     const refreshNotifications = async () => {
