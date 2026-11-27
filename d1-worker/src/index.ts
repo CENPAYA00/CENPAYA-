@@ -13,6 +13,7 @@ import { handleSearchRoute } from "./search.js";
 import { handleVideoRoutes, processVideoQueue } from "./video.js";
 import { handleVideoLifecycleRoutes, processVideoLifecycleCleanupQueue, processListingRetentionQueue } from "./video-lifecycle.js";
 import { handleAdminRoutes } from "./admin.js";
+import { handleEngineeringRoutes } from "./engineering.js";
 import { handleAiAssistantRoutes } from "./ai-assistant.js";
 import { handleAiIndicatorRoutes } from "./ai-indicator.js";
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
@@ -59,6 +60,8 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(aiAssistantResponse)return aiAssistantResponse;
   const aiIndicatorResponse=await handleAiIndicatorRoutes(request,env,path,method,user);
   if(aiIndicatorResponse)return aiIndicatorResponse;
+  const engineeringResponse=await handleEngineeringRoutes(request,env,{path,method,user});
+  if(engineeringResponse)return engineeringResponse;
   const adminResponse=await handleAdminRoutes(request,env,{path,method,user});
   if(adminResponse)return adminResponse;
   const searchResponse=await handleSearchRoute(request,env,user?.id||null);
