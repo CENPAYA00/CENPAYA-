@@ -266,10 +266,13 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
   const staffWorkspace = user
     ? await env.DB.prepare("SELECT workspace_role FROM staff_workspace_members WHERE user_id=? AND is_active=1").bind(user.id).first<{workspace_role:string}>().catch(() => null)
     : null;
+  const teamWorkspace = user
+    ? await env.DB.prepare("SELECT workspace_role FROM team_workspace_members WHERE user_id=? AND status='active'").bind(user.id).first<{workspace_role:string}>().catch(() => null)
+    : null;
   const platformAdmin = !!user && ["super_admin","owner"].includes(user.role);
-  // Platform authority must never be downgraded by a staff workspace assignment.
-  const effectiveRole = platformAdmin ? user!.role : staffWorkspace?.workspace_role || user?.role || "";
-  const staffAllowed = !!user && ["support_agent","staff_member","staff","super_admin","owner"].includes(effectiveRole);
+  // Platform authority must never be downgraded by a workspace appointment.
+  const effectiveRole = platformAdmin ? user!.role : teamWorkspace?.workspace_role || staffWorkspace?.workspace_role || user?.role || "";
+  const staffAllowed = !!user && ["support_agent","staff_member","vice_admin","staff","super_admin","owner"].includes(effectiveRole);
   const supportAuthority = !!user && (platformAdmin || effectiveRole === "support_agent");
   if (path === "/api/staff/profile" && method === "GET") {
     if (!staffAllowed) return fail("Staff access required",403);
