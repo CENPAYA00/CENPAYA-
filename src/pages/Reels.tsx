@@ -14,13 +14,36 @@ type Reel = {
  ai_video_status?:'completed'|'unavailable'|null; ai_video_classification?:'possible_ai_generated'|'no_clear_signal'|'inconclusive'|null;
 };
 let loader:Promise<void>|null=null;
-function loadHls(){if(window.Hls)return Promise.resolve();if(!loader)loader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';script.onload=()=>resolve();script.onerror=()=>reject(new Error('HLS player unavailable'));document.head.appendChild(script);});return loader;}
+function loadHls(){
+ if(window.Hls)return Promise.resolve();
+ if(!loader)loader=new Promise<void>((resolve,reject)=>{
+  const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';
+  script.onload=()=>resolve();script.onerror=()=>{loader=null;script.remove();reject(new Error('HLS player unavailable'));};
+  document.head.appendChild(script);
+ });
+ return loader;
+}
 export default function Reels(){
- const navigate=useNavigate(),[items,setItems]=useState<Reel[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[meId,setMeId]=useState<string|null>(null),[commentPost,setCommentPost]=useState<string|null>(null),[sharePost,setSharePost]=useState<string|null>(null),[savedIds,setSavedIds]=useState<Set<string>>(new Set());
+ const navigate=useNavigate(),[items,setItems]=useState<Reel[]>([]),[loading,setLoading]=useState(true),[loadingMore,setLoadingMore]=useState(false),[hasMore,setHasMore]=useState(false),[nextCursor,setNextCursor]=useState<string|null>(null),[error,setError]=useState(''),[meId,setMeId]=useState<string|null>(null),[commentPost,setCommentPost]=useState<string|null>(null),[sharePost,setSharePost]=useState<string|null>(null),[savedIds,setSavedIds]=useState<Set<string>>(new Set());
  const requestedVideoId=new URLSearchParams(window.location.search).get('video_id')||'';
  const refs=useRef<Record<string,HTMLVideoElement|null>>({}),lastWatch=useRef<Record<string,number>>({});
- const load=async()=>{setLoading(true);setError('');try{const [result,saved]=await Promise.all([d1Request<{data:Reel[]}>(`/api/reels?limit=20${requestedVideoId?'&video_id='+encodeURIComponent(requestedVideoId):''}`),d1Request<{data:any[]}>('/api/posts/saved')]);setItems(result.data||[]);setSavedIds(new Set((saved.data||[]).map((post:any)=>post.id)));}catch(e:any){setError(e.message||'Could not load videos');}finally{setLoading(false);}};
- useEffect(()=>{getCachedUser().then(user=>setMeId(user?.id||null)).catch(()=>setMeId(null));void load();},[]);
+ const load=async(cursor:string|null=null,append=false)=>{
+  if(append)setLoadingMore(true);else{setLoading(true);setError('');}
+  try{
+   const query=new URLSearchParams({limit:'20'});if(cursor)query.set('cursor',cursor);if(requestedVideoId)query.set('video_id',requestedVideoId);
+   const result=await d1Request<{data:Reel[];next_cursor?:string|null}>(`/api/reels?${query.toString()}`);
+   const incoming=result.data||[];
+   setItems(previous=>append?[...previous,...incoming.filter(item=>!previous.some(old=>old.video_id===item.video_id))]:incoming);
+   setNextCursor(result.next_cursor||null);setHasMore(!!result.next_cursor&&incoming.length>0);
+   if(!append){
+    try{const saved=await d1Request<{data:any[]}>('/api/posts/saved');setSavedIds(new Set((saved.data||[]).map((post:any)=>post.id)));}
+    catch{setSavedIds(new Set());}
+   }
+  }catch(e:any){setError(e.message||'Could not load videos');}
+  finally{setLoading(false);setLoadingMore(false);}
+ };
+ useEffect(()=>{getCachedUser().then(user=>setMeId(user?.id||null)).catch(()=>setMeId(null));},[]);
+ useEffect(()=>{void load(null,false);},[requestedVideoId]);
  useEffect(()=>{let alive=true;const instances:any[]=[];for(const item of items){const element=refs.current[item.video_id];if(!element)continue;if(element.canPlayType('application/vnd.apple.mpegurl')){element.src=item.playlist_url;continue;}loadHls().then(()=>{if(!alive||!window.Hls?.isSupported())return;const hls=new window.Hls({enableWorker:true});hls.loadSource(item.playlist_url);hls.attachMedia(element);instances.push(hls);}).catch((e:any)=>setError(e.message||'Video playback unavailable'));}return()=>{alive=false;instances.forEach(x=>x.destroy());};},[items]);
  const like=async(item:Reel)=>{const next=!Boolean(item.is_liked);setItems(p=>p.map(v=>v.video_id===item.video_id?{...v,is_liked:next,likes_count:Math.max(0,v.likes_count+(next?1:-1))}:v));try{await d1Request('/api/posts/'+encodeURIComponent(item.post_id)+'/like',{method:next?'POST':'DELETE'});}catch(e:any){setItems(p=>p.map(v=>v.video_id===item.video_id?{...v,is_liked:!next,likes_count:Math.max(0,v.likes_count+(next?-1:1))}:v));setError(e.message||'Could not update like');}};
  const follow=async(item:Reel)=>{try{const r=await d1Request<{following?:boolean}>('/api/profiles/'+encodeURIComponent(item.author_id)+'/follow',{method:item.is_following_author?'DELETE':'POST'});setItems(p=>p.map(v=>v.author_id===item.author_id?{...v,is_following_author:!!r.following}:v));}catch(e:any){setError(e.message||'Could not update follow');}};
@@ -28,7 +51,7 @@ export default function Reels(){
  const save=async(item:Reel)=>{const wasSaved=savedIds.has(item.post_id);setSavedIds(prev=>{const next=new Set(prev);wasSaved?next.delete(item.post_id):next.add(item.post_id);return next;});try{await d1Request('/api/posts/'+encodeURIComponent(item.post_id)+'/save',{method:wasSaved?'DELETE':'POST'});}catch(e:any){setSavedIds(prev=>{const next=new Set(prev);wasSaved?next.add(item.post_id):next.delete(item.post_id);return next;});setError(e.message||'Could not save video');}};
  const track= (item:Reel,complete=false)=>{const now=Date.now();if(!complete&&now-(lastWatch.current[item.video_id]||0)<5000)return;lastWatch.current[item.video_id]=now;void d1Request('/api/feed/events',{method:'POST',body:JSON.stringify({post_id:item.post_id,event_type:complete?'video_complete':'video_watch',watch_ms:complete?Math.min(300000,Math.round((refs.current[item.video_id]?.duration||0)*1000)):5000,completed:complete,source:'videos'})}).catch(()=>undefined);};
  if(loading)return <div className="p-6 text-center text-xs text-gray-500">Loading videos…</div>;
- return <div className="px-3 py-3 pb-24"><div className="flex justify-between items-center mb-3"><h1 className="text-base font-bold text-navy dark:text-white">Videos</h1><button onClick={()=>void load()} aria-label="Refresh videos" className="text-accent"><RefreshCw size={16}/></button></div>
+ return <div className="px-3 py-3 pb-24"><div className="flex justify-between items-center mb-3"><h1 className="text-base font-bold text-navy dark:text-white">Videos</h1><button onClick={()=>void load(null,false)} aria-label="Refresh videos" className="text-accent"><RefreshCw size={16}/></button></div>
  {error&&<p role="status" className="text-xs text-red-500 mb-3">{error}</p>}{!items.length&&!error&&<div className="text-center py-16 text-xs text-gray-500">No published videos yet.</div>}
  <div className="space-y-4">{items.map(item=><article key={item.video_id} className="rounded-2xl overflow-hidden bg-black text-white">
  <div className="relative"><video ref={el=>{refs.current[item.video_id]=el;}} controls playsInline preload="metadata" className="w-full max-h-[72vh] aspect-[9/16] object-contain bg-black" onPlay={()=>track(item)} onTimeUpdate={()=>track(item)} onEnded={()=>track(item,true)}/>{item.ai_video_classification==="possible_ai_generated"&&<span className="absolute left-2 top-2 rounded-md bg-black/80 px-2 py-1 text-[10px] font-semibold text-white">AI indicator · review</span>}</div>
@@ -37,6 +60,7 @@ export default function Reels(){
  <div className="flex items-center gap-4 mt-3 border-t border-white/15 pt-2"><button onClick={()=>void like(item)} className={`flex items-center gap-1.5 text-xs font-bold ${item.is_liked?'text-pink-400':'text-white'}`}><Heart size={16} fill={item.is_liked?'currentColor':'none'}/>{item.likes_count||0} Like</button><button onClick={()=>setCommentPost(item.post_id)} className="flex items-center gap-1.5 text-xs font-bold"><MessageCircle size={16}/>{item.comments_count||0} Comment</button><button onClick={()=>setSharePost(item.post_id)} className="flex items-center gap-1.5 text-xs font-bold"><Share2 size={16}/>Share</button><button onClick={()=>void save(item)} aria-label={savedIds.has(item.post_id)?'Unsave video':'Save video'} className={`flex items-center gap-1.5 text-xs font-bold ${savedIds.has(item.post_id)?'text-amber-300':'text-white'}`}><Bookmark size={16} fill={savedIds.has(item.post_id)?'currentColor':'none'}/>Save</button></div>
  <div className="mt-3 flex items-center justify-between gap-2"><div className="flex items-center gap-1">{[1,2,3,4,5].map(star=><button key={star} aria-label={`Rate ${star} out of 5 stars`} onClick={()=>void rate(item,star)} className={star<=Number(item.viewer_rating||0)?'text-amber-400':'text-white/50'}><Star size={17} fill={star<=Number(item.viewer_rating||0)?'currentColor':'none'}/></button>)}</div><span className="text-[10px] text-white/70">{item.views_count||0} views · {Number(item.average_rating||0).toFixed(1)} / 5 · {item.ratings_count||0} ratings</span></div>
  </div></article>)}</div>
+ {hasMore&&<button disabled={loadingMore} onClick={()=>void load(nextCursor,true)} className="w-full mt-4 rounded-xl border border-gray-200 dark:border-darkline py-3 text-xs font-bold text-navy dark:text-white disabled:opacity-50">{loadingMore?'Loading…':'Load more videos'}</button>}
  <CommentsSheet postId={commentPost} me={meId} onClose={()=>setCommentPost(null)} onCommentAdded={()=>setItems(p=>p.map(item=>item.post_id===commentPost?{...item,comments_count:item.comments_count+1}:item))}/>{sharePost&&<ShareSheet postId={sharePost} onClose={()=>setSharePost(null)} onShared={()=>{void d1Request('/api/posts/'+encodeURIComponent(sharePost)+'/share',{method:'POST',body:JSON.stringify({visibility:'public'})}).catch(()=>undefined);setSharePost(null);}}/>}
  </div>;
 }
