@@ -163,13 +163,15 @@ export async function handleEngineeringRoutes(request:Request,env:Env,{path,meth
  if(path==="/api/team/chat/members"&&method==="GET"){
   if(!(await canUseChat(env.DB,user!.id)))return fail("Team membership required",403);
   await ensureGeneralRoom(env.DB,user!.id);
-  const rows=await env.DB.prepare(`SELECT u.id,u.username,u.role FROM users u
-   WHERE u.banned=0 AND u.deleted_at IS NULL AND (
+  const rows=await env.DB.prepare(`SELECT u.id,u.username,u.role,
+   (SELECT json_group_array(ea.engineering_role) FROM engineering_appointments ea WHERE ea.user_id=u.id AND ea.status='active') AS engineering_roles
+   FROM users u WHERE u.banned=0 AND u.deleted_at IS NULL AND (
     u.role IN ('owner','super_admin','vice_admin','support_agent','staff_member')
     OR EXISTS(SELECT 1 FROM staff_workspace_members sw WHERE sw.user_id=u.id AND sw.is_active=1)
     OR EXISTS(SELECT 1 FROM engineering_appointments ea WHERE ea.user_id=u.id AND ea.status='active')
    ) ORDER BY u.username LIMIT 300`).all();
-  return ok({members:rows.results||[]});
+  const members=(rows.results||[]).map((m:any)=>({...m,engineering_roles:(()=>{try{return JSON.parse(m.engineering_roles||"[]")}catch{return[]}})()} )}));
+  return ok({members});
  }
  if(path==="/api/team/chat/conversations"&&method==="POST"){
   if(!(await canUseChat(env.DB,user!.id)))return fail("Team membership required",403);
