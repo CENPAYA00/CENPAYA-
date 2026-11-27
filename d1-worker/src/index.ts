@@ -16,6 +16,49 @@ import { handleAdminRoutes } from "./admin.js";
 import { handleEngineeringRoutes } from "./engineering.js";
 import { handleAiAssistantRoutes } from "./ai-assistant.js";
 import { handleAiIndicatorRoutes } from "./ai-indicator.js";
+const D1_MAINTENANCE_INTERVAL_MS = 23 * 60 * 60 * 1000;
+const D1_MAINTENANCE_RETRY_MS = 15 * 60 * 1000;
+
+async function runD1MaintenanceIfDue(env: Env): Promise<void> {
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const retryBefore = new Date(now - D1_MAINTENANCE_RETRY_MS).toISOString();
+  const dueBefore = new Date(now - D1_MAINTENANCE_INTERVAL_MS).toISOString();
+
+  // Conditional UPDATE is an atomic claim, preventing overlapping Cron runs.
+  const claim = await env.DB.prepare(`
+    UPDATE cenpaya_worker_maintenance_state
+       SET last_attempt_at = ?1, last_status = 'running',
+           last_error = NULL, updated_at = ?1
+     WHERE task_key = 'database_keepalive'
+       AND (last_attempt_at IS NULL
+         OR (last_status = 'failed' AND last_attempt_at <= ?2)
+         OR (last_status != 'failed' AND last_attempt_at <= ?3))
+  `).bind(nowIso, retryBefore, dueBefore).run();
+  if ((claim.meta?.changes ?? 0) < 1) return;
+
+  try {
+    await env.DB.prepare("SELECT 1 AS healthy").first();
+    const checkedAt = new Date().toISOString();
+    await env.DB.prepare(`
+      UPDATE cenpaya_worker_maintenance_state
+         SET last_success_at = ?1, last_status = 'ok',
+             last_error = NULL, updated_at = ?1
+       WHERE task_key = 'database_keepalive'
+    `).bind(checkedAt).run();
+    console.info("scheduled_d1_maintenance_succeeded", JSON.stringify({
+      task: "database_keepalive", checkedAt, intervalHours: 23
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 500) : "unknown_error";
+    await env.DB.prepare(`
+      UPDATE cenpaya_worker_maintenance_state
+         SET last_status = 'failed', last_error = ?1, updated_at = ?2
+       WHERE task_key = 'database_keepalive'
+    `).bind(message, new Date().toISOString()).run().catch(() => undefined);
+    console.error("scheduled_d1_maintenance_failed", message);
+  }
+}
 const json = (data: unknown, status = 200, extraHeaders: HeadersInit = {}) => {
   const headers = new Headers(extraHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -84,7 +127,7 @@ async function handle(request:Request,env:Env):Promise<Response>{
   if(marketplaceResponse)return marketplaceResponse;
   return fail("Route not found",404);
 }
-export default { async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{ ctx.waitUntil(Promise.all([processVideoQueue(env),processVideoLifecycleCleanupQueue(env),processListingRetentionQueue(env)]).then(()=>undefined)); }, async fetch(request:Request,env:Env):Promise<Response>{
+export default { async scheduled(_event:ScheduledController,env:Env,ctx:ExecutionContext):Promise<void>{ ctx.waitUntil(Promise.all([processVideoQueue(env),processVideoLifecycleCleanupQueue(env),processListingRetentionQueue(env),runD1MaintenanceIfDue(env)]).then(()=>undefined)); }, async fetch(request:Request,env:Env):Promise<Response>{
   try{return withCors(await handle(request,env),request,env);}
   catch(error){console.error("D1 Worker request failed",error instanceof Error?error.message:"unknown");return withCors(fail("Internal server error",500),request,env);}
 }};
