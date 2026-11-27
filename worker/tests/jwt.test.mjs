@@ -104,6 +104,16 @@ void describe("Supabase user JWT creation", () => {
     assert.equal(claims.exp - claims.iat, 60);
   });
 
+  void it("accepts the legacy nil UUID only as a signed identity subject", async () => {
+    const legacyId = "00000000-0000-0000-0000-000000000000";
+    const now = 1_800_000_000;
+    const token = await signSupabaseUserJwt(legacyId, {
+      SUPABASE_JWT_ALGORITHM: "HS256",
+      SUPABASE_JWT_SECRET: "test-only-supabase-jwt-secret-with-more-than-32-bytes",
+    }, now);
+    assert.equal(decodePayload(token).sub, legacyId);
+  });
+
   void it("fails closed when the project's signing key is not configured", async () => {
     await assert.rejects(() => signSupabaseUserJwt(userId, {}, 1_800_000_000));
   });
