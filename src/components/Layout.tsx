@@ -18,6 +18,7 @@ export default function Layout() {
   const [userId, setUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authUnavailable, setAuthUnavailable] = useState(false);
+  const [authRetry, setAuthRetry] = useState(0);
 
   const showMainSearch = location.pathname === '/home';
   const activeChatId = location.pathname.startsWith('/chat/') ? location.pathname.split('/')[2] : null;
@@ -127,7 +128,7 @@ export default function Layout() {
 
     void init();
     return () => { active = false; if (timer) window.clearInterval(timer); };
-  }, [play, navigate, location.pathname]);
+  }, [play, navigate, location.pathname, authRetry]);
 
   const goToPanel = () => {
     if (staffRole === 'owner' || staffRole === 'super_admin') navigate('/admin');
@@ -144,7 +145,7 @@ export default function Layout() {
           {authUnavailable ? 'Unable to verify your session. Check your connection and try again.' : 'Checking your session…'}
         </p>
         {authUnavailable && (
-          <button onClick={() => window.location.reload()} className="px-4 py-2 rounded-xl bg-brand text-white text-sm font-semibold">
+          <button onClick={() => { setAuthUnavailable(false); setAuthReady(false); setAuthRetry(value => value + 1); }} className="px-4 py-2 rounded-xl bg-brand text-white text-sm font-semibold">
             Retry
           </button>
         )}
