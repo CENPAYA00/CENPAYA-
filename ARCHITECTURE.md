@@ -3,6 +3,21 @@
 ## Overview
 CenPaya is a Pan-African commerce and fintech application for the CEMAC region. The frontend is a React single-page application, built with Vite and delivered as a Progressive Web App (PWA).
 
+## Monorepo organization
+
+This repository is the single source tree for the frontend and its backend projects. Existing deployment-sensitive paths are intentionally preserved:
+
+- `src/`, `public/`, and the root Vite configuration form the frontend application (the repository root is the frontend package).
+- `d1-worker/` is the Cloudflare D1 Worker package. Its own `package.json`, `tsconfig.json`, and `wrangler.toml` remain together.
+- `database/d1/` contains the D1 schema reference and incremental migrations used by the D1 Worker.
+- `supabase/` retains the standard Supabase CLI layout, including `functions/`, `migrations/`, and `config.toml`.
+- `video-processor/` contains the separate video processing service.
+- `.github/workflows/` contains repository CI workflows.
+
+The root package exposes convenience commands for the D1 Worker: `npm run d1:dev`, `npm run d1:typecheck`, `npm run d1:test`, and `npm run d1:build`. These delegate to the worker's existing package scripts. Run the frontend with the existing root commands (`npm run dev`, `npm run build`, and `npm run preview`).
+
+Do not relocate the frontend, Worker entry points, Supabase CLI directories, migration directories, or workflow files as part of routine organization. Their current paths are referenced by build, deployment, and migration configuration. Any future physical move must update and verify every dependent config and workflow in the same change.
+
 ## Backend ownership
 
 CenPaya uses two backend data systems with deliberately separate responsibilities:
@@ -27,19 +42,9 @@ Do not duplicate ownership of a data domain across D1 and Supabase. If a workflo
 
 ## Application entry and routing
 
-src/main.tsx mounts the application and its providers. src/App.tsx defines the route tree and lazy-loaded pages.
+`src/main.tsx` mounts the application and its providers. `src/App.tsx` defines the route tree and lazy-loaded pages.
 
-The route tree and actual feature inventory in src/ are authoritative. This document intentionally describes backend ownership rather than listing every page.
-
-## Repository layout
-
-- src/ — frontend application, UI, hooks, API clients, and feature logic.
-- database/d1/ — D1 schema reference and incremental SQL migrations.
-- public/ — public static assets.
-- vite.config.ts — Vite and PWA build configuration.
-- public/push-sw.js — push handlers imported by the Vite-generated service worker.
-- tailwind.config.js — design tokens and Tailwind configuration.
-- rls_policies.sql — legacy Supabase policy reference; review before applying to any database.
+The route tree and actual feature inventory in `src/` are authoritative. This document intentionally describes backend ownership rather than listing every page.
 
 ## API and security rules
 
