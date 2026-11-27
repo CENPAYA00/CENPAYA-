@@ -71,7 +71,7 @@ export default function EngineeringManagement(){
    <p className="text-[10px] text-gray-500">{ROLES.find(r=>r.id===role)?.desc}</p>
    <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={lead} onChange={e=>setLead(e.target.checked)}/> Also appoint as Lead Engineer (one active lead at a time)</label>
    {lead&&profile?.role!=='owner'&&<p className="text-[10px] text-amber-700">Lead Engineer designation is restricted to the Owner.</p>}
-   <button disabled={busy||!userId||} onClick={()=>void appoint()} className="w-full rounded-lg bg-accent text-white p-3 text-xs font-bold disabled:opacity-50">{busy?'Processing...':'Activate engineering appointment'}</button>
+   <button disabled={busy||!userId} onClick={()=>void appoint()} className="w-full rounded-lg bg-accent text-white p-3 text-xs font-bold disabled:opacity-50">{busy?'Processing...':'Activate engineering appointment'}</button>
   </section>
   <section className="bg-white dark:bg-darkcard rounded-xl p-4 shadow-sm space-y-2">
    <h3 className="text-sm font-bold text-navy dark:text-white">Assign engineering work</h3>
