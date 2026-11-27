@@ -191,7 +191,7 @@ export async function handleEngineeringRoutes(request:Request,env:Env,{path,meth
  }
  const messagesMatch=path.match(/^\/api\/team\/chat\/conversations\/([0-9a-f-]{36})\/messages$/i);
  if(messagesMatch&&method==="GET"){
-  if(!(await memberOf(env.DB,messagesMatch[1],user!.id)))return fail("Conversation membership required",403);
+  if(!(await canUseChat(env.DB,user!.id))||!(await memberOf(env.DB,messagesMatch[1],user!.id)))return fail("Active team membership and conversation membership required",403);
   const rows=await env.DB.prepare(`SELECT m.id,m.body,m.attachment_url,m.created_at,u.username AS sender_name
    FROM team_chat_messages m JOIN users u ON u.id=m.sender_user_id
    WHERE m.conversation_id=? AND m.deleted_at IS NULL ORDER BY m.created_at DESC LIMIT 100`).bind(messagesMatch[1]).all();
@@ -199,7 +199,7 @@ export async function handleEngineeringRoutes(request:Request,env:Env,{path,meth
   return ok({messages:(rows.results||[]).reverse()});
  }
  if(messagesMatch&&method==="POST"){
-  if(!(await memberOf(env.DB,messagesMatch[1],user!.id)))return fail("Conversation membership required",403);
+  if(!(await canUseChat(env.DB,user!.id))||!(await memberOf(env.DB,messagesMatch[1],user!.id)))return fail("Active team membership and conversation membership required",403);
   const body=await request.json().catch(()=>null) as Record<string,unknown>|null;
   const message=typeof body?.body==="string"?body.body.trim():"";
   const attachment=typeof body?.attachment_url==="string"?body.attachment_url.trim():"";
