@@ -175,6 +175,7 @@ export default function AdminLayout() {
     { path: '/admin/users',           icon: <Users size={16} />,           label: 'Users' },
     { path: '/admin/staff',           icon: <UserPlus size={16} />,        label: 'Staff' },
     { path: '/admin/engineering',     icon: <Users size={16} />,            label: 'Engineering' },
+    { path: '/staff/team',             icon: <MessageSquare size={16} />,    label: 'Team Chat' },
     { path: '/admin/permissions',     icon: <Key size={16} />,             label: 'Permissions' },
     { path: '/admin/security',        icon: <Lock size={16} />,            label: 'Security' },
     { path: '/admin/audit',           icon: <FileText size={16} />,        label: 'Audit' },
