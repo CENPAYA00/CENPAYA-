@@ -69,6 +69,83 @@ export async function handleAdminRoutes(
   env: Env,
   { path, method, user }: Context,
 ): Promise<Response | null> {
+  if (path === "/api/team/escalations" && method === "POST") {
+    if (!user) return fail("Team authentication required",401);
+    const access = await getTeamTaskContext(env,user);
+    const allowedTargets: Record<string,string[]> = {
+      support_agent:["vice_admin","super_admin","owner"],
+      vice_admin:["super_admin","owner"],
+      staff_member:["support_agent","vice_admin"],
+      owner:["support_agent","vice_admin","super_admin","owner"],
+      super_admin:["support_agent","vice_admin","super_admin","owner"],
+    };
+    const body = await request.json().catch(() => null) as Record<string,unknown>|null;
+    const targetRole = typeof body?.target_role === "string" ? body.target_role : "";
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    const ticketId = typeof body?.ticket_id === "string" ? body.ticket_id : null;
+    const taskId = typeof body?.task_id === "string" ? body.task_id : null;
+    if (!body || Object.keys(body).some(key => !["target_role","reason","ticket_id","task_id"].includes(key)) ||
+        !allowedTargets[access.role]?.includes(targetRole) || reason.length<5 || reason.length>2000 ||
+        (ticketId && !/^[0-9a-f-]{36}$/i.test(ticketId)) || (taskId && !/^[0-9a-f-]{36}$/i.test(taskId))) {
+      return fail("Invalid escalation details or escalation target");
+    }
+    try {
+      const targetExists = ["owner","super_admin"].includes(targetRole)
+        ? await env.DB.prepare("SELECT 1 AS active FROM users WHERE role=? AND banned=0 AND deleted_at IS NULL LIMIT 1").bind(targetRole).first()
+        : await env.DB.prepare("SELECT 1 AS active FROM team_workspace_members WHERE workspace_role=? AND status='active' LIMIT 1").bind(targetRole).first();
+      if (!targetExists) return fail("No active team member is available for this escalation level",409);
+      if (ticketId) {
+        const ticket = await env.DB.prepare("SELECT id,assigned_to_user_id FROM support_tickets WHERE id=?").bind(ticketId).first<{id:string;assigned_to_user_id:string|null}>();
+        if (!ticket) return fail("Escalated support ticket was not found",404);
+        if (access.role === "support_agent" && ticket.assigned_to_user_id !== user.id) return fail("You can escalate only a ticket assigned to you",403);
+      }
+      if (taskId) {
+        const task = await env.DB.prepare("SELECT id,assigned_to_user_id,created_by_user_id FROM staff_tasks WHERE id=?").bind(taskId).first<{id:string;assigned_to_user_id:string;created_by_user_id:string}>();
+        if (!task) return fail("Escalated task was not found",404);
+        if (!access.isAdmin && task.created_by_user_id !== user.id && task.assigned_to_user_id !== user.id) return fail("Task is outside your escalation scope",403);
+      }
+      const id = uuid();
+      await env.DB.prepare("INSERT INTO team_escalations(id,raised_by_user_id,target_role,ticket_id,task_id,reason) VALUES(?,?,?,?,?,?)")
+        .bind(id,user.id,targetRole,ticketId,taskId,reason).run();
+      await env.DB.prepare("INSERT INTO team_audit_logs(id,actor_user_id,target_user_id,action,details_json) VALUES(?,?,?,?,?)")
+        .bind(uuid(),user.id,null,"team_escalation_raised",JSON.stringify({escalation_id:id,target_role:targetRole,ticket_id:ticketId,task_id:taskId})).run().catch(() => {});
+      return json({success:true,data:{id}},201);
+    } catch { return fail("Escalations are unavailable. Apply D1 migration 0076.",503); }
+  }
+
+  if (path === "/api/team/escalations" && method === "GET") {
+    if (!user) return fail("Team authentication required",401);
+    const access = await getTeamTaskContext(env,user);
+    const isSupervisor = access.isAdmin || access.role === "vice_admin" && access.permissions.includes("can_manage_escalations");
+    try {
+      const where = access.isAdmin ? "" : isSupervisor ? "WHERE e.target_role='vice_admin' OR e.raised_by_user_id=?" : "WHERE e.raised_by_user_id=?";
+      const rows = access.isAdmin
+        ? await env.DB.prepare("SELECT e.*,u.username AS raised_by_username,t.subject AS ticket_subject FROM team_escalations e JOIN users u ON u.id=e.raised_by_user_id LEFT JOIN support_tickets t ON t.id=e.ticket_id ORDER BY CASE e.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,e.created_at DESC LIMIT 200").all()
+        : await env.DB.prepare("SELECT e.*,u.username AS raised_by_username,t.subject AS ticket_subject FROM team_escalations e JOIN users u ON u.id=e.raised_by_user_id LEFT JOIN support_tickets t ON t.id=e.ticket_id "+where+" ORDER BY CASE e.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,e.created_at DESC LIMIT 200").bind(user.id).all();
+      return json({success:true,data:{ok:true,escalations:rows.results||[]}});
+    } catch { return fail("Escalation queue is unavailable. Apply D1 migration 0076.",503); }
+  }
+
+  const escalationMatch = path.match(/^\/api\/team\/escalations\/([0-9a-f-]{36})$/i);
+  if (escalationMatch && method === "PATCH") {
+    if (!user) return fail("Team authentication required",401);
+    const access = await getTeamTaskContext(env,user);
+    if (!(access.isAdmin || access.role === "vice_admin" && access.permissions.includes("can_manage_escalations"))) return fail("Escalation review permission required",403);
+    const body = await request.json().catch(() => null) as Record<string,unknown>|null;
+    const status = typeof body?.status === "string" ? body.status : "";
+    const note = typeof body?.resolution_note === "string" ? body.resolution_note.trim() : "";
+    if (!body || Object.keys(body).some(key => !["status","resolution_note"].includes(key)) ||
+        !["in_progress","resolved"].includes(status) || (status === "resolved" && (note.length < 3 || note.length > 2000))) return fail("Valid escalation status and resolution note are required");
+    const escalation = await env.DB.prepare("SELECT id,target_role FROM team_escalations WHERE id=?").bind(escalationMatch[1]).first<{id:string;target_role:string}>();
+    if (!escalation) return fail("Escalation not found",404);
+    if (!access.isAdmin && escalation.target_role !== "vice_admin") return fail("This escalation is outside your authority",403);
+    await env.DB.prepare("UPDATE team_escalations SET status=?,resolution_note=?,resolved_by_user_id=CASE WHEN ?='resolved' THEN ? ELSE resolved_by_user_id END,resolved_at=CASE WHEN ?='resolved' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?")
+      .bind(status,note||null,status,user.id,status,escalation.id).run();
+    await env.DB.prepare("INSERT INTO team_audit_logs(id,actor_user_id,target_user_id,action,details_json) VALUES(?,?,?,?,?)")
+      .bind(uuid(),user.id,null,"team_escalation_updated",JSON.stringify({escalation_id:escalation.id,status})).run().catch(() => {});
+    return json({success:true});
+  }
+
   if (path === "/api/team/workspace/overview" && method === "GET") {
     if (!user) return fail("Team authentication required",401);
     const access = await getTeamTaskContext(env,user);
