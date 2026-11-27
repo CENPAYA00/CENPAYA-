@@ -13,7 +13,7 @@ const ROLES:Record<string,string>={
  ui_ux_designer:"User flows, interface design, responsive layouts, accessibility and design handoff."
 };
 const ACTIVE_TEAM_ROLES=["owner","super_admin","vice_admin","support_agent","staff_member"];
-const isAdmin=(u:User)=>!!u&&["owner","super_admin"].includes(u.role);
+const isAdmin=(u:User|null)=>!!u&&["owner","super_admin"].includes(u.role);
 async function isEngineer(db:D1Database,id:string){return !!(await db.prepare("SELECT 1 AS yes FROM engineering_appointments WHERE user_id=? AND status='active' LIMIT 1").bind(id).first());}
 async function isTeam(db:D1Database,id:string){
  const row=await db.prepare("SELECT role FROM users WHERE id=? AND banned=0 AND deleted_at IS NULL").bind(id).first<{role:string}>();
