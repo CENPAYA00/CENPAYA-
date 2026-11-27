@@ -144,7 +144,7 @@ export async function handleEngineeringRoutes(request:Request,env:Env,{path,meth
   if(!isAdmin(user)&&assignee===user!.id)return fail("Lead Engineer cannot assign a task to themselves",403);
   const id=uuid();
   await env.DB.prepare("INSERT INTO engineering_tasks(id,title,description,assigned_to_user_id,assigned_by_user_id,supervisor_user_id,due_at) VALUES(?,?,?,?,?,?,?)")
-   .bind(id,title,description,assignee,user!.id,user!.id,due?new Date(due).toISOString():null).run();
+   .bind(id,title,description,assignee,user!.id,user!.id,due?new Date(String(due)).toISOString():null).run();
   await env.DB.prepare("INSERT INTO engineering_task_updates(id,task_id,author_user_id,update_type,body) VALUES(?,?,?,'status_change','Engineering task assigned')").bind(uuid(),id,user!.id).run();
   await audit(env.DB,user!.id,assignee,"engineering_task_assigned",{task_id:id,title});
   return ok({task_id:id},201);
