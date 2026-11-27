@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Request } from '../lib/d1Api';
 import { ClipboardList, MessageCircle, ShieldCheck, Clock, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -28,14 +28,14 @@ export default function EngineeringPanel() {
     setLoading(true);setError('');
     try {
       const [p,t]=await Promise.all([
-        supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_my_profile',{method:'POST',body:JSON.stringify({args:{}})}),
-        supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_my_tasks',{method:'POST',body:JSON.stringify({args:{}})}),
+        d1Request<{data:any}>('/api/engineering/profile'),
+        d1Request<{data:any}>('/api/engineering/tasks'),
       ]);
-      if(!p.data?.ok)throw new Error(p.data?.error||'Active engineering appointment required.');
-      if(!t.data?.ok)throw new Error(t.data?.error||'Could not load engineering tasks.');
+      if(!p.data?.ok)throw new Error('Active engineering appointment required.');
+      if(!t.data?.ok)throw new Error('Could not load engineering tasks.');
       setProfile(p.data);setTasks(t.data.tasks||[]);
       if((p.data.appointments||[]).some((a:any)=>a.is_lead)){
-        const roster=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_available_colleagues',{method:'POST',body:JSON.stringify({args:{}})});
+        const roster=await d1Request<{data:any}>('/api/team/chat/members');
         setMembers(roster.data?.ok?roster.data.members||[]:[]);
       }
     } catch(e:any){setError(e?.message||'Could not load engineering workspace.');}
@@ -46,10 +46,8 @@ export default function EngineeringPanel() {
   const update=async(task:any,status:string)=>{
     setBusy(task.id);setError('');
     try{
-      const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/team_update_task',{
-        method:'POST',body:JSON.stringify({args:{p_task_id:task.id,p_status:status,p_body:notes[task.id]?.trim()||null,p_attachment_url:evidence[task.id]?.trim()||null}})
-      });
-      if(!r.data?.ok)throw new Error(r.data?.error||'Task update failed.');
+      const r=await d1Request<{data:any}>(`/api/engineering/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify({status,body:notes[task.id]?.trim()||null,attachment_url:evidence[task.id]?.trim()||null})});
+      if(!r.data?.ok)throw new Error('Task update failed.');
       setNotes(v=>({...v,[task.id]:''}));setEvidence(v=>({...v,[task.id]:''}));
       await load();
     }catch(e:any){setError(e?.message||'Could not update task.');}
@@ -60,10 +58,8 @@ export default function EngineeringPanel() {
     if(!taskTitle.trim()||!taskAssignee)return;
     setBusy('assign');setError('');
     try{
-      const r=await supabaseWorkerRequest<{data:any}>('/api/v1/admin/rpc/engineering_assign_task',{
-        method:'POST',body:JSON.stringify({args:{p_title:taskTitle.trim(),p_description:taskDescription.trim()||null,p_assigned_to:taskAssignee,p_due_at:taskDue?new Date(taskDue).toISOString():null}})
-      });
-      if(!r.data?.ok)throw new Error(r.data?.error||'Task assignment failed.');
+      const r=await d1Request<{data:any}>('/api/engineering/tasks',{method:'POST',body:JSON.stringify({title:taskTitle.trim(),description:taskDescription.trim(),assigned_to_user_id:taskAssignee,due_at:taskDue?new Date(taskDue).toISOString():null})});
+      if(!r.data?.ok)throw new Error('Task assignment failed.');
       setTaskTitle('');setTaskDescription('');setTaskAssignee('');setTaskDue('');
       await load();
     }catch(e:any){setError(e?.message||'Could not assign engineering task.');}
