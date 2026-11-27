@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Request } from '../lib/d1Api';
 import { MessageSquare, Check, Shield } from 'lucide-react';
 
 export default function StaffPanel() {
@@ -16,15 +17,29 @@ export default function StaffPanel() {
   const load = async () => {
     setLoading(true);
     try {
+      let d1Profile: any = null;
+      try {
+        const result = await d1Request<{ data: any }>('/api/team/workspace/profile');
+        if (result.data?.ok) d1Profile = result.data;
+      } catch { /* Fall back to the existing team service for legacy appointments. */ }
+
+      if (d1Profile?.role === 'staff_member') {
+        setProfile({ ...d1Profile, source: 'd1' });
+        const taskRes = await d1Request<{ data: any[] }>('/api/staff/tasks');
+        setTasks(taskRes.data || []);
+        setTickets([]);
+        return;
+      }
+
       let appointment: any = null;
       try {
         const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', {
           method: 'POST', body: JSON.stringify({ args: {} }),
         });
         if (result.data?.ok) appointment = result.data;
-      } catch { /* Staff Member task access is checked by D1 below. */ }
+      } catch { /* D1 profile was checked first. */ }
 
-      const currentProfile = appointment;
+      const currentProfile = appointment || d1Profile;
       if (!currentProfile) { navigate('/home'); return; }
       if (currentProfile.role === 'vice_admin') { navigate('/vice-admin', { replace: true }); return; }
       setProfile(currentProfile);
@@ -50,10 +65,16 @@ export default function StaffPanel() {
 
   const updateTask = async (taskId: string, status: string) => {
     try {
-      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_update_task', {
-        method: 'POST', body: JSON.stringify({ args: { p_task_id: taskId, p_status: status, p_body: taskNotes[taskId] || null, p_attachment_url: taskEvidence[taskId]?.trim() || null } }),
-      });
-      if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update task.');
+      if (profile?.source === 'd1') {
+        await d1Request(`/api/staff/tasks/${taskId}`, {
+          method: 'PATCH', body: JSON.stringify({ status }),
+        });
+      } else {
+        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_update_task', {
+          method: 'POST', body: JSON.stringify({ args: { p_task_id: taskId, p_status: status, p_body: taskNotes[taskId] || null, p_attachment_url: taskEvidence[taskId]?.trim() || null } }),
+        });
+        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update task.');
+      }
       setTaskNotes(previous => ({ ...previous, [taskId]: '' }));
       setTaskEvidence(previous => ({ ...previous, [taskId]: '' }));
       await load();
@@ -100,7 +121,7 @@ export default function StaffPanel() {
               </div>
               {task.description && <p className="text-[12px] text-gray-600 dark:text-gray-300 mt-2 whitespace-pre-wrap">{task.description}</p>}
               {task.due_at && <p className="text-[10px] text-gray-500 mt-2">Due {new Date(task.due_at).toLocaleString()}</p>}
-              <textarea
+              {profile?.source !== 'd1' && <textarea
                 value={taskNotes[task.id] || ''}
                 onChange={e => setTaskNotes(previous => ({ ...previous, [task.id]: e.target.value }))}
                 maxLength={5000}
@@ -114,9 +135,9 @@ export default function StaffPanel() {
                 maxLength={2048}
                 placeholder="Evidence or document link (optional)"
                 className="w-full mt-2 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
-              />
+              />}
               <div className="flex flex-wrap gap-2 mt-2">
-                {(['todo','in_progress','blocked','submitted'] as const).filter(status => status !== task.status).map(status => (
+                {(profile?.source === 'd1' ? (['todo','in_progress','blocked','completed'] as const) : (['todo','in_progress','blocked','submitted'] as const)).filter(status => status !== task.status).map(status => (
                   <button key={status} onClick={() => void updateTask(task.id,status)} className="text-[10px] font-bold px-3 py-2 rounded-lg bg-[#e3f7ec] text-[#12935a]">
                     {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : 'Submit report'}
                   </button>
