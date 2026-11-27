@@ -36,7 +36,7 @@ export async function handleMarketplaceRoutes(request:Request,env:Env,context:Ro
     const row=await env.DB.prepare(`SELECT l.*,u.username AS merchant_name,u.display_name AS merchant_display_name,u.avatar_url AS merchant_avatar_url,u.is_premium AS merchant_is_premium,c.name AS category,
       (SELECT AVG(r.rating) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS rating,
       (SELECT COUNT(*) FROM marketplace_reviews r WHERE r.listing_id=l.id AND r.status='published') AS reviews_count,
-      (SELECT COUNT(*) FROM marketplace_order_projections o WHERE o.listing_id=l.id) AS orders_count
+      (SELECT COUNT(*) FROM marketplace_order_workflows o WHERE o.listing_id=l.id) AS orders_count
       FROM marketplace_listings l JOIN users u ON u.id=l.seller_id JOIN marketplace_categories c ON c.id=l.category_id
       WHERE l.id=? AND l.deleted_at IS NULL AND ((l.status='active' AND l.moderation_status='approved' AND u.account_status='active' AND u.banned=0 AND u.deleted_at IS NULL
         AND (l.hide_from_friends=0 OR ? IS NULL OR NOT EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user_a_id=? AND fr.user_b_id=l.seller_id) OR (fr.user_a_id=l.seller_id AND fr.user_b_id=?)))
