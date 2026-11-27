@@ -34,12 +34,13 @@ export async function handleOrderWorkflowRoutes(req:Request,env:Env,ctx:Ctx):Pro
   if(eventId.length<12||!orderId||!UUID.test(buyerId)||!UUID.test(sellerId)||buyerId===sellerId||!["goods","freelance"].includes(orderType)||!["order.created","payment.confirmed","delivery.accepted","order.disputed","order.refunded","order.cancelled","order.completed"].includes(eventType))return fail("Invalid marketplace order event");
   const status=financialStatus||"pending";
   if(!/^[a-z_]{3,40}$/.test(status))return fail("Invalid financial status");
+  let receiptCreated=false;
   try{
-   await env.DB.batch([
-    env.DB.prepare("INSERT INTO marketplace_order_workflows(order_id,buyer_id,seller_id,listing_id,order_type,financial_status,workflow_status) VALUES(?,?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET financial_status=excluded.financial_status,workflow_status=CASE WHEN marketplace_order_workflows.workflow_status='disputed' THEN 'disputed' WHEN excluded.workflow_status IN ('accepted','disputed','completed','refunded','cancelled') THEN excluded.workflow_status ELSE marketplace_order_workflows.workflow_status END,updated_at="+NOW)
-     .bind(orderId,buyerId,sellerId,listingId,orderType,status,eventType==="delivery.accepted"?"accepted":eventType==="order.disputed"?"disputed":eventType==="order.completed"?"completed":eventType==="order.refunded"?"refunded":eventType==="order.cancelled"?"cancelled":"in_progress"),
-    env.DB.prepare("INSERT OR IGNORE INTO marketplace_order_event_receipts(event_id,order_id,event_type) VALUES(?,?,?)").bind(eventId,orderId,eventType)
-   ]);
+   const receipt=await env.DB.prepare("INSERT OR IGNORE INTO marketplace_order_event_receipts(event_id,order_id,event_type) VALUES(?,?,?)").bind(eventId,orderId,eventType).run();
+   receiptCreated=receipt.meta.changes>0;
+   if(!receiptCreated)return json({success:true,duplicate:true});
+   await env.DB.prepare("INSERT INTO marketplace_order_workflows(order_id,buyer_id,seller_id,listing_id,order_type,financial_status,workflow_status) VALUES(?,?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET financial_status=excluded.financial_status,workflow_status=CASE WHEN marketplace_order_workflows.workflow_status='disputed' THEN 'disputed' WHEN excluded.workflow_status IN ('accepted','disputed','completed','refunded','cancelled') THEN excluded.workflow_status ELSE marketplace_order_workflows.workflow_status END,updated_at="+NOW)
+     .bind(orderId,buyerId,sellerId,listingId,orderType,status,eventType==="delivery.accepted"?"accepted":eventType==="order.disputed"?"disputed":eventType==="order.completed"?"completed":eventType==="order.refunded"?"refunded":eventType==="order.cancelled"?"cancelled":"in_progress").run();
    if(eventType==="delivery.accepted"){
     await env.DB.prepare("UPDATE marketplace_order_deliveries SET status='accepted' WHERE id=(SELECT id FROM marketplace_order_deliveries WHERE order_id=? AND status='submitted' ORDER BY version DESC LIMIT 1)").bind(orderId).run();
    }
@@ -53,7 +54,10 @@ export async function handleOrderWorkflowRoutes(req:Request,env:Env,ctx:Ctx):Pro
    }
    if(eventType==="delivery.accepted"||eventType==="order.completed")await scheduleDeliveryVideoDeletion(env,orderId);
    return json({success:true});
-  }catch{return fail("Could not synchronize marketplace order event",503);}
+  }catch{
+   if(receiptCreated)await env.DB.prepare("DELETE FROM marketplace_order_event_receipts WHERE event_id=?").bind(eventId).run().catch(()=>undefined);
+   return fail("Could not synchronize marketplace order event",503);
+  }
  }
  const route=path.match(/^\/api\/market\/orders\/([^/]+)(?:\/(delivery|revision|accept|review|chat|trust))?$/);
  if(!route)return null;
