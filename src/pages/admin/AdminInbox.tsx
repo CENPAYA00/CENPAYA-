@@ -13,7 +13,7 @@ export default function AdminInbox() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=all&status=${filter}`);
+      const result = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=all&status=${filter}&queue_type=admin`);
       setTickets(result.data || []);
     } catch (error) { console.error('Could not load support inbox', error); setTickets([]); }
     setLoading(false);
