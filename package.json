@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dup-check": "npx --yes jscpd@4.0.5 --min-lines 15 --min-tokens 100 --threshold 10 src"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4",
