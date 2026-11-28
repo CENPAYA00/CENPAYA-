@@ -16,21 +16,39 @@ export function InlineBoostBar({
   const [plans, setPlans] = useState<Tier[]>([]);
   const [elig, setElig] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!isOwner) return;
-    setLoading(true);
-    Promise.all([
-      supabase.rpc('list_boost_tiers'),
-      supabase.rpc('get_boost_eligibility')
-    ]).then(([t, e]) => {
-      setPlans(t.data || []);
-      setElig(e.data);
-      setLoading(false);
-    });
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      setLoadError(false);
+      try {
+        const [tiersResult, eligibilityResult] = await Promise.all([
+          supabase.rpc('list_boost_tiers'),
+          supabase.rpc('get_boost_eligibility')
+        ]);
+        if (tiersResult.error || eligibilityResult.error) throw new Error('Boost plans unavailable');
+        if (!active) return;
+        setPlans(tiersResult.data || []);
+        setElig(eligibilityResult.data);
+      } catch {
+        if (!active) return;
+        setPlans([]);
+        setElig(null);
+        setLoadError(true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
   }, [isOwner]);
 
-  if (!isOwner || loading || plans.length === 0) return null;
+  if (!isOwner || loading) return null;
+  if (loadError) return <p className="mt-2 text-[10px] text-gray-500">Boost plans are temporarily unavailable.</p>;
+  if (plans.length === 0) return null;
 
   const hasFree = elig?.is_member && elig?.free_boosts_remaining > 0;
   const lowestPrice = Math.min(...plans.map(p => p.price));
