@@ -78,7 +78,7 @@ export default function Layout() {
         } catch { /* Retry on the next polling cycle. */ }
       };
       await refreshNotifications();
-      timer = window.setInterval(() => { void refreshNotifications(); }, 15000);
+      timer = window.setInterval(() => { void refreshNotifications(); }, 60000);
     };
     void init();
     return () => { active = false; if (timer) window.clearInterval(timer); };
