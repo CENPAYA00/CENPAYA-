@@ -248,13 +248,15 @@ export default function StaffPanel() {
             </div>
             
             <div className="flex gap-2">
-              <button
-                onClick={() => navigate(`/staff/tickets/${t.id}`)}
-                className="flex-1 bg-[#0a3d2b] text-white text-[13px] font-semibold py-2.5 rounded-[12px] flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
-              >
-                <Shield size={14} /> Open ticket
-              </button>
-              {!t.assigned_to_me && (
+              {(t.assigned_to_me || ['owner','super_admin'].includes(profile?.role)) && (
+                <button
+                  onClick={() => navigate(`/staff/tickets/${t.id}`)}
+                  className="flex-1 bg-[#0a3d2b] text-white text-[13px] font-semibold py-2.5 rounded-[12px] flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                >
+                  <Shield size={14} /> Open ticket
+                </button>
+              )}
+              {!t.assigned_to_me && profile?.role === 'support_agent' && (
                 <button
                   onClick={() => claim(t.id)}
                   className="flex-1 bg-[#e3f7ec] text-[#12935a] text-[13px] font-semibold py-2.5 rounded-[12px] flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
