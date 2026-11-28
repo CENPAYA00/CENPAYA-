@@ -16,11 +16,9 @@ type Target = {
   bg_color?: string | null;
 };
 
-const resolveUrl = (u: string, bucket = 'listings'): string => {
-  if (!u) return "";
-  if (/^(https?:|data:|blob:)/i.test(u)) return u;
-  const path = u.replace(/^\/+/, "").replace(new RegExp(`^${bucket}/`), "");
-  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+const resolveUrl = (value: string): string => {
+  if (!value) return "";
+  return /^(https?:|data:|blob:)/i.test(value) ? value : "";
 };
 
 // Matches the exact colors from FeedPostCard
