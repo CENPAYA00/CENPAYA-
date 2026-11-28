@@ -102,7 +102,7 @@ export async function handleInternalRoutes(request:Request,env:Env,url:URL,path:
     if(!configuredSecret||!constantTimeEqual(suppliedSecret,configuredSecret))return fail("Unauthorized",401);
     const b=await body(request);
     const userId=str(b?.user_id,64),action=str(b?.action,32);
-    if(!UUID.test(userId)||!["topup","withdrawal","marketplace_checkout","payment_status"].includes(action))return fail("Invalid rate-limit request",400);
+    if(!UUID.test(userId)||!["topup","withdrawal","marketplace_checkout","payment_status","boost"].includes(action))return fail("Invalid rate-limit request",400);
     try{
       const max=action==="topup"?5:action==="withdrawal"?3:action==="payment_status"?30:5;
       const allowed=await rateLimit(env,"financial:"+action+":"+userId,max,60);
