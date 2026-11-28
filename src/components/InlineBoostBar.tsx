@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Zap, Sparkles } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
-type Tier = { id: number; price: number; duration_days: number; scope: string; label: string; description: string };
+type Tier = { id: number; code: string; price: number; duration_days: number; scope: string; label: string; description: string };
 
 export function InlineBoostBar({ 
   itemId, kind, isOwner, onSelectPlan 
@@ -21,13 +21,15 @@ export function InlineBoostBar({
     if (!isOwner) return;
     setLoading(true);
     Promise.all([
-      supabase.rpc('list_boost_tiers'),
-      supabase.rpc('get_boost_eligibility')
-    ]).then(([t, e]) => {
-      setPlans(t.data || []);
-      setElig(e.data);
-      setLoading(false);
-    });
+      supabaseWorkerRequest<{ data: Tier[] }>('/api/v1/boosts/tiers'),
+      supabaseWorkerRequest<{ data: any }>('/api/v1/boosts/eligibility')
+    ]).then(([tiers, eligibility]) => {
+      setPlans(tiers.data || []);
+      setElig(eligibility.data);
+    }).catch(() => {
+      setPlans([]);
+      setElig(null);
+    }).finally(() => setLoading(false));
   }, [isOwner]);
 
   if (!isOwner || loading || plans.length === 0) return null;
