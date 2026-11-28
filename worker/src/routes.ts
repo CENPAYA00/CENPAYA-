@@ -520,6 +520,15 @@ export async function handleAuthenticatedApi(
     return result.error ? failure(result.error, result.status, headers) : success(result.data, headers);
   }
 
+  if (method === "GET" && path === "/api/v1/me/disputes/active-count") {
+    const { count, error } = await supabase.from("order_disputes")
+      .select("id", { count: "exact", head: true })
+      .eq("raised_by", userId)
+      .neq("status", "resolved");
+    if (error) return failure("active_dispute_count_unavailable", 502, headers);
+    return success({ count: count || 0 }, headers);
+  }
+
   if (method === "GET" && path === "/api/v1/me/profile") {
     const profile = await readUserProfile(supabase, userId);
     return profile ? success(profile, headers) : failure("profile_not_found", 404, headers);
