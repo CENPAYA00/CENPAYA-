@@ -65,8 +65,8 @@ export default function Boosted() {
         if (!me || !active) return;
 
         const [tiersRes, eligRes, listingsRes, servicesRes, postsRes] = await Promise.all([
-          supabase.rpc('list_boost_tiers').catch(error => ({ data: null, error })),
-          supabase.rpc('get_boost_eligibility').catch(error => ({ data: null, error })),
+          Promise.resolve(supabase.rpc('list_boost_tiers')).catch((error: unknown) => ({ data: null, error })),
+          Promise.resolve(supabase.rpc('get_boost_eligibility')).catch((error: unknown) => ({ data: null, error })),
           d1Request<{ data: any[] }>('/api/market/my-listings?limit=50').catch(() => ({ data: [] })),
           d1Request<{ data: any[] }>('/api/market/my-services?limit=50').catch(() => ({ data: [] })),
           d1Request<{ data: any[] }>('/api/posts/mine?limit=50').catch(() => ({ data: [] })),
