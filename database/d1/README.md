@@ -6,7 +6,7 @@ The export describes 73 application tables, 3 views, 146 explicit indexes, and 6
 
 ## Canonical incremental migrations
 
-Migrations **0052–0082** are maintained in `database/d1/migrations/` and are applied in numeric order. Migration 0072 adds the Owner/Super Admin global video switch; migration 0073 adds private chat, delivery-evidence and listing-video lifecycle metadata, retention queues, sold-listing retention fields, and per-user chat deletion records. They extend the supplied version-51 schema; they are not a bootstrap for an empty database.
+Migrations **0052–0083** are maintained in `database/d1/migrations/` and are applied in numeric order. Migration 0072 adds the Owner/Super Admin global video switch; migration 0073 adds private chat, delivery-evidence and listing-video lifecycle metadata, retention queues, sold-listing retention fields, and per-user chat deletion records. They extend the supplied version-51 schema; they are not a bootstrap for an empty database.
 
 Migration **0067_country_configuration_projection.sql** adds the D1 country configuration projection and seeds the six CEMAC countries. Cameroon is initially active with MTN MoMo and Orange Money enabled in the projection; the Central African Republic, Republic of the Congo, Gabon, Equatorial Guinea, and Chad are marked `coming_soon`.
 
@@ -16,16 +16,16 @@ Supabase remains authoritative for country financial prices, fees, provider read
 
 1. Confirm that the target is the intended Cenpaya D1 database.
 2. Inspect its remote `cenpaya_migrations` tracker.
-3. Confirm the schema is based on the supplied export and currently at migration 51, or determine exactly which migrations from 52–82 are already applied.
+3. Confirm the schema is based on the supplied export and currently at migration 51, or determine exactly which migrations from 52–83 are already applied.
 4. Apply only the missing migrations, in numeric order. Never replay a migration already recorded as applied.
-5. Do not apply migrations 52–82 to a blank database; restore the approved base schema through migration 51 first.
+5. Do not apply migrations 52–83 to a blank database; restore the approved base schema through migration 51 first.
 6. Do not deploy the D1 Worker or Supabase Worker as part of this migration preparation.
 
 The D1 Worker's Wrangler configuration points `migrations_dir` to this canonical directory using `../database/d1/migrations`. Do not create a second migration directory under `d1-worker/`.
 
 Migration **0077_cross_worker_contract_alignment.sql** records the D1 contract alignment reported as already applied on 2026-11-27. It permits `super_admin` in the D1 user-role validation triggers and appends the seller/price fields required by the Supabase checkout quote endpoint to `public_marketplace_search`. This is a source-control record, not authorization to replay it against production. Before any application, verify the remote `cenpaya_migrations` tracker and confirm the intervening migration history; do not assume migrations 75–76 are present or absent based only on this file.
 
-Migrations **0078–0082** repair duplicate numeric identifiers that previously appeared on files 0068, 0069, and 0074. The colliding schema additions have been moved to unique forward-only identifiers: 0078 personalized feed engagement, 0079 AI video indicators, 0080 saved-post/video folders, 0081 maintenance monitor, and 0082 migration-registry reconciliation. The moved schema files use `IF NOT EXISTS` for their tables and indexes so they can safely establish the same structures if the earlier filenames were already applied. Migration 0082 repairs the application registry entries for versions 68 and 69 and records the unique follow-up versions. These files are prepared only; do not apply them until the target D1 migration ledger has been inspected and the rollout is approved.
+Migrations **0078–0083** repair duplicate numeric identifiers that previously appeared on files 0068, 0069, and 0074. The colliding schema additions have been moved to unique forward-only identifiers: 0078 personalized feed engagement, 0079 AI video indicators, 0080 saved-post/video folders, 0081 maintenance monitor, and 0082 migration-registry reconciliation. Migration 0083 adds persistent staff task progress notes and HTTPS evidence links. The moved schema files use `IF NOT EXISTS` for their tables and indexes so they can safely establish the same structures if the earlier filenames were already applied. Migration 0082 repairs the application registry entries for versions 68 and 69 and records the unique follow-up versions. These files are prepared only; do not apply them until the target D1 migration ledger has been inspected and the rollout is approved. Migration 0083 is also prepared only and must be applied after the verified preceding migration history.
 
 The export also contains backup tables and user/profile/listing data. Backup tables and exported row data are intentionally not copied into source control. Do not commit `data.sql`, `full_dump.sql`, CSV/JSON data exports, credentials, or personal user records.
 
