@@ -136,7 +136,7 @@ export default function Boosted() {
 
       if (error || !data?.ok) {
         const msg = (error?.message || data?.error || 'Boost failed.').toLowerCase();
-        const friendly = msg.includes('insufficient') ? 'Insufficient funds. Top up your wallet first.' : msg.includes('free') ? 'You have used your free monthly boosts.' : error?.message || data?.error || 'Boost failed.';
+        const friendly = msg.includes('insufficient') ? 'Insufficient funds. Top up your wallet first.' : msg.includes('free') ? 'You have already used your one free 3-day boost this month.' : error?.message || data?.error || 'Boost failed.';
         setToast({ kind: 'error', message: friendly });
         return;
       }
@@ -261,7 +261,7 @@ export default function Boosted() {
           <Sparkles size={20} className="text-[#12935a] mt-0.5 shrink-0" />
           <div className="flex-1">
             <p className="text-[14px] font-bold text-[#0a3d2b] dark:text-white">Premium free boosts</p>
-            <p className="text-[13px] text-[#3e4f47] dark:text-gray-300 mt-0.5">{Number(elig.free_boosts_remaining) > 0 ? '1 of 1 free 3-day boost available this month' : 'Your monthly free 3-day boost has been used'}</p>
+            <p className="text-[13px] text-[#3e4f47] dark:text-gray-300 mt-0.5">{Number(elig.free_boosts_remaining) > 0 ? '1 of 1 free 3-day boost available this month. Unused boosts do not roll over.' : 'Your monthly free 3-day boost has been used'}</p>
           </div>
         </div>
       )}
