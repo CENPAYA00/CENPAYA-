@@ -24,6 +24,7 @@ jobs:
           cache: npm
       - run: npm install --no-audit --no-fund
       - run: npm run build
+      - run: npm run dup-check
 
   supabase-worker:
     if: github.ref == 'refs/heads/migration/supabase-worker-api' || github.event_name == 'pull_request' && github.base_ref == 'migration/supabase-worker-api'
