@@ -53,7 +53,7 @@ export function getD1ApiUrl(path: string): string {
 
 export async function d1Request<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
   const headers = new Headers(options.headers);
-  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const token = getD1Token();
   if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
   let response: Response;
