@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Zap, Store, FileText, Check, Sparkles } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 
-type Tier = { id: number; price: number; duration_days: number; scope: string; label: string; description: string };
+type Tier = { id: number; code: string; price: number; duration_days: number; scope: string; label: string; description: string };
 type Target = { 
   type: 'listing' | 'post'; 
   id: string; 
@@ -61,8 +61,8 @@ export default function Boosted() {
       if (!me) { setLoading(false); return; }
 
       const [tiersRes, eligRes, listingsRes, postsRes] = await Promise.all([
-        supabase.rpc('list_boost_tiers'),
-        supabase.rpc('get_boost_eligibility'),
+        supabaseWorkerRequest<{ data: Tier[] }>('/api/v1/boosts/tiers'),
+        supabaseWorkerRequest<{ data: any }>('/api/v1/boosts/eligibility'),
         d1Request<{ data: any[] }>('/api/market/my-listings?limit=50'),
         d1Request<{ data: any[] }>('/api/posts/mine?limit=50'),
       ]);
@@ -95,16 +95,29 @@ export default function Boosted() {
 
   const purchase = async (useFree: boolean) => {
     if (!selected || !selectedTier) return;
+    if (selected.type !== 'listing') {
+      setToast({ kind: 'error', message: 'Social post boosting is unavailable until its dedicated financial settlement is implemented.' });
+      return;
+    }
     setBusy(true);
     setToast(null);
 
-    const { data, error } = await supabase.rpc('purchase_boost', {
-      p_target_type: selected.type, p_target_id: selected.id, p_tier_id: selectedTier.id, p_use_free_premium: useFree,
-    });
-
-    if (error || (data && !data.ok)) {
-      const msg = (error?.message || data?.error || 'Boost failed.').toLowerCase();
-      const friendly = msg.includes('insufficient') ? 'Insufficient funds. Top up your wallet first.' : msg.includes('free') ? 'You have used your free monthly boosts.' : error?.message || data?.error || 'Boost failed.';
+    let data: any;
+    try {
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/boosts', {
+        method: 'POST',
+        body: JSON.stringify({
+          listing_id: selected.id,
+          tier_code: selectedTier.code,
+          idempotency_key: crypto.randomUUID(),
+          use_free: useFree,
+        }),
+      });
+      data = result.data;
+      if (!data?.ok) throw new Error(data?.error || 'Boost failed.');
+    } catch (error) {
+      const msg = (error instanceof Error ? error.message : 'Boost failed.').toLowerCase();
+      const friendly = msg.includes('insufficient') ? 'Insufficient funds. Top up your wallet first.' : msg.includes('free') ? 'You have used your free monthly boosts.' : (error instanceof Error ? error.message : 'Boost failed.');
       setToast({ kind: 'error', message: friendly });
       setBusy(false);
       return;
@@ -115,7 +128,7 @@ export default function Boosted() {
       if (me) {
         await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
           kind: 'system', title: 'Boost activated',
-          body: `${selectedTier.label} — ${selected.type} boosted until ${new Date(data.until).toLocaleDateString()}`,
+          body: `${selectedTier.label} — ${selected.type} boosted until ${new Date(data.expires_at || data.until).toLocaleDateString()}`,
           link_url: `/${selected.type}/${selected.id}`,
         }) });
       }
