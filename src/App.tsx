@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react';
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import StaffLayout from './components/StaffLayout';
+import InstallPrompt from './components/InstallPrompt';
 
 // --- LAZY LOADING ALL PAGES ---
 const Login = lazy(() => import('./pages/Login'));
@@ -88,6 +89,7 @@ export default function App() {
   return (
     <BrowserRouter>
       {/* Suspense shows a loading state while the page downloads */}
+      <InstallPrompt />
       <Suspense fallback={<div className="h-screen bg-[#eef2f0] dark:bg-darkbg flex items-center justify-center text-brand font-bold">Loading...</div>}>
         <Routes>
           <Route path="/" element={<Login />} />
@@ -184,6 +186,7 @@ export default function App() {
             <Route path="/admin/permissions" element={<AdminPermissions />} />
             <Route path="/admin/regions" element={<AdminRegions />} />
           </Route>
+          <Route path="*" element={<div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-6"><h1 className="text-2xl font-bold text-navy dark:text-white">Page not found</h1><p className="text-sm text-gray-500 mt-2">The page you requested does not exist.</p><a href="/home" className="mt-4 px-4 py-2 rounded-lg bg-brand text-white font-semibold">Return home</a></div>} />
         </Routes>
       </Suspense>
     </BrowserRouter>
