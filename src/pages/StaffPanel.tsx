@@ -113,7 +113,7 @@ export default function StaffPanel() {
                 className="w-full mt-2 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
               /></>
               <div className="flex flex-wrap gap-2 mt-2">
-                {(profile?.source === 'd1' ? (['todo','in_progress','blocked','completed'] as const) : (['todo','in_progress','blocked','submitted'] as const)).filter(status => status !== task.status).map(status => (
+                {(['todo','in_progress','blocked','completed'] as const).filter(status => status !== task.status).map(status => (
                   <button key={status} onClick={() => void updateTask(task.id,status)} className="text-[10px] font-bold px-3 py-2 rounded-lg bg-[#e3f7ec] text-[#12935a]">
                     {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : status === 'completed' ? 'Mark complete' : 'Submit report'}
                   </button>
@@ -121,7 +121,7 @@ export default function StaffPanel() {
               </div>
               {Array.isArray(task.updates) && task.updates.length > 0 && (
                 <div className="mt-3 border-t border-gray-100 dark:border-darkline pt-2 space-y-1">
-                  {task.updates.slice(-3).map((update: any) => <p key={update.id} className="text-[10px] text-gray-500">{update.body || update.update_type} · {new Date(update.created_at).toLocaleString()}</p>)}
+                  {task.updates.slice(-3).map((update: any) => <div key={update.id} className="text-[10px] text-gray-500"><p>{update.body || (update.update_type === 'completion' ? 'Marked complete' : update.update_type)} · {new Date(update.created_at).toLocaleString()}</p>{update.attachment_url && <a href={update.attachment_url} target="_blank" rel="noreferrer" className="text-[#12935a] underline break-all">Open evidence</a>}</div>)}
                 </div>
               )}
             </section>
