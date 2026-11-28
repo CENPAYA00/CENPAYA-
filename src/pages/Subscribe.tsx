@@ -64,8 +64,21 @@ export default function Subscribe() {
       alert('Error: ' + result.error);
       if (!/uncertain|already submitted/i.test(result.error || '')) idempotencyKey.current = null;
     } else if (result.paymentUrl) {
+      let paymentUrl: URL;
+      try {
+        paymentUrl = new URL(result.paymentUrl);
+      } catch {
+        setLoading(null);
+        alert('The payment provider returned an invalid checkout link. Please contact support.');
+        return;
+      }
+      if (paymentUrl.protocol !== 'https:' || paymentUrl.username || paymentUrl.password) {
+        setLoading(null);
+        alert('The payment provider returned an insecure checkout link. Please contact support.');
+        return;
+      }
       setPendingPaymentId(result.paymentId || null);
-      window.location.href = result.paymentUrl;
+      window.location.assign(paymentUrl.toString());
     } else if (result.pending) {
       setPendingPaymentId(result.paymentId || null);
       alert('Payment request sent. Approve it on your phone, then check the payment status here.');
