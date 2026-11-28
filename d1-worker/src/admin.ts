@@ -263,9 +263,15 @@ export async function handleAdminRoutes(
     if (!legacyWorkspace && !teamWorkspace) return fail("Staff Member access required", 403);
     try {
       const rows = await env.DB.prepare(
-        "SELECT id,title,description,status,due_at,created_at,updated_at,completed_at FROM staff_tasks WHERE assigned_to_user_id=? ORDER BY CASE status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'blocked' THEN 2 ELSE 3 END,COALESCE(due_at,'9999-12-31'),updated_at DESC LIMIT 200"
-      ).bind(user.id).all();
-      return json({ success: true, data: rows.results });
+        `SELECT t.id,t.title,t.description,t.status,t.due_at,t.created_at,t.updated_at,t.completed_at,
+          (SELECT json_group_array(json_object('id',u.id,'update_type',u.update_type,'body',u.body,'attachment_url',u.attachment_url,'created_at',u.created_at))
+             FROM staff_task_updates u WHERE u.task_id=t.id) AS updates_json
+         FROM staff_tasks t WHERE t.assigned_to_user_id=?
+         ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'blocked' THEN 2 ELSE 3 END,
+         COALESCE(t.due_at,'9999-12-31'),t.updated_at DESC LIMIT 200`
+      ).bind(user.id).all<any>();
+      const tasks=(rows.results||[]).map((task:any)=>({...task,updates:(()=>{try{return JSON.parse(task.updates_json||"[]")}catch{return[]}})()}));
+      return json({ success: true, data: tasks });
     } catch { return fail("Staff tasks are unavailable. Apply D1 migration 0064 first.", 503); }
   }
 
@@ -280,16 +286,25 @@ export async function handleAdminRoutes(
     const contentType = request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
     if (contentType !== "application/json") return fail("JSON body required", 415);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-    if (!body || Object.keys(body).length !== 1 || !["todo","in_progress","blocked","completed"].includes(String(body.status))) {
-      return fail("A valid task status is required");
+    const note = typeof body?.body === "string" ? body.body.trim() : "";
+    const evidence = typeof body?.attachment_url === "string" ? body.attachment_url.trim() : "";
+    if (!body || Object.keys(body).some(key => !["status","body","attachment_url"].includes(key)) ||
+        !["todo","in_progress","blocked","completed"].includes(String(body.status)) ||
+        note.length > 5000 || evidence.length > 2048 || (evidence && !/^https:\/\//i.test(evidence))) {
+      return fail("A valid task status, progress note and optional HTTPS evidence link are required");
     }
     const status = String(body.status);
     try {
       const result = await env.DB.prepare(
         "UPDATE staff_tasks SET status=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),completed_at=CASE WHEN ?='completed' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END WHERE id=? AND assigned_to_user_id=?"
       ).bind(status,status,staffTask[1],user.id).run();
-      return result.meta.changes ? json({ success: true }) : fail("Task not found in your workspace", 404);
-    } catch { return fail("Could not update task", 503); }
+      if (!result.meta.changes) return fail("Task not found in your workspace", 404);
+      if (note || evidence || status) {
+        await env.DB.prepare("INSERT INTO staff_task_updates(id,task_id,author_user_id,update_type,body,attachment_url) VALUES(?,?,?,?,?,?)")
+          .bind(uuid(),staffTask[1],user.id,status==="completed"?"completion":evidence?"evidence":"progress",note||null,evidence||null).run();
+      }
+      return json({ success: true });
+    } catch { return fail("Could not update task. Apply D1 migration 0083 first.", 503); }
   }
 
   if (path === "/api/admin/staff/tasks" && method === "GET") {
