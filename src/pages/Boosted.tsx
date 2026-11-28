@@ -58,20 +58,29 @@ export default function Boosted() {
   }, [toast]);
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
-      const me = await getCachedUser();
-      if (!me) { setLoading(false); return; }
+      try {
+        const me = await getCachedUser();
+        if (!me || !active) return;
 
-      const [tiersRes, eligRes, listingsRes, servicesRes, postsRes] = await Promise.all([
-        supabase.rpc('list_boost_tiers'),
-        supabase.rpc('get_boost_eligibility'),
-        d1Request<{ data: any[] }>('/api/market/my-listings?limit=50'),
-        d1Request<{ data: any[] }>('/api/market/my-services?limit=50'),
-        d1Request<{ data: any[] }>('/api/posts/mine?limit=50'),
-      ]);
+        const [tiersRes, eligRes, listingsRes, servicesRes, postsRes] = await Promise.all([
+          supabase.rpc('list_boost_tiers').catch(error => ({ data: null, error })),
+          supabase.rpc('get_boost_eligibility').catch(error => ({ data: null, error })),
+          d1Request<{ data: any[] }>('/api/market/my-listings?limit=50').catch(() => ({ data: [] })),
+          d1Request<{ data: any[] }>('/api/market/my-services?limit=50').catch(() => ({ data: [] })),
+          d1Request<{ data: any[] }>('/api/posts/mine?limit=50').catch(() => ({ data: [] })),
+        ]);
+        if (!active) return;
 
-      setTiers(tiersRes.data || []);
-      setElig(eligRes.data);
+        if (tiersRes.error || eligRes.error || !Array.isArray(tiersRes.data)) {
+          setTiers([]);
+          setElig(null);
+          setToast({ kind: 'error', message: 'Boost plans are temporarily unavailable. No payment has been taken.' });
+        } else {
+          setTiers(tiersRes.data || []);
+          setElig(eligRes.data);
+        }
 
       const productTargets = (listingsRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
         const rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
@@ -106,44 +115,52 @@ export default function Boosted() {
         else setToast({ kind: 'error', message: 'This content is not approved for boosting yet. You can boost it after approval.' });
       }
 
-      setLoading(false);
+      } catch (error) {
+        if (active) setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Could not load boost options.' });
+      } finally {
+        if (active) setLoading(false);
+      }
     };
-    load();
+    void load();
+    return () => { active = false; };
   }, []);
 
   const purchase = async (useFree: boolean) => {
-    if (!selected || !selectedTier) return;
+    if (!selected || !selectedTier || busy) return;
     setBusy(true);
     setToast(null);
-
-    const { data, error } = await supabase.rpc('purchase_boost', {
-      p_target_type: selected.type, p_target_id: selected.id, p_tier_id: selectedTier.id, p_use_free_premium: useFree,
-    });
-
-    if (error || (data && !data.ok)) {
-      const msg = (error?.message || data?.error || 'Boost failed.').toLowerCase();
-      const friendly = msg.includes('insufficient') ? 'Insufficient funds. Top up your wallet first.' : msg.includes('free') ? 'You have used your free monthly boosts.' : error?.message || data?.error || 'Boost failed.';
-      setToast({ kind: 'error', message: friendly });
-      setBusy(false);
-      return;
-    }
-
     try {
-      const me = await getCachedUser();
-      if (me) {
-        await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
-          kind: 'system', title: 'Boost activated',
-          body: `${selectedTier.label} — ${selected.type} boosted until ${new Date(data.until).toLocaleDateString()}`,
-          link_url: `/${selected.route_path || selected.type}/${selected.id}`,
-        }) });
-      }
-    } catch (e) { console.warn('boost notification failed', e); }
+      const { data, error } = await supabase.rpc('purchase_boost', {
+        p_target_type: selected.type, p_target_id: selected.id, p_tier_id: selectedTier.id, p_use_free_premium: useFree,
+      });
 
-    setToast({ kind: 'success', message: `Boosted until ${new Date(data.until).toLocaleDateString()}` });
-    setSelected(null);
-    setSelectedTier(null);
-    setBusy(false);
-    setTimeout(() => window.location.reload(), 1200);
+      if (error || !data?.ok) {
+        const msg = (error?.message || data?.error || 'Boost failed.').toLowerCase();
+        const friendly = msg.includes('insufficient') ? 'Insufficient funds. Top up your wallet first.' : msg.includes('free') ? 'You have used your free monthly boosts.' : error?.message || data?.error || 'Boost failed.';
+        setToast({ kind: 'error', message: friendly });
+        return;
+      }
+
+      try {
+        const me = await getCachedUser();
+        if (me) {
+          await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
+            kind: 'system', title: 'Boost activated',
+            body: `${selectedTier.label} — ${selected.type} boosted until ${new Date(data.until).toLocaleDateString()}`,
+            link_url: `/${selected.route_path || selected.type}/${selected.id}`,
+          }) });
+        }
+      } catch (e) { console.warn('boost notification failed', e); }
+
+      setToast({ kind: 'success', message: `Boosted until ${new Date(data.until).toLocaleDateString()}` });
+      setSelected(null);
+      setSelectedTier(null);
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (error) {
+      setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Boost request failed. Please try again.' });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const canUseFree = elig?.is_member && elig?.free_boosts_remaining > 0;
