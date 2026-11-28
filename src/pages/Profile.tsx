@@ -3,7 +3,7 @@ import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
 import {
   Share2, Settings, Camera, Calendar, MapPin, Briefcase,
-  Store, ChevronRight
+  Store, ChevronRight, BadgeCheck, ShieldCheck, Star
 } from 'lucide-react';
 import { getCachedUser, setCached } from '../lib/cache';
 import { compressImage } from '../utils/compressImage';
@@ -184,9 +184,11 @@ export default function Profile() {
           <p className="text-[12px] text-gray-500 flex items-center gap-1 mt-1">
             <Calendar size={12} /> {t('member_since')} {new Date(user.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
           </p>
-          <p className="text-[12px] text-gray-500 mt-1">
-            {user.is_subscribed ? `⭐ ${t('premium_member')}` : t('free_member')}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            {user.is_subscribed && <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 px-2 py-1 text-[9px] font-bold"><BadgeCheck size={11}/> Verified membership</span>}
+            {user.is_phone_verified && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 px-2 py-1 text-[9px] font-bold"><ShieldCheck size={11}/> Verified account</span>}
+            {Number(user.reviews_count || 0) > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 px-2 py-1 text-[9px] font-bold"><Star size={11} fill="currentColor"/> Trust · {Number(user.average_rating || 0).toFixed(1)} ({user.reviews_count})</span>}
+          </div>
           {locationLine && (
             <p className="text-[12px] text-gray-500 mt-1 flex items-center gap-1">
               <MapPin size={12} className="text-accent" /> {locationLine}

@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "d1:dev": "npm --prefix d1-worker run dev",
+    "d1:typecheck": "npm --prefix d1-worker run typecheck",
+    "d1:test": "npm --prefix d1-worker run test",
+    "d1:build": "npm --prefix d1-worker run build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.4",

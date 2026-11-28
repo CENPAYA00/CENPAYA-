@@ -23,6 +23,7 @@ type AssistanceStatus = {
 };
 
 const icons: Record<string, typeof Phone> = {
+  video_global: Video,
   voice_calls: Phone,
   video_posts: Video,
   ai_assistant: Bot,
@@ -46,8 +47,18 @@ export default function AdminFeatures() {
     setLoading(true);
     setError('');
     try {
-      const [featureResult, callsResult, videoResult] = await Promise.all([
-        d1Request<{ data: FeatureFlag[] }>('/api/admin/features'),
+      const featureResult = await d1Request<{ data: FeatureFlag[] }>('/api/admin/features');
+      setFlags(featureResult.data || []);
+    } catch (err: any) {
+      setError(err.message || 'Could not load platform feature controls.');
+      setLoading(false);
+      return;
+    }
+
+    // Voice/video controls use the separate Supabase Worker. Their availability
+    // must not prevent Owner/Super Admin from managing D1-backed feature flags.
+    try {
+      const [callsResult, videoResult] = await Promise.all([
         supabaseWorkerRequest<{ data: AssistanceStatus }>('/api/v1/admin/rpc/admin_call_status', {
           method: 'POST', body: JSON.stringify({ args: {} }),
         }),
@@ -55,7 +66,6 @@ export default function AdminFeatures() {
           method: 'POST', body: JSON.stringify({ args: {} }),
         }),
       ]);
-      setFlags(featureResult.data || []);
       setCallStatus(callsResult.data || null);
       setVideoStatus(videoResult.data || null);
       setCallHost(callsResult.data?.host && callsResult.data.host !== 'none' ? callsResult.data.host.toUpperCase() : 'none');
@@ -63,7 +73,7 @@ export default function AdminFeatures() {
       setCallMinutes(String(callsResult.data?.max_minutes || 30));
       setVideoSeconds(String(videoResult.data?.max_seconds || 90));
     } catch (err: any) {
-      setError(err.message || 'Could not load all feature controls.');
+      setError(err.message || 'Live voice/video controls could not be loaded. Platform feature flags remain available.');
     } finally {
       setLoading(false);
     }
@@ -192,7 +202,7 @@ export default function AdminFeatures() {
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-2xl font-bold text-navy dark:text-white">Feature controls</h2>
-          <p className="text-xs text-gray-500 mt-1">Manage availability across the Cenpaya app.</p>
+          <p className="text-xs text-gray-500 mt-1">Owner and Super Admin controls for platform-wide feature availability.</p>
         </div>
         <button onClick={() => void load()} disabled={!!saving} aria-label="Refresh feature controls" className="p-2 rounded-xl border border-gray-200 dark:border-darkline text-gray-600 dark:text-gray-300">
           <RefreshCw size={17} />
@@ -205,7 +215,7 @@ export default function AdminFeatures() {
       {flags.map(flag => {
         const Icon = icons[flag.feature_key] || Phone;
         const isSaving = saving === flag.id;
-        const canEnable = flag.feature_key === "voice_calls" || (flag.feature_key === "video_posts" && flag.ready);
+        const canEnable = flag.feature_key === "voice_calls" || ((flag.feature_key === "video_global" || flag.feature_key === "video_posts" || flag.feature_key === "ai_assistant") && flag.ready);
         const canToggle = canEnable || flag.is_enabled_globally;
         return (
           <section key={flag.id} className="bg-white dark:bg-darkcard border border-gray-100 dark:border-darkline p-4 rounded-2xl shadow-sm flex items-center gap-3">
@@ -237,7 +247,7 @@ export default function AdminFeatures() {
       {renderAssistance('call')}
       {renderAssistance('video')}
 
-      <p className="text-[10px] text-gray-500 px-1">Video publishing can be enabled once its processor is configured. AI assistance remains locked until the member-facing assistant is implemented. Live voice and video assistance require an active provider and credentials.</p>
+      <p className="text-[10px] text-gray-500 px-1">Video publishing can be enabled once its processor is configured. AI assistance is controlled centrally by the Owner and Super Admin. Changes take effect immediately and are enforced by the D1 Worker. Live voice and video assistance require an active provider and credentials.</p>
     </div>
   );
 }

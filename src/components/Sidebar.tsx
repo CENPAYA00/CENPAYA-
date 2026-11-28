@@ -5,14 +5,17 @@ import {
   Video, Bookmark, Settings, Shield, ChevronRight,
   MessageCircle, HeadphonesIcon, Globe, Link2, Crown, FileText, Briefcase, PlusCircle, Zap, Ticket
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { d1Me } from '../lib/d1Api';
+import { d1Me, d1Request } from '../lib/d1Api';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(false);
   const [username, setUsername] = useState('');
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [workspaceLabel, setWorkspaceLabel] = useState('');
   
   // Swipe to close logic
   const panelRef = useRef<HTMLDivElement>(null);
@@ -23,8 +26,30 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
       try {
         const { user } = await d1Me();
         setUsername(user.username || 'User');
-        const { data } = await supabase.from('users').select('is_subscribed').eq('id', user.id).maybeSingle();
-        setIsSubscribed(!!data?.is_subscribed);
+        try {
+          const assistantStatus = await d1Request<{ data: { enabled?: boolean; available?: boolean } }>('/api/ai/assistant/status');
+          setAiAssistantEnabled(!!assistantStatus.data?.available);
+        } catch { setAiAssistantEnabled(false); }
+        try {
+          const appointment = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', {
+            method: 'POST', body: JSON.stringify({ args: {} }),
+          });
+          const role = appointment.data?.ok ? appointment.data.role : null;
+          const destinations: Record<string, { path: string; label: string }> = {
+            owner: { path: '/admin', label: 'Owner Control Centre' },
+            super_admin: { path: '/admin', label: 'Super Admin Workspace' },
+            vice_admin: { path: '/vice-admin', label: 'Vice Admin Workspace' },
+            support_agent: { path: '/staff', label: 'Support Agent Workspace' },
+            staff_member: { path: '/staff', label: 'Staff Member Workspace' },
+          };
+          const destination = role ? destinations[role] : null;
+          setWorkspacePath(destination?.path || null);
+          setWorkspaceLabel(destination?.label || '');
+        } catch {
+          setWorkspacePath(null);
+          setWorkspaceLabel('');
+        }
+        setIsSubscribed(!!user.is_subscribed);
       } catch { setUsername('User'); }
     };
     load();
@@ -153,6 +178,18 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
               ))}
             </div>
           </div>
+
+          {workspacePath && (
+            <Section label="Workspaces">
+              <Item icon={<Shield size={18} />} label={workspaceLabel} onClick={() => go(workspacePath)} />
+            </Section>
+          )}
+
+          {aiAssistantEnabled && (
+            <Section label="CenPaya AI">
+              <Item icon={<Sparkles size={18} />} label="AI Assistant" onClick={() => go('/ai-assistant')} />
+            </Section>
+          )}
 
           <Section label="My Account">
             <Item icon={<User size={18} />} label="Profile" onClick={() => go('/profile')} />

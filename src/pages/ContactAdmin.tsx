@@ -14,7 +14,7 @@ export default function ContactAdmin() {
 
   const load = async () => {
     setLoading(true);
-    try { const result = await d1Request<{ data: any[] }>('/api/support/tickets'); setTickets(result.data || []); }
+    try { const result = await d1Request<{ data: any[] }>('/api/support/tickets?queue_type=admin'); setTickets(result.data || []); }
     catch (error: any) { alert(error.message || 'Could not load admin messages'); }
     finally { setLoading(false); }
   };
@@ -110,7 +110,7 @@ function NewMessageSheet({ onClose, onSent }: { onClose: () => void; onSent: () 
 
     try {
       const normalizedCategory = ['general','account','technical','marketplace','payments','security','privacy','other'].includes(category) ? category : 'other';
-      await d1Request('/api/support/tickets', { method: 'POST', body: JSON.stringify({ category: normalizedCategory, subject: subject.trim(), description: message.trim() }) });
+      await d1Request('/api/support/tickets', { method: 'POST', body: JSON.stringify({ category: normalizedCategory, queue_type: 'admin', subject: subject.trim(), description: message.trim() }) });
       setBusy(false);
       onSent();
       return;

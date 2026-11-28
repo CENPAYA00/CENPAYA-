@@ -14,6 +14,7 @@ const VerifyOtp = lazy(() => import('./pages/VerifyOtp'));
 const CompleteProfile = lazy(() => import('./pages/CompleteProfile')); // ADDED THIS
 
 const Home = lazy(() => import('./pages/Home'));
+const AIAssistant = lazy(() => import('./pages/AIAssistant'));
 const Market = lazy(() => import('./pages/Market'));
 const Checkout = lazy(() => import('./pages/Checkout'));
 const Wallet = lazy(() => import('./pages/Wallet'));
@@ -30,6 +31,11 @@ const CreatePost = lazy(() => import('./pages/CreatePost'));
 const CreateListing = lazy(() => import('./pages/CreateListing'));
 const ListingDetail = lazy(() => import('./pages/ListingDetail'));
 const StaffPanel = lazy(() => import('./pages/StaffPanel'));
+const ViceAdminPanel = lazy(() => import('./pages/ViceAdminPanel'));
+const TeamTasksPanel = lazy(() => import('./pages/TeamTasksPanel'));
+const TeamCommunications = lazy(() => import('./pages/TeamCommunications'));
+const EngineeringPanel = lazy(() => import('./pages/EngineeringPanel'));
+const EngineeringManagement = lazy(() => import('./pages/EngineeringManagement'));
 const OrderDetail = lazy(() => import('./pages/OrderDetail'));
 const PostView = lazy(() => import('./pages/PostView'));
 const Chat = lazy(() => import('./pages/Chat'));
@@ -100,6 +106,7 @@ export default function App() {
           <Route path="/complete-profile" element={<CompleteProfile />} /> {/* ADDED THE ROUTE HERE */}
 
           <Route element={<Layout />}>
+            <Route path="/ai-assistant" element={<AIAssistant />} />
             <Route path="/home" element={<Home />} />
             <Route path="/market" element={<Market />} />
             <Route path="/checkout" element={<Checkout />} />
@@ -162,6 +169,11 @@ export default function App() {
 
           <Route element={<StaffLayout />}>
             <Route path="/staff" element={<StaffPanel />} />
+            <Route path="/engineering" element={<EngineeringPanel />} />
+            <Route path="/vice-admin" element={<ViceAdminPanel />} />
+            <Route path="/staff/tasks" element={<TeamTasksPanel />} />
+            <Route path="/staff/team" element={<TeamCommunications />} />
+            <Route path="/staff/management" element={<AdminStaff />} />
             <Route path="/staff/tickets/:id" element={<StaffTicketThread />} />
             <Route path="/staff/reports" element={<StaffReports />} />
           </Route>
@@ -169,6 +181,7 @@ export default function App() {
           <Route element={<AdminLayout />}>
             <Route path="/admin" element={<SuperAdminDashboard />} />
             <Route path="/admin/staff" element={<AdminStaff />} />
+            <Route path="/admin/engineering" element={<EngineeringManagement />} />
             <Route path="/admin/inbox" element={<AdminInbox />} />
             <Route path="/admin/inbox/:id" element={<AdminTicketThread />} />
             <Route path="/admin/ledger" element={<AdminLedger />} />

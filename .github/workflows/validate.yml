@@ -14,7 +14,7 @@ on:
 
 jobs:
   frontend:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request' && github.base_ref == 'main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/migration/d1-worker-api-v2' || github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
       - run: npm run build
 
   supabase-worker:
-    if: github.ref == 'refs/heads/migration/supabase-worker-api' || github.event_name == 'pull_request' && github.base_ref == 'migration/supabase-worker-api'
+    if: github.ref == 'refs/heads/migration/supabase-worker-api' || github.event_name == 'pull_request' && (github.head_ref == 'migration/supabase-worker-api' || github.base_ref == 'migration/supabase-worker-api')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -42,7 +42,7 @@ jobs:
       - run: npm run build
 
   d1-worker:
-    if: github.ref == 'refs/heads/migration/d1-worker-api-v2' || github.event_name == 'pull_request' && github.base_ref == 'migration/d1-worker-api-v2'
+    if: github.ref == 'refs/heads/migration/d1-worker-api-v2' || github.event_name == 'pull_request' && (github.head_ref == 'migration/d1-worker-api-v2' || github.base_ref == 'migration/d1-worker-api-v2')
     runs-on: ubuntu-latest
     defaults:
       run:

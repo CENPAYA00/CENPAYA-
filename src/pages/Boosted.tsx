@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Zap, Store, FileText, Check, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { d1Request } from '../lib/d1Api';
@@ -14,6 +14,7 @@ type Target = {
   boosted_until?: string | null; 
   post_type?: string;
   bg_color?: string | null;
+  route_path?: string;
 };
 
 const resolveUrl = (u: string, bucket = 'listings'): string => {
@@ -39,6 +40,7 @@ function getColoredStyle(id: string): React.CSSProperties {
 
 export default function Boosted() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [listings, setListings] = useState<Target[]>([]);
   const [posts, setPosts] = useState<Target[]>([]);
   const [tiers, setTiers] = useState<Tier[]>([]);
@@ -56,29 +58,43 @@ export default function Boosted() {
   }, [toast]);
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
-      const me = await getCachedUser();
-      if (!me) { setLoading(false); return; }
+      try {
+        const me = await getCachedUser();
+        if (!me || !active) return;
 
-      const [tiersRes, eligRes, listingsRes, postsRes] = await Promise.all([
-        supabase.rpc('list_boost_tiers'),
-        supabase.rpc('get_boost_eligibility'),
-        d1Request<{ data: any[] }>('/api/market/my-listings?limit=50'),
-        d1Request<{ data: any[] }>('/api/posts/mine?limit=50'),
-      ]);
+        const [tiersRes, eligRes, listingsRes, servicesRes, postsRes] = await Promise.all([
+          Promise.resolve(supabase.rpc('list_boost_tiers')).catch((error: unknown) => ({ data: null, error })),
+          Promise.resolve(supabase.rpc('get_boost_eligibility')).catch((error: unknown) => ({ data: null, error })),
+          d1Request<{ data: any[] }>('/api/market/my-listings?limit=50').catch(() => ({ data: [] })),
+          d1Request<{ data: any[] }>('/api/market/my-services?limit=50').catch(() => ({ data: [] })),
+          d1Request<{ data: any[] }>('/api/posts/mine?limit=50').catch(() => ({ data: [] })),
+        ]);
+        if (!active) return;
 
-      setTiers(tiersRes.data || []);
-      setElig(eligRes.data);
+        if (tiersRes.error || eligRes.error || !Array.isArray(tiersRes.data)) {
+          setTiers([]);
+          setElig(null);
+          setToast({ kind: 'error', message: 'Boost plans are temporarily unavailable. No payment has been taken.' });
+        } else {
+          setTiers(tiersRes.data || []);
+          setElig(eligRes.data);
+        }
 
-      setListings((listingsRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
-        let rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
-        return { type: 'listing', id: l.id, title: l.title, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until };
-      }));
-
-      setPosts((postsRes.data || []).filter((p: any) => p.moderation_status === 'approved').map((p: any) => {
+      const productTargets = (listingsRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
+        const rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
+        return { type: 'listing' as const, id: l.id, title: l.title, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until, route_path: 'listing' };
+      });
+      const serviceTargets = (servicesRes.data || []).filter((l: any) => l.moderation_status === 'approved').map((l: any) => {
+        const rawImg = Array.isArray(l.images) ? l.images[0] : (typeof l.images === 'string' ? l.images.split(',')[0] : null);
+        return { type: 'listing' as const, id: l.id, title: `Service: ${l.title}`, image: rawImg ? resolveUrl(rawImg) : null, boosted_until: l.boosted_until, route_path: 'service' };
+      });
+      const listingTargets = [...productTargets, ...serviceTargets];
+      const postTargets: Target[] = (postsRes.data || []).filter((p: any) => p.moderation_status === 'approved').map((p: any) => {
         let rawImg = p.image_url ? p.image_url.split(',')[0].trim() : null;
         return { 
-          type: 'post', 
+          type: 'post' as const, 
           id: p.id, 
           title: p.content || (p.post_type === 'colored' ? 'Colored Post' : 'Media Post'), 
           image: rawImg ? resolveUrl(rawImg) : null, 
@@ -86,46 +102,65 @@ export default function Boosted() {
           post_type: p.post_type,
           bg_color: p.bg_color
         };
-      }));
+      });
+      setListings(listingTargets);
+      setPosts(postTargets);
+      const requestedId = searchParams.get('id');
+      const requestedType = searchParams.get('type');
+      if (requestedId && requestedType) {
+        const requested = requestedType === 'post'
+          ? postTargets.find((item: Target) => item.id === requestedId)
+          : listingTargets.find((item: Target) => item.id === requestedId);
+        if (requested) setSelected(requested);
+        else setToast({ kind: 'error', message: 'This content is not approved for boosting yet. You can boost it after approval.' });
+      }
 
-      setLoading(false);
+      } catch (error) {
+        if (active) setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Could not load boost options.' });
+      } finally {
+        if (active) setLoading(false);
+      }
     };
-    load();
+    void load();
+    return () => { active = false; };
   }, []);
 
   const purchase = async (useFree: boolean) => {
-    if (!selected || !selectedTier) return;
+    if (!selected || !selectedTier || busy) return;
     setBusy(true);
     setToast(null);
-
-    const { data, error } = await supabase.rpc('purchase_boost', {
-      p_target_type: selected.type, p_target_id: selected.id, p_tier_id: selectedTier.id, p_use_free_premium: useFree,
-    });
-
-    if (error || (data && !data.ok)) {
-      const msg = (error?.message || data?.error || 'Boost failed.').toLowerCase();
-      const friendly = msg.includes('insufficient') ? 'Insufficient funds. Top up your wallet first.' : msg.includes('free') ? 'You have used your free monthly boosts.' : error?.message || data?.error || 'Boost failed.';
-      setToast({ kind: 'error', message: friendly });
-      setBusy(false);
-      return;
-    }
-
     try {
-      const me = await getCachedUser();
-      if (me) {
-        await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
-          kind: 'system', title: 'Boost activated',
-          body: `${selectedTier.label} — ${selected.type} boosted until ${new Date(data.until).toLocaleDateString()}`,
-          link_url: `/${selected.type}/${selected.id}`,
-        }) });
-      }
-    } catch (e) { console.warn('boost notification failed', e); }
+      const { data, error } = await supabase.rpc('purchase_boost', {
+        p_target_type: selected.type, p_target_id: selected.id, p_tier_id: selectedTier.id, p_use_free_premium: useFree,
+      });
 
-    setToast({ kind: 'success', message: `Boosted until ${new Date(data.until).toLocaleDateString()}` });
-    setSelected(null);
-    setSelectedTier(null);
-    setBusy(false);
-    setTimeout(() => window.location.reload(), 1200);
+      if (error || !data?.ok) {
+        const msg = (error?.message || data?.error || 'Boost failed.').toLowerCase();
+        const friendly = msg.includes('insufficient') ? 'Insufficient funds. Top up your wallet first.' : msg.includes('free') ? 'You have already used your one free 3-day boost this month.' : error?.message || data?.error || 'Boost failed.';
+        setToast({ kind: 'error', message: friendly });
+        return;
+      }
+
+      try {
+        const me = await getCachedUser();
+        if (me) {
+          await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
+            kind: 'system', title: 'Boost activated',
+            body: `${selectedTier.label} — ${selected.type} boosted until ${new Date(data.until).toLocaleDateString()}`,
+            link_url: `/${selected.route_path || selected.type}/${selected.id}`,
+          }) });
+        }
+      } catch (e) { console.warn('boost notification failed', e); }
+
+      setToast({ kind: 'success', message: `Boosted until ${new Date(data.until).toLocaleDateString()}` });
+      setSelected(null);
+      setSelectedTier(null);
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (error) {
+      setToast({ kind: 'error', message: error instanceof Error ? error.message : 'Boost request failed. Please try again.' });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const canUseFree = elig?.is_member && elig?.free_boosts_remaining > 0;
@@ -226,7 +261,7 @@ export default function Boosted() {
           <Sparkles size={20} className="text-[#12935a] mt-0.5 shrink-0" />
           <div className="flex-1">
             <p className="text-[14px] font-bold text-[#0a3d2b] dark:text-white">Premium free boosts</p>
-            <p className="text-[13px] text-[#3e4f47] dark:text-gray-300 mt-0.5">{elig.free_boosts_remaining} of 2 free tier-1 boosts remaining this month</p>
+            <p className="text-[13px] text-[#3e4f47] dark:text-gray-300 mt-0.5">{Number(elig.free_boosts_remaining) > 0 ? '1 of 1 free 3-day boost available this month. Unused boosts do not roll over.' : 'Your monthly free 3-day boost has been used'}</p>
           </div>
         </div>
       )}
@@ -234,7 +269,7 @@ export default function Boosted() {
       <p className="text-[12px] font-bold text-mute uppercase tracking-widest mb-3">Boost plans</p>
       <div className="grid grid-cols-2 gap-3 mb-6">
         {tiers.map(t => {
-          const isFree = t.id === 1 && canUseFree;
+          const isFree = t.duration_days === 3 && canUseFree;
           const isSel = selectedTier?.id === t.id;
           return (
             <button key={t.id} onClick={() => { setSelectedTier(t); }}
@@ -287,7 +322,7 @@ export default function Boosted() {
               </div>
               <p className="text-[18px] font-bold text-[#12935a]">{selectedTier.price.toLocaleString()} XAF</p>
             </div>
-            {selectedTier.id === 1 && canUseFree ? (
+            {selectedTier.duration_days === 3 && canUseFree ? (
               <button onClick={() => purchase(true)} disabled={busy} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-[14px] text-[15px] disabled:opacity-50 active:scale-95 transition-transform">
                 {busy ? 'Processing...' : 'Use free premium boost'}
               </button>

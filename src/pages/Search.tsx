@@ -26,15 +26,16 @@ export default function Search() {
   const contextParam = (params.get('context') || 'home') as Context;
   const [context, setContext] = useState<Context>(contextParam);
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(params.get('q') || '');
   const [debounced, setDebounced] = useState('');
   const [results, setResults] = useState<Result[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
   const [people, setPeople] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [meId, setMeId] = useState<string | null>(null);
 
-  useEffect(() => { setContext(contextParam); }, [contextParam]);
+  useEffect(() => { setContext(contextParam); setQuery(params.get('q') || ''); }, [contextParam, params]);
 
   useEffect(() => {
     try {
@@ -67,11 +68,13 @@ export default function Search() {
   useEffect(() => {
     if (!debounced) {
       setResults([]);
+      setSearchError('');
       return;
     }
     let cancelled = false;
     const run = async () => {
       setLoading(true);
+      setSearchError('');
       try {
         const type = context === 'home' ? 'home' : context === 'market' ? 'market' : 'services';
         const { data } = await d1Request<{ data: Result[] }>(
@@ -80,6 +83,11 @@ export default function Search() {
         const list: Result[] = data || [];
 
         if (!cancelled) setResults(list);
+      } catch (error: any) {
+        if (!cancelled) {
+          setResults([]);
+          setSearchError(error?.message || 'Search is temporarily unavailable. Please try again.');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -193,7 +201,15 @@ export default function Search() {
               </div>
             )}
 
-            {!loading && results.length === 0 && (
+            {!loading && searchError && (
+              <div role="alert" className="bg-white dark:bg-darkcard rounded-2xl p-6 text-center shadow-sm">
+                <SearchIcon size={28} className="mx-auto text-gray-400 mb-2" />
+                <p className="text-[11px] font-bold text-navy dark:text-white">Search could not be completed</p>
+                <p className="text-[10px] text-gray-500 mt-1">{searchError}</p>
+              </div>
+            )}
+
+            {!loading && !searchError && results.length === 0 && (
               <div className="bg-white dark:bg-darkcard rounded-2xl p-6 text-center shadow-sm">
                 <SearchIcon size={28} className="mx-auto text-gray-400 mb-2" />
                 <p className="text-[11px] font-bold text-navy dark:text-white">No results for "{debounced}"</p>

@@ -10,40 +10,54 @@ export default function StaffPanel() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [tab, setTab] = useState<'all' | 'mine'>('all');
   const [loading, setLoading] = useState(true);
+  const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
+  const [taskEvidence, setTaskEvidence] = useState<Record<string, string>>({});
 
   const load = async () => {
     setLoading(true);
     try {
-      const profileRes = await d1Request<{ data: any }>('/api/staff/profile');
-      if (!profileRes.data) { navigate('/home'); return; }
-      setProfile(profileRes.data);
-      if (profileRes.data.role === 'staff_member') {
+      const result = await d1Request<{ data: any }>('/api/team/workspace/profile');
+      const teamProfile = result.data;
+      if (!teamProfile?.ok) throw new Error('No active staff or support appointment was found.');
+
+      if (teamProfile.role === 'vice_admin') { navigate('/vice-admin', { replace: true }); return; }
+      if (teamProfile.role === 'staff_member') {
+        setProfile({ ...teamProfile, source: 'd1' });
         const taskRes = await d1Request<{ data: any[] }>('/api/staff/tasks');
         setTasks(taskRes.data || []);
         setTickets([]);
-      } else {
-        const ticketsRes = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`);
-        setTickets(ticketsRes.data || []);
-        setTasks([]);
+        return;
       }
+
+      if (['support_agent','owner','super_admin'].includes(teamProfile.role)) {
+        const staffProfile = await d1Request<{ data: any }>('/api/staff/profile');
+        setProfile({ ...teamProfile, ...staffProfile.data, source: 'd1' });
+        const ticketRes = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}&queue_type=support`);
+        setTickets(ticketRes.data || []);
+        setTasks([]);
+        return;
+      }
+      throw new Error('This account does not have a staff workspace role.');
     } catch (error: any) {
       console.warn('Could not load staff workspace', error);
       navigate('/home');
-      return;
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const updateTask = async (taskId: string, status: string) => {
     try {
-      await d1Request(`/api/staff/tasks/${encodeURIComponent(taskId)}`, {
-        method: 'PATCH', body: JSON.stringify({ status }),
+      await d1Request(`/api/staff/tasks/${taskId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status,
+          body: taskNotes[taskId] || '',
+          attachment_url: taskEvidence[taskId]?.trim() || '',
+        }),
       });
+      setTaskNotes(previous => ({ ...previous, [taskId]: '' }));
+      setTaskEvidence(previous => ({ ...previous, [taskId]: '' }));
       await load();
-    } catch (error: any) {
-      alert(error.message || 'Could not update task');
-    }
+    } catch (error: any) { alert(error.message || 'Could not update task'); }
   };
 
   useEffect(() => { load(); }, [tab]);
@@ -51,7 +65,7 @@ export default function StaffPanel() {
   const claim = async (ticketId: string) => {
     try {
       await d1Request(`/api/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
-      load();
+      await load();
     } catch (error: any) { alert(error.message || 'Could not claim ticket'); }
   };
 
@@ -62,7 +76,9 @@ export default function StaffPanel() {
       <div className="pb-24 max-w-4xl mx-auto pt-4">
         <div className="bg-white dark:bg-darkcard rounded-[16px] shadow-sm p-4 mb-4">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6f8077]">Your workspace</p>
-          <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize">Staff Member</p>
+          <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize">{profile?.title || 'Staff Member'}</p>
+          <p className="text-[11px] text-gray-500 mt-1">Staff Member · {profile?.appointment_status || 'active'}{profile?.department ? ' · '+profile.department : ''}</p>
+          {profile?.supervisor_username && <p className="text-[10px] text-gray-500 mt-1">Supervisor: @{profile.supervisor_username}</p>}
           <p className="text-[11px] text-gray-500 mt-1">Only tasks assigned to your account appear here.</p>
         </div>
         {tasks.length === 0 && (
@@ -81,13 +97,33 @@ export default function StaffPanel() {
               </div>
               {task.description && <p className="text-[12px] text-gray-600 dark:text-gray-300 mt-2 whitespace-pre-wrap">{task.description}</p>}
               {task.due_at && <p className="text-[10px] text-gray-500 mt-2">Due {new Date(task.due_at).toLocaleString()}</p>}
-              <div className="flex flex-wrap gap-2 mt-3">
+              <><textarea
+                value={taskNotes[task.id] || ''}
+                onChange={e => setTaskNotes(previous => ({ ...previous, [task.id]: e.target.value }))}
+                maxLength={5000}
+                placeholder="Progress update, completion report or evidence notes..."
+                rows={2}
+                className="w-full mt-3 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
+              />
+              <input
+                value={taskEvidence[task.id] || ''}
+                onChange={e => setTaskEvidence(previous => ({ ...previous, [task.id]: e.target.value }))}
+                maxLength={2048}
+                placeholder="Evidence or document link (optional)"
+                className="w-full mt-2 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
+              /></>
+              <div className="flex flex-wrap gap-2 mt-2">
                 {(['todo','in_progress','blocked','completed'] as const).filter(status => status !== task.status).map(status => (
                   <button key={status} onClick={() => void updateTask(task.id,status)} className="text-[10px] font-bold px-3 py-2 rounded-lg bg-[#e3f7ec] text-[#12935a]">
-                    {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : 'Complete'}
+                    {status === 'todo' ? 'To do' : status === 'in_progress' ? 'In progress' : status === 'blocked' ? 'Blocked' : status === 'completed' ? 'Mark complete' : 'Submit report'}
                   </button>
                 ))}
               </div>
+              {Array.isArray(task.updates) && task.updates.length > 0 && (
+                <div className="mt-3 border-t border-gray-100 dark:border-darkline pt-2 space-y-1">
+                  {task.updates.slice(-3).map((update: any) => <div key={update.id} className="text-[10px] text-gray-500"><p>{update.body || (update.update_type === 'completion' ? 'Marked complete' : update.update_type)} · {new Date(update.created_at).toLocaleString()}</p>{update.attachment_url && <a href={update.attachment_url} target="_blank" rel="noreferrer" className="text-[#12935a] underline break-all">Open evidence</a>}</div>)}
+                </div>
+              )}
             </section>
           ))}
         </div>
@@ -101,9 +137,13 @@ export default function StaffPanel() {
       {/* Profile Card */}
       <div className="bg-white dark:bg-darkcard rounded-[16px] shadow-[0_1px_4px_rgba(10,61,43,0.08)] p-4 mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6f8077] mb-1">Your role</p>
-        <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize mb-3">
-          {profile?.role?.replace('_', ' ')}
+        <p className="text-[20px] font-bold text-[#0a3d2b] dark:text-white capitalize mb-1">
+          {profile?.title || profile?.role?.replace('_', ' ')}
         </p>
+        <p className="text-[10px] text-gray-500 mb-3">
+          {profile?.role?.replace('_',' ')} · {profile?.appointment_status || 'active'}{profile?.department ? ' · '+profile.department : ''}
+        </p>
+        {profile?.supervisor_username && <p className="text-[10px] text-gray-500 mb-3">Supervisor: @{profile.supervisor_username}</p>}
         {Array.isArray(profile?.permissions) && profile.permissions.length > 0 && (
           <>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6f8077] mb-2">Permissions</p>
@@ -175,13 +215,15 @@ export default function StaffPanel() {
             </div>
             
             <div className="flex gap-2">
-              <button
-                onClick={() => navigate(`/staff/tickets/${t.id}`)}
-                className="flex-1 bg-[#0a3d2b] text-white text-[13px] font-semibold py-2.5 rounded-[12px] flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
-              >
-                <Shield size={14} /> Open ticket
-              </button>
-              {!t.assigned_to_me && (
+              {(t.assigned_to_me || ['owner','super_admin'].includes(profile?.role)) && (
+                <button
+                  onClick={() => navigate(`/staff/tickets/${t.id}`)}
+                  className="flex-1 bg-[#0a3d2b] text-white text-[13px] font-semibold py-2.5 rounded-[12px] flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                >
+                  <Shield size={14} /> Open ticket
+                </button>
+              )}
+              {!t.assigned_to_me && profile?.role === 'support_agent' && (
                 <button
                   onClick={() => claim(t.id)}
                   className="flex-1 bg-[#e3f7ec] text-[#12935a] text-[13px] font-semibold py-2.5 rounded-[12px] flex items-center justify-center gap-1.5 active:scale-95 transition-transform"

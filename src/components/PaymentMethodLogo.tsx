@@ -1,47 +1,44 @@
 /* src/components/PaymentMethodLogo.tsx */
-
 type Method = 'mtn_momo' | 'orange_money' | 'airtel_money' | 'moov_money';
 
 export function PaymentMethodLogo({ method, size = 40 }: { method: Method; size?: number }) {
   const logos: Record<Method, React.ReactNode> = {
     mtn_momo: (
-      <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-        <rect width="120" height="120" rx="16" fill="#FFCC00" />
-        <path d="M60 25C40 25 25 40 25 60C25 80 40 95 60 95C80 95 95 80 95 60C95 40 80 25 60 25ZM60 85C46 85 35 74 35 60C35 46 46 35 60 35C74 35 85 46 85 60C85 74 74 85 60 85Z" fill="#000000"/>
-        <text x="60" y="68" textAnchor="middle" fontSize="22" fontWeight="900" fill="#000000" fontFamily="sans-serif">MTN</text>
+      <svg viewBox="0 0 120 120" width={size} height={size} role="img" aria-label="MTN Mobile Money" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="mtn-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FFE36A"/><stop offset="1" stopColor="#FFC400"/></linearGradient></defs>
+        <rect x="3" y="3" width="114" height="114" rx="25" fill="url(#mtn-bg)"/>
+        <path d="M18 40Q18 25 34 25H86Q102 25 102 40V72Q102 87 86 87H54L34 101V87Q18 87 18 72Z" fill="#111111"/>
+        <text x="60" y="66" textAnchor="middle" fontSize="29" fontWeight="900" letterSpacing="-2" fill="#FFD000" fontFamily="Arial, sans-serif">MTN</text>
+        <path d="M31 96H89" stroke="#111111" strokeWidth="4" strokeLinecap="round" opacity=".22"/>
       </svg>
     ),
     orange_money: (
-      <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-        <rect width="120" height="120" rx="16" fill="#FFFFFF" stroke="#E5E7EB" strokeWidth="2" />
-        <rect x="25" y="25" width="70" height="70" fill="#FF7900" />
-        <text x="60" y="75" textAnchor="middle" fontSize="18" fontWeight="700" fill="#FFFFFF" fontFamily="sans-serif">orange</text>
-        <text x="90" y="35" textAnchor="end" fontSize="8" fill="#FF7900" fontFamily="sans-serif">™</text>
+      <svg viewBox="0 0 120 120" width={size} height={size} role="img" aria-label="Orange Money" xmlns="http://www.w3.org/2000/svg">
+        <rect x="3" y="3" width="114" height="114" rx="25" fill="#FFFFFF" stroke="#E8E8E8" strokeWidth="2"/>
+        <rect x="17" y="17" width="86" height="86" rx="12" fill="#FF7900"/>
+        <text x="60" y="57" textAnchor="middle" fontSize="21" fontWeight="800" letterSpacing="-1.2" fill="#FFFFFF" fontFamily="Arial, sans-serif">orange</text>
+        <path d="M31 68H89" stroke="#FFFFFF" strokeWidth="1.5" opacity=".65"/>
+        <text x="60" y="84" textAnchor="middle" fontSize="13" fontWeight="700" letterSpacing="2" fill="#FFFFFF" fontFamily="Arial, sans-serif">MONEY</text>
       </svg>
     ),
     airtel_money: (
       <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-        <rect width="120" height="120" rx="16" fill="#E40000" />
-        <path d="M60 30 C 45 35, 30 50, 40 70 C 50 85, 60 80, 60 70 C 60 60, 45 55, 45 45 C 45 35, 55 30, 60 30 Z" fill="#FFFFFF" />
-        <path d="M60 30 C 75 35, 90 50, 80 70 C 70 85, 60 80, 60 70 C 60 60, 75 55, 75 45 C 75 35, 65 30, 60 30 Z" fill="#FFFFFF" opacity="0.8"/>
-        <text x="60" y="100" textAnchor="middle" fontSize="20" fontWeight="700" fill="#FFFFFF" fontFamily="sans-serif">airtel</text>
+        <rect x="3" y="3" width="114" height="114" rx="25" fill="#E40000"/>
+        <path d="M60 18C42 39 32 55 39 72C44 85 56 89 66 83C82 74 85 56 75 39C71 31 65 24 60 18Z" fill="#FFFFFF"/>
+        <path d="M56 49C48 61 49 69 58 73C64 75 69 70 68 64" fill="none" stroke="#E40000" strokeWidth="5" strokeLinecap="round"/>
+        <text x="60" y="103" textAnchor="middle" fontSize="17" fontWeight="800" fill="#FFFFFF" fontFamily="Arial, sans-serif">airtel</text>
       </svg>
     ),
     moov_money: (
       <svg viewBox="0 0 120 120" width={size} height={size} xmlns="http://www.w3.org/2000/svg">
-        <rect width="120" height="120" rx="16" fill="#005CA9" />
-        <text x="50" y="58" textAnchor="middle" fontSize="16" fontWeight="900" fill="#FFFFFF" fontFamily="sans-serif">Moov</text>
-        <text x="50" y="76" textAnchor="middle" fontSize="14" fontWeight="700" fill="#FFFFFF" fontFamily="sans-serif">Africa</text>
-        <path d="M85 35 C 105 45, 105 75, 85 85 C 90 70, 90 50, 85 35 Z" fill="#F39200" />
+        <rect x="3" y="3" width="114" height="114" rx="25" fill="#005CA9"/>
+        <text x="54" y="55" textAnchor="middle" fontSize="22" fontWeight="900" fill="#FFFFFF" fontFamily="Arial, sans-serif">Moov</text>
+        <text x="54" y="75" textAnchor="middle" fontSize="13" fontWeight="700" letterSpacing="1" fill="#FFFFFF" fontFamily="Arial, sans-serif">MONEY</text>
+        <path d="M91 27C106 44 106 76 87 91C94 69 94 48 91 27Z" fill="#F39200"/>
       </svg>
     ),
   };
-
-  return (
-    <div className="inline-flex items-center justify-center overflow-hidden rounded-xl shadow-sm">
-      {logos[method]}
-    </div>
-  );
+  return <div className="inline-flex items-center justify-center overflow-hidden rounded-xl shadow-sm">{logos[method]}</div>;
 }
 
 export const METHOD_LABELS: Record<Method, string> = {

@@ -10,6 +10,7 @@ export default function StaffAccept() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'accepting' | 'accepted' | 'error'>('loading');
   const [error, setError] = useState('');
   const [role, setRole] = useState('');
+  const [appointment, setAppointment] = useState<any>(null);
 
   useEffect(() => {
     (async () => {
@@ -26,13 +27,15 @@ export default function StaffAccept() {
     setStatus('accepting');
     setError('');
     try {
-      const result = await supabaseWorkerRequest<{ data: { ok: boolean; role: string } }>('/api/v1/staff/invitations/accept', {
+      const result = await supabaseWorkerRequest<{ data: { ok: boolean; role: string; title?: string; department?: string; supervisor_id?: string; permissions?: string[]; error?: string } }>('/api/v1/admin/rpc/accept_staff_invitation', {
         method: 'POST',
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ args: { p_token: token } }),
       });
+      if (!result.data?.ok) throw new Error(result.data?.error || 'Invitation could not be accepted.');
       const acceptedRole = result.data?.role;
       if (!acceptedRole) throw new Error('Invitation acceptance returned no role.');
       setRole(acceptedRole);
+      setAppointment(result.data);
       setStatus('accepted');
       setTimeout(() => navigate('/staff'), 1600);
     } catch (err: any) {
@@ -57,7 +60,7 @@ export default function StaffAccept() {
           </div>
           <p className="text-[15px] font-bold text-navy dark:text-white">You've been invited</p>
           <p className="text-[11px] text-gray-500 mt-1">
-            Accept to join the CenPaya team in your assigned Support Agent or Staff Member workspace.
+            Accept to join the CenPaya team in your officially assigned workspace. Your role and permissions become active only after acceptance.
           </p>
           <button
             onClick={accept}
@@ -82,8 +85,9 @@ export default function StaffAccept() {
           </div>
           <p className="text-[14px] font-bold text-navy dark:text-white">Welcome to the team</p>
           <p className="text-[11px] text-gray-500 mt-1 capitalize">
-            Your role: {role === 'support_agent' ? 'Support Agent' : 'Staff Member'}
+            Your role: {role === 'support_agent' ? 'Support Agent' : role === 'vice_admin' ? 'Vice Admin' : 'Staff Member'}
           </p>
+          <p className="text-[10px] text-gray-400 mt-1">{appointment?.title || 'Team appointment'}{appointment?.department ? ` · ${appointment.department}` : ''}</p>
           <p className="text-[10px] text-gray-400 mt-1">Redirecting to your workspace...</p>
         </>
       )}

@@ -6,7 +6,7 @@ import { d1Request, getD1ApiUrl, getD1Token } from '../lib/d1Api';
 import { useSound } from '../contexts/sound';
 import ReadReceipt from '../components/ReadReceipt';
 import ChatMenus from '../components/ChatMenus';
-import { VoiceBubble, SharedPostCard } from '../components/ChatMedia';
+import { VoiceBubble, SharedPostCard, ChatVideoBubble } from '../components/ChatMedia';
 import { RichComposer } from '../components/RichComposer';
 import { resolveTheme, ChatThemeKey } from '../lib/chatThemes';
 
@@ -63,6 +63,8 @@ export default function ChatThread() {
   const [disappearing, setDisappearing] = useState<number | null>(null);
   
   const parentRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const theme = resolveTheme(themeKey);
 
@@ -140,6 +142,73 @@ export default function ChatThread() {
     }
   };
 
+  const handleSendFiles = async (files: FileList | null) => {
+    if(!files||!userId||!id)return;
+    for(const file of Array.from(files).slice(0,5)){
+      if(file.size<1||file.size>100*1024*1024){alert("Each chat file must be between 1 byte and 100 MB.");continue;}
+      const tempId=`temp-file-${crypto.randomUUID()}`;
+      setMessages(prev=>[...prev,{id:tempId,thread_id:id,sender_id:userId,body:file.name,message_type:"file",attachments:[{name:file.name,mime_type:file.type,size:file.size}],created_at:new Date().toISOString(),status:"sending"}]);
+      setIsAway(false);
+      try{
+        const url=await upload(file,`chat/${id}/files`,file.name.split(".").pop()||"bin");
+        const result=await d1Request<{id:string}>(`/api/chat/threads/${encodeURIComponent(id)}/messages`,{method:"POST",body:JSON.stringify({message_text:"",message_type:"file",attachment_url:url,attachment_name:file.name})});
+        setMessages(prev=>prev.map(m=>m.id===tempId?{id:result.id,thread_id:id,sender_id:userId,body:file.name,message_type:"file",attachments:[{name:file.name,mime_type:file.type,size:file.size,url}],created_at:new Date().toISOString(),status:"sent"}:m));
+      }catch(error:any){setMessages(prev=>prev.map(m=>m.id===tempId?{...m,status:"failed",error:error?.message||"Upload failed"}:m));}
+    }
+    if(fileInputRef.current)fileInputRef.current.value="";
+  };
+
+  const handleSendVideo = async (file: File | null) => {
+    if (!file || !userId || !id) return;
+    if (!file.type.startsWith('video/') || file.size < 1 || file.size > 500 * 1024 * 1024) {
+      alert('Choose a supported video up to 500 MB.');
+      return;
+    }
+    const tempId = `temp-video-${crypto.randomUUID()}`;
+    setMessages(prev => [...prev, { id: tempId, thread_id: id, sender_id: userId, body: 'Video', message_type: 'video', created_at: new Date().toISOString(), status: 'sending' }]);
+    setIsAway(false);
+    try {
+      const intent = await d1Request<{ data: { video_id: string; upload_url: string; method: string; headers: Record<string, string>; max_duration_seconds: number } }>('/api/video-assets/upload-intent', {
+        method: 'POST', body: JSON.stringify({ purpose: 'chat', related_id: id, mime_type: file.type, size_bytes: file.size, filename: file.name }),
+      });
+      const uploaded = await fetch(intent.data.upload_url, { method: intent.data.method, headers: intent.data.headers, body: file });
+      if (!uploaded.ok) throw new Error('Video upload failed. Please try again.');
+      await d1Request(`/api/video-assets/${encodeURIComponent(intent.data.video_id)}/complete`, { method: 'POST', body: JSON.stringify({}) });
+      let ready = false;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        await new Promise(resolve => window.setTimeout(resolve, 3000));
+        const status = await d1Request<{ data: { status: string } }>(`/api/video-assets/${encodeURIComponent(intent.data.video_id)}/status`);
+        if (status.data.status === 'ready') { ready = true; break; }
+        if (status.data.status === 'failed') throw new Error('Video processing failed. Please upload another video.');
+      }
+      if (!ready) throw new Error('Video is still processing. Please try again shortly.');
+      const result = await d1Request<{ id: string }>(`/api/chat/threads/${encodeURIComponent(id)}/messages`, {
+        method: 'POST', body: JSON.stringify({ message_text: '', message_type: 'video', video_asset_id: intent.data.video_id }),
+      });
+      setMessages(prev => prev.map(m => m.id === tempId ? { id: result.id, thread_id: id, sender_id: userId, body: 'Video', message_type: 'video', video_asset_id: intent.data.video_id, media_duration_seconds: 0, created_at: new Date().toISOString(), status: 'sent' } : m));
+    } catch (error: any) {
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed', error: error?.message || 'Video upload failed' } : m));
+      alert(error?.message || 'Video upload failed');
+    } finally {
+      if (videoInputRef.current) videoInputRef.current.value = '';
+    }
+  };
+
+  const deleteVideoForMe = async (message: any) => {
+    try {
+      await d1Request(`/api/chat/threads/${encodeURIComponent(id || '')}/messages/${encodeURIComponent(message.id)}?for=me`, { method: 'DELETE' });
+      setMessages(prev => prev.filter(m => m.id !== message.id));
+    } catch (error: any) { alert(error.message || 'Could not delete this video for you'); }
+  };
+
+  const deleteVideoForEveryone = async (message: any) => {
+    if (!window.confirm('Delete this video for everyone in the conversation?')) return;
+    try {
+      await d1Request(`/api/chat/threads/${encodeURIComponent(id || '')}/messages/${encodeURIComponent(message.id)}?for=everyone`, { method: 'DELETE' });
+      setMessages(prev => prev.map(m => m.id === message.id ? { ...m, body: 'Message deleted', message_type: 'text', video_asset_id: null, status: 'deleted' } : m));
+    } catch (error: any) { alert(error.message || 'Could not delete this video for everyone'); }
+  };
+
   const handleSendVoice = async (blob: Blob, durationMs: number) => {
     if (!userId) return;
     const local = URL.createObjectURL(blob);
@@ -199,7 +268,8 @@ export default function ChatThread() {
   const deleteMsg = async () => {
     if (!actionMessage) return;
     if (!window.confirm('Delete this message?')) return;
-    await d1Request(`/api/chat/threads/${encodeURIComponent(id || '')}/messages/${encodeURIComponent(actionMessage.id)}`, { method: 'DELETE' });
+    const deleteMode = actionMessage.sender_id === userId ? 'everyone' : 'me';
+    await d1Request(`/api/chat/threads/${encodeURIComponent(id || '')}/messages/${encodeURIComponent(actionMessage.id)}?for=${deleteMode}`, { method: 'DELETE' });
     setMessages(prev => prev.filter(x => x.id !== actionMessage.id));
     setActionMessage(null);
   };
@@ -278,7 +348,19 @@ export default function ChatThread() {
                       mine ? `${theme.bubbleMine} rounded-br-sm` : `${theme.bubbleTheirs} ${theme.bubbleTheirsDark} rounded-bl-sm shadow-sm`
                     } ${m.message_type === 'shared_post' || m.message_type === 'image' ? 'p-1.5' : 'px-4 py-2.5'}`}
                   >
-                    {m.message_type === 'voice_note' && m.media_url ? (
+                    {m.message_type === 'file' ? (
+                      <div className="min-w-[210px] max-w-[260px] rounded-xl bg-black/5 dark:bg-white/5 p-3">
+                        {(m.attachments||[]).map((file:any,i:number)=><a key={file.id||i} href={file.url||undefined} download={file.name} className="flex items-center gap-2 text-inherit no-underline">
+                          <span className="w-9 h-9 rounded-lg bg-brand/15 text-brand flex items-center justify-center text-[10px] font-bold shrink-0">FILE</span>
+                          <span className="min-w-0 flex-1"><span className="block text-xs font-semibold truncate">{file.name}</span><span className="block text-[10px] opacity-70">{file.size?(Number(file.size)/1048576).toFixed(2)+" MB":"Attachment"}</span></span>
+                          <span className="text-xs underline">Download</span>
+                        </a>)}
+                        {m.status==="failed"&&<span className="text-[10px] text-red-500">{m.error||"Upload failed"}</span>}
+                      </div>
+                    ) : m.message_type === 'video' && m.video_asset_id ? (
+                      <ChatVideoBubble videoId={m.video_asset_id} duration={m.media_duration_seconds || 0} mine={mine}
+                        onDeleteForMe={() => void deleteVideoForMe(m)} onDeleteForEveryone={() => void deleteVideoForEveryone(m)} />
+                    ) : m.message_type === 'voice_note' && m.media_url ? (
                       <VoiceBubble src={m.media_url} duration={m.media_duration_seconds || 0} />
                     ) : m.message_type === 'image' && m.media_url ? (
                       <img src={m.media_url} className="w-48 h-48 object-cover rounded-xl" />
@@ -307,6 +389,13 @@ export default function ChatThread() {
         </button>
       )}
 
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-100 dark:border-darkline bg-white dark:bg-darkcard">
+        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e=>void handleSendFiles(e.target.files)} />
+        <input ref={videoInputRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" className="hidden" onChange={e=>void handleSendVideo(e.target.files?.[0] || null)} />
+        <button type="button" onClick={()=>fileInputRef.current?.click()} className="rounded-full px-3 py-2 text-xs font-semibold text-brand border border-brand/30">Attach file</button>
+        <button type="button" onClick={()=>videoInputRef.current?.click()} className="rounded-full px-3 py-2 text-xs font-semibold text-brand border border-brand/30">Send video</button>
+        <span className="text-[10px] text-gray-500">Files up to 100 MB · videos up to 5 minutes</span>
+      </div>
       <RichComposer onSendText={handleSendText} onPickImages={handleSendImages} onVoice={handleSendVoice} />
 
       <ChatMenus 

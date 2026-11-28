@@ -32,13 +32,27 @@ export default function AdminLayout() {
       if (cancelled) return;
       if (!user) { navigate('/'); return; }
 
-      const role = user.role;
-      setAdminRole(role);
-      if (role !== 'owner' && role !== 'super_admin') {
-        alert(`Access denied. Your role is: ${role || 'unknown'}`);
-        navigate('/home');
+      // Engineering management is served by the D1 Worker control plane.
+      // Authorize this route from the authenticated D1 session, without requiring the legacy Supabase Worker.
+      if (window.location.pathname === '/admin/engineering') {
+        if (!['owner','super_admin'].includes(user.role)) {
+          navigate('/home');
+          return;
+        }
+        setAdminRole(user.role);
+        setAuthorized(true);
+        setChecking(false);
         return;
       }
+
+      // D1 is the active account authority for this branch. Do not make panel access
+      // depend on the legacy staff-profile RPC.
+      const role = user.role || '';
+      if (!['owner', 'super_admin'].includes(role)) {
+        if (!cancelled) navigate('/home');
+        return;
+      }
+      setAdminRole(role);
 
       try {
         const passwordStatus = await supabaseWorkerRequest<{ data: { ok?: boolean; has_password?: boolean; error?: string } }>('/api/v1/admin/security/password/status');
@@ -161,6 +175,8 @@ export default function AdminLayout() {
     { path: '/admin/features',        icon: <ToggleLeft size={16} />,      label: 'Features' },
     { path: '/admin/users',           icon: <Users size={16} />,           label: 'Users' },
     { path: '/admin/staff',           icon: <UserPlus size={16} />,        label: 'Staff' },
+    { path: '/admin/engineering',     icon: <Users size={16} />,            label: 'Engineering' },
+    { path: '/staff/team',             icon: <MessageSquare size={16} />,    label: 'Team Chat' },
     { path: '/admin/permissions',     icon: <Key size={16} />,             label: 'Permissions' },
     { path: '/admin/security',        icon: <Lock size={16} />,            label: 'Security' },
     { path: '/admin/audit',           icon: <FileText size={16} />,        label: 'Audit' },

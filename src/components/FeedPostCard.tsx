@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart, MessageCircle, Share2, X, MoreHorizontal,
-  Bookmark, EyeOff, Flag, Download, Link as LinkIcon, Crown, AtSign, Globe
+  Bookmark, EyeOff, Flag, Download, Link as LinkIcon, Crown, AtSign, Globe, Folder, FolderPlus
 } from 'lucide-react';
 import { d1Request } from '../lib/d1Api';
 import ImageGrid from './ImageGrid';
 import DocumentCard from './DocumentCard';
 import ReportSheet from './ReportSheet';
-import PostFollowButton from './PostFollowButton';
+import FollowButton from './FollowButton';
 import ShareSheet from './ShareSheet';
 import DemoBadge from './DemoBadge';
 import { useSound } from '../contexts/sound';
@@ -22,6 +22,7 @@ type Props = {
   onComment?: (postId: string) => void;
   onShare?: (postId: string) => void;
   onSave?: (postId: string) => void;
+  onSaveToFolder?: (postId: string, folderId: string) => void;
   onHide?: (postId: string) => void;
   onFollowToggle?: (isNowFollowing: boolean) => void;
   readOnly?: boolean;
@@ -41,18 +42,48 @@ function colorToVar(id: string): { bg: string; isGradient: boolean } {
 }
 
 export default function FeedPostCard({
-  post, currentUserId, isLiked = false, isSaved = false, onLike, onComment, onShare, onSave, onHide, onFollowToggle, readOnly = false,
+  post, currentUserId, isLiked = false, isSaved = false, onLike, onComment, onShare, onSave, onSaveToFolder, onHide, onFollowToggle, readOnly = false,
 }: Props) {
   const navigate = useNavigate();
   const { play } = useSound();
   
   const [hidden, setHidden] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
+  const [showSaveFolders, setShowSaveFolders] = useState(false);
+  const [saveFolders, setSaveFolders] = useState<Array<{id:string;name:string}>>([]);
+  const [saveFoldersLoading, setSaveFoldersLoading] = useState(false);
   const [showPostMenu, setShowPostMenu] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [isInterested, setIsInterested] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const postElementRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const element = postElementRef.current;
+    if (!element || !currentUserId || !post?.id || typeof IntersectionObserver === 'undefined') return;
+    let impressionSent = false, visibleSince = 0, lastReportedAt = 0;
+    let dwellTimer: number | undefined;
+    const send = (event_type: string, dwell_ms = 0) => d1Request('/api/feed/events', { method: 'POST', body: JSON.stringify({ post_id: post.id, event_type, dwell_ms, source: 'feed' }) }).catch(() => undefined);
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+          if (!impressionSent) { impressionSent = true; void send('impression'); }
+          if (!visibleSince) {
+            visibleSince = Date.now(); lastReportedAt = visibleSince;
+            dwellTimer = window.setInterval(() => { const now = Date.now(), elapsed = now - lastReportedAt; if (elapsed >= 2500) { void send('dwell', Math.min(300000, elapsed)); lastReportedAt = now; } }, 3000);
+          }
+        } else if (visibleSince) {
+          window.clearInterval(dwellTimer);
+          const now = Date.now(), elapsed = now - lastReportedAt;
+          if (now - visibleSince < 1500) void send('skip'); else if (elapsed >= 1000) void send('dwell', Math.min(300000, elapsed));
+          visibleSince = 0; lastReportedAt = 0;
+        }
+      }
+    }, { threshold: [0, 0.6, 1] });
+    observer.observe(element);
+    return () => { observer.disconnect(); window.clearInterval(dwellTimer); };
+  }, [post?.id, currentUserId]);
 
   if (hidden) return null;
 
@@ -62,7 +93,7 @@ export default function FeedPostCard({
       ? post.image_url.split(',').map((s: string) => s.trim()).filter(Boolean)
       : [];
 
-  const docs: string[] = Array.isArray(post.documents) ? post.documents : [];
+  const docs: any[] = Array.isArray(post.documents) ? post.documents : [];
   const tags: any[] = Array.isArray(post.tags) ? post.tags : [];
   const authorIsPremium = !!post.author_is_premium;
   const isFollowingAuthor = !!post.is_following_author;
@@ -127,6 +158,18 @@ export default function FeedPostCard({
     catch { prompt('Copy this link:', url); }
   };
 
+  const openSaveFolders = async () => {
+    if (isSaved) { onSave?.(post.id); return; }
+    setShowSaveFolders(true); setSaveFoldersLoading(true);
+    try { const result=await d1Request<{data:Array<{id:string;name:string}>}>('/api/saved/folders'); setSaveFolders(result.data||[]); }
+    catch (error:any) { showToast(error.message||'Could not load folders'); }
+    finally { setSaveFoldersLoading(false); }
+  };
+  const saveIntoFolder = async (folderId:string) => {
+    try { await d1Request('/api/posts/'+encodeURIComponent(post.id)+'/save',{method:'POST',body:JSON.stringify({folder_id:folderId})}); onSaveToFolder?.(post.id,folderId); setShowSaveFolders(false); showToast('Saved to folder'); }
+    catch (error:any) { showToast(error.message||'Could not save to folder'); }
+  };
+
   const openShareSheet = () => {
     play('tap');
     setShowShareSheet(true);
@@ -187,10 +230,11 @@ export default function FeedPostCard({
           >
             <MessageCircle size={15} />
           </button>
-          <PostFollowButton 
-            authorId={post.user_id} 
-            initialFollowing={isFollowingAuthor} 
+          <FollowButton
+            targetId={post.user_id}
+            initialFollowing={isFollowingAuthor}
             onFollowToggle={onFollowToggle}
+            variant="post"
           />
         </>
       )}
@@ -225,6 +269,16 @@ export default function FeedPostCard({
       {showShareSheet && !readOnly && (
         <ShareSheet postId={post.id} onClose={() => setShowShareSheet(false)} onShared={() => handleShareComplete()} />
       )}
+      {showSaveFolders && !readOnly && (
+        <div className="fixed inset-0 z-[210] bg-black/60 flex items-end" onClick={()=>setShowSaveFolders(false)}>
+          <div onClick={e=>e.stopPropagation()} className="w-full rounded-t-3xl bg-white dark:bg-darkcard p-4 pb-8 max-h-[70vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-3"><p className="text-sm font-bold text-navy dark:text-white">Save to…</p><button onClick={()=>setShowSaveFolders(false)} className="text-xs text-gray-500">Close</button></div>
+            <button onClick={()=>{onSave?.(post.id);setShowSaveFolders(false);}} className="w-full flex items-center gap-3 rounded-xl bg-offwhite dark:bg-darkbg p-3 mb-2 text-left"><Bookmark size={17}/><span className="text-sm font-bold text-navy dark:text-white">All saved</span></button>
+            {saveFoldersLoading?<p className="p-4 text-center text-xs text-gray-500">Loading folders…</p>:saveFolders.map(folder=><button key={folder.id} onClick={()=>void saveIntoFolder(folder.id)} className="w-full flex items-center gap-3 rounded-xl p-3 mb-1 hover:bg-offwhite dark:hover:bg-darkbg text-left"><Folder size={17} className="text-brand"/><span className="text-sm font-bold text-navy dark:text-white">{folder.name}</span></button>)}
+            <button onClick={()=>navigate('/saved')} className="w-full flex items-center gap-2 rounded-xl border border-dashed border-gray-300 dark:border-darkline p-3 mt-2 text-brand text-sm font-bold"><FolderPlus size={16}/> Manage saved folders</button>
+          </div>
+        </div>
+      )}
       {showPostMenu && !readOnly && (
         <PostMenu hasImage={images.length > 0} isInterested={isInterested} onClose={() => setShowPostMenu(false)} onInterested={markInterested} onNotInterested={notInterested} onReport={() => { setShowPostMenu(false); setShowReport(true); }} onSaveToGallery={saveToGallery} onCopyLink={copyLink} />
       )}
@@ -239,7 +293,7 @@ export default function FeedPostCard({
 
     return (
       <>
-        <article className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 400px' }}>
+        <article ref={postElementRef} className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 400px' }}>
           {AuthorRow}
           <div onClick={() => navigate(`/post/${post.id}`)} style={inlineStyle} className="cursor-pointer py-16 px-6 flex items-center justify-center min-h-[220px]">
             <p data-no-translate className="text-xl font-bold text-center !text-white whitespace-pre-wrap leading-relaxed max-w-md">
@@ -250,7 +304,7 @@ export default function FeedPostCard({
           <MetricsRow likes={post.likes_count} comments={post.comments_count} shares={post.shares_count} onComment={() => onComment?.(post.id)} />
           
           {/* EXACTLY AS CLAUDE SPECIFIED */}
-          {!readOnly && <ActionBar post={post} isLiked={isLiked} isSaved={isSaved} onLike={() => onLike?.(post.id)} onComment={() => onComment?.(post.id)} onShare={openShareSheet} onSave={() => onSave?.(post.id)} />}
+          {!readOnly && <ActionBar post={post} isLiked={isLiked} isSaved={isSaved} onLike={() => onLike?.(post.id)} onComment={() => onComment?.(post.id)} onShare={openShareSheet} onSave={openSaveFolders} />}
         </article>
         {menus}
       </>
@@ -259,7 +313,7 @@ export default function FeedPostCard({
 
   return (
     <>
-      <article className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 520px' }}>
+      <article ref={postElementRef} className="bg-white dark:bg-darkcard rounded-[20px] shadow-soft mb-4 overflow-hidden border border-gray-100 dark:border-darkline" style={{ contentVisibility: 'auto', containIntrinsicSize: '0 520px' }}>
         {AuthorRow}
         {text && (
           <div data-no-translate className="px-3.5 pb-2.5 text-[15px] text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words leading-relaxed">
@@ -275,14 +329,14 @@ export default function FeedPostCard({
         {images.length > 0 && <ImageGrid images={images} onOpenImage={() => navigate(`/post/${post.id}`)} />}
         {docs.length > 0 && (
           <div className="px-3.5 pb-2">
-            {docs.map((url, i) => <DocumentCard key={i} url={url} />)}
+            {docs.map((file, i) => <DocumentCard key={file.id||i} url={typeof file==="string"?file:file.url} name={file.name} size={file.size} mime_type={file.mime_type} />)}
           </div>
         )}
         {TagsRow}
         <MetricsRow likes={post.likes_count} comments={post.comments_count} shares={post.shares_count} onComment={() => onComment?.(post.id)} />
         
         {/* EXACTLY AS CLAUDE SPECIFIED */}
-        {!readOnly && <ActionBar post={post} isLiked={isLiked} isSaved={isSaved} onLike={() => onLike?.(post.id)} onComment={() => onComment?.(post.id)} onShare={openShareSheet} onSave={() => onSave?.(post.id)} />}
+        {!readOnly && <ActionBar post={post} isLiked={isLiked} isSaved={isSaved} onLike={() => onLike?.(post.id)} onComment={() => onComment?.(post.id)} onShare={openShareSheet} onSave={openSaveFolders} />}
       </article>
       {menus}
     </>

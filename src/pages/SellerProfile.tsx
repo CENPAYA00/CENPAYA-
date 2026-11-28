@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { d1Request } from '../lib/d1Api';
-import { ArrowLeft, UserPlus, MessageCircle, Star } from 'lucide-react';
+import { ArrowLeft, UserPlus, MessageCircle, Star, BadgeCheck, ShieldCheck } from 'lucide-react';
 import { useI18n } from '../contexts/i18n';
 import FeedPostCard from '../components/FeedPostCard';
 
@@ -82,6 +82,11 @@ export default function SellerProfile() {
           <p className="text-[10px] text-gray-500 mt-0.5">
             {t('member_since')} {new Date(profile.created_at).toLocaleDateString()}
           </p>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            {profile.is_subscribed && <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 px-2 py-1 text-[9px] font-bold"><BadgeCheck size={11}/> Verified membership</span>}
+            {profile.is_phone_verified && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 px-2 py-1 text-[9px] font-bold"><ShieldCheck size={11}/> Verified account</span>}
+            {Number(profile.reviews_count || 0) > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 px-2 py-1 text-[9px] font-bold"><Star size={11} fill="currentColor"/> Trust · {Number(profile.average_rating || 0).toFixed(1)} ({profile.reviews_count})</span>}
+          </div>
         </div>
 
         <div className="flex gap-4 mt-3 text-[11px]">
@@ -89,10 +94,7 @@ export default function SellerProfile() {
             <strong className="text-navy dark:text-white">{profile.followers_count || 0}</strong>{' '}
             <span className="text-gray-500">{t('followers')}</span>
           </div>
-          <div className="flex items-center gap-1">
-            <Star size={11} className="text-gold" fill="currentColor" />
-            <strong className="text-navy dark:text-white">{profile.reputation_score || 0}</strong>
-          </div>
+          {Number(profile.reviews_count || 0) > 0 && <div className="flex items-center gap-1"><Star size={11} className="text-gold" fill="currentColor"/><strong className="text-navy dark:text-white">{Number(profile.average_rating || 0).toFixed(1)}</strong><span className="text-gray-500">({profile.reviews_count} reviews)</span></div>}
         </div>
       </div>
 

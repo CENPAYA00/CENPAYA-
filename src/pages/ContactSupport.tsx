@@ -14,7 +14,7 @@ export default function ContactSupport() {
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await d1Request<{ data: any[] }>('/api/support/tickets');
+      const { data } = await d1Request<{ data: any[] }>('/api/support/tickets?queue_type=support');
       setTickets(data || []);
     } catch (error) {
       console.error('Could not load support tickets:', error);
@@ -118,7 +118,7 @@ function NewSupportSheet({ onClose, onSent }: { onClose: () => void; onSent: () 
     try {
       await d1Request<{ id: string; ticket_number: string }>('/api/support/tickets', {
         method: 'POST',
-        body: JSON.stringify({ subject: subject.trim(), description: message.trim(), category: normalizedCategory }),
+        body: JSON.stringify({ subject: subject.trim(), description: message.trim(), category: normalizedCategory, queue_type: 'support' }),
       });
       onSent();
     } catch (error) {

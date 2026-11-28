@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { d1Request } from '../lib/d1Api';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react'; // Removed 'Search' icon
+import { Eye, EyeOff, Search, Play, Film } from 'lucide-react';
 import { getCachedUser, getCached, setCached } from '../lib/cache';
 import FeedPostCard from '../components/FeedPostCard';
 import PullToRefresh from '../components/PullToRefresh';
@@ -17,6 +17,11 @@ export default function Home() {
   const [showDemo, setShowDemo] = useState(true);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [openPost, setOpenPost] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'posts' | 'videos'>('posts');
+  const [activeFeed, setActiveFeed] = useState<'for_you' | 'following'>('for_you');
+  const [videos, setVideos] = useState<any[]>([]);
+  const [videosLoading, setVideosLoading] = useState(false);
+  const [videosLoaded, setVideosLoaded] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,19 +29,19 @@ export default function Home() {
       const user = await getCachedUser();
       if (user) setUserId(user.id);
 
-      const cached = getCached<any[]>('home_posts');
+      const cached = getCached<any[]>('home_posts_for_you');
       if (cached) {
         setPosts(cached);
         setLoading(false);
       }
-      await fetchPosts();
+      await fetchPosts('for_you');
     };
     init();
   }, []);
 
-  const fetchPosts = useCallback(async () => {
+  const fetchPosts = useCallback(async (scope: 'for_you' | 'following' = 'for_you') => {
     try {
-      const { data } = await d1Request<{ data: any[] }>('/api/feed?limit=40');
+      const { data } = await d1Request<{ data: any[] }>(`/api/feed?limit=40&scope=${scope}`);
       const feed = (data || []).map((post: any) => ({
         ...post,
         user_id: post.author_id,
@@ -46,7 +51,7 @@ export default function Home() {
         comments_count: post.comments_count || 0,
       }));
       setPosts(feed);
-      setCached('home_posts', feed);
+      setCached(`home_posts_${scope}`, feed);
       setFollowingIds(new Set(feed.filter((post: any) => post.is_following_author).map((post: any) => post.author_id)));
       setLikedPosts(new Set(feed.filter((post: any) => post.is_liked).map((post: any) => post.id)));
       setSavedPosts(new Set(feed.filter((post: any) => post.is_saved).map((post: any) => post.id)));
@@ -58,8 +63,26 @@ export default function Home() {
   }, []);
 
   const handleRefresh = async () => {
-    await fetchPosts();
+    if (activeTab === 'videos') {
+      setVideosLoading(true);
+      try { const result = await d1Request<{data:any[]}>('/api/reels?limit=12'); setVideos(result.data || []); setVideosLoaded(true); }
+      catch (error) { console.error('Could not refresh videos:', error); }
+      finally { setVideosLoading(false); }
+      return;
+    }
+    await fetchPosts(activeFeed);
   };
+
+  useEffect(() => {
+    if (activeTab !== 'videos' || videosLoaded) return;
+    let cancelled = false;
+    setVideosLoading(true);
+    d1Request<{data:any[]}>('/api/reels?limit=12')
+      .then(result => { if (!cancelled) { setVideos(result.data || []); setVideosLoaded(true); } })
+      .catch(error => { if (!cancelled) { console.error('Could not load videos:', error); setVideosLoaded(true); } })
+      .finally(() => { if (!cancelled) setVideosLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, videosLoaded]);
 
   const handleLike = async (postId: string) => {
     if (!userId) return;
@@ -93,12 +116,12 @@ export default function Home() {
       setFollowingIds(prev => { const n = new Set(prev); n.delete(authorId); return n; });
     }
     setPosts(prev => prev.map(p => p.user_id === authorId ? { ...p, is_following_author: isNowFollowing } : p));
-    setCached('home_posts', null);
+    setCached(`home_posts_${activeFeed}`, null);
   };
 
   const handleCommentAdded = (postId: string) => {
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p));
-    setCached('home_posts', null);
+    setCached(`home_posts_${activeFeed}`, null);
   };
 
   const visible = posts.filter(p => showDemo || !p.is_demo);
@@ -118,27 +141,49 @@ export default function Home() {
         
         {/* Header without search bar */}
         <div className="flex justify-between items-center mb-3 px-2 mt-1">
-          <h1 className="text-[16px] font-bold text-navy dark:text-white">Home Feed</h1>
-          <button
+          <h1 className="text-[16px] font-bold text-navy dark:text-white">Home</h1>
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/search?context=home')} aria-label="Search CenPaya" className="w-9 h-9 rounded-full bg-white dark:bg-darkcard text-navy dark:text-white flex items-center justify-center shadow-sm"><Search size={17}/></button>
+            <button
             onClick={() => setShowDemo(v => !v)}
             className="text-[11px] font-semibold text-mute flex items-center gap-1 cursor-pointer"
           >
             {showDemo ? <><Eye size={13} /> Hide demo</> : <><EyeOff size={13} /> Show demo</>}
-          </button>
+            </button>
+          </div>
         </div>
 
-        {visible.length === 0 && (
-          <div className="bg-white dark:bg-darkcard p-6 rounded-card shadow-soft text-center">
-            <p className="text-[13px] font-bold text-navy dark:text-white">No posts yet</p>
-            <p className="text-[11px] text-mute mt-1">Be the first to share something.</p>
+        <div className="grid grid-cols-2 gap-2 mb-4 px-1">
+          <button onClick={() => setActiveTab('posts')} className={`rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-2 ${activeTab === 'posts' ? 'bg-accent text-white' : 'bg-white dark:bg-darkcard text-gray-500'}`}><Eye size={14}/> Posts</button>
+          <button onClick={() => setActiveTab('videos')} className={`rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-2 ${activeTab === 'videos' ? 'bg-accent text-white' : 'bg-white dark:bg-darkcard text-gray-500'}`}><Film size={14}/> Videos</button>
+        </div>
+        {activeTab === 'posts' && (
+          <div className="grid grid-cols-2 gap-2 mb-3 px-1">
+            <button
+              onClick={() => { setActiveFeed('for_you'); void fetchPosts('for_you'); }}
+              aria-pressed={activeFeed === 'for_you'}
+              className={`rounded-lg py-2 text-[11px] font-bold ${activeFeed === 'for_you' ? 'bg-navy text-white dark:bg-accent' : 'bg-white dark:bg-darkcard text-gray-500'}`}
+            >For You</button>
+            <button
+              onClick={() => { setActiveFeed('following'); void fetchPosts('following'); }}
+              aria-pressed={activeFeed === 'following'}
+              className={`rounded-lg py-2 text-[11px] font-bold ${activeFeed === 'following' ? 'bg-navy text-white dark:bg-accent' : 'bg-white dark:bg-darkcard text-gray-500'}`}
+            >Following & Friends</button>
           </div>
         )}
 
-        {visible.map(post => (
+        {activeTab === 'posts' && visible.length === 0 && (
+          <div className="bg-white dark:bg-darkcard p-6 rounded-card shadow-soft text-center">
+            <p className="text-[13px] font-bold text-navy dark:text-white">{activeFeed === 'following' ? 'No posts from your network yet' : 'No posts yet'}</p>
+            <p className="text-[11px] text-mute mt-1">{activeFeed === 'following' ? 'Follow people to see their posts here. Mutual follows appear as friends.' : 'Be the first to share something.'}</p>
+          </div>
+        )}
+
+        {activeTab === 'posts' && visible.map(post => (
           <FeedPostCard
             key={post.id}
             post={post}
-            readOnly={true}
+            readOnly={false}
             currentUserId={userId}
             isLiked={likedPosts.has(post.id)}
             isSaved={savedPosts.has(post.id)}
@@ -146,8 +191,23 @@ export default function Home() {
             onComment={() => setOpenPost(post.id)}
             onShare={() => handleShare(post.id)}
             onSave={() => handleSave(post.id)}
+            onSaveToFolder={() => setSavedPosts(prev => new Set(prev).add(post.id))}
             onFollowToggle={(nowFollowing) => handleFollowToggle(post.user_id, nowFollowing)}
           />
+        ))}
+
+        {activeTab === 'videos' && (videosLoading ? (
+          <div className="py-10 text-center text-xs text-gray-500">Loading videos…</div>
+        ) : videos.length === 0 ? (
+          <div className="bg-white dark:bg-darkcard rounded-2xl p-6 text-center"><Film size={28} className="mx-auto text-gray-400 mb-2"/><p className="text-xs font-bold text-navy dark:text-white">No videos yet</p><p className="text-[10px] text-gray-500 mt-1">Published videos will appear here.</p></div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {videos.map(video => <button key={video.video_id} onClick={() => navigate('/reels')} className="relative text-left overflow-hidden rounded-2xl bg-gradient-to-br from-[#092f21] via-[#17613f] to-[#07150f] min-h-48 p-3 flex flex-col justify-between text-white">
+              <span className="self-center my-7 w-12 h-12 rounded-full bg-white/20 flex items-center justify-center"><Play size={22} fill="currentColor"/></span>
+              <span className="text-[11px] font-bold line-clamp-2">{video.content || 'Watch video'}</span>
+              <span className="text-[9px] opacity-80">@{video.username || video.display_name || 'CenPaya user'}</span>
+            </button>)}
+          </div>
         ))}
       </div>
 

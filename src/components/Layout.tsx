@@ -1,8 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Store, MessageCircle, User, Plus, Bell, Search, Menu, Shield, Briefcase } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { d1Me, d1Request } from '../lib/d1Api';
-import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
+import { d1Me, d1Request, D1ApiError } from '../lib/d1Api';
 import Sidebar from './Sidebar';
 import { useSound } from '../contexts/sound';
 import { MessageToast } from './MessageToast';
@@ -17,6 +16,9 @@ export default function Layout() {
   const [staffRole, setStaffRole] = useState<string | null>(null);
   const [staffBadge, setStaffBadge] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authUnavailable, setAuthUnavailable] = useState(false);
+  const [authRetry, setAuthRetry] = useState(0);
 
   const showMainSearch = location.pathname === '/home';
   const activeChatId = location.pathname.startsWith('/chat/') ? location.pathname.split('/')[2] : null;
@@ -42,52 +44,118 @@ export default function Layout() {
   useEffect(() => {
     let active = true;
     let timer: number | undefined;
-    const init = async () => {
-      let user;
-      try { ({ user } = await d1Me()); } catch { return; }
-      if (!user || !active) return;
-      setUserId(user.id);
-      let role = user.role || '';
-      if (role === 'user') {
-        try {
-          const workspace = await d1Request<{ data: { role: string } }>('/api/staff/profile');
-          if (workspace.data?.role === 'staff_member') role = 'staff_member';
-        } catch { /* Not every user has a staff workspace. */ }
-      }
-      if (['support_agent', 'staff_member', 'super_admin', 'owner'].includes(role)) {
-        setStaffRole(role);
-        if (role !== 'staff_member') {
-          const [ticketsRes, reportsRes] = await Promise.all([
-            supabaseWorkerRequest<{ data: any[] }>('/api/admin/staff/tickets?scope=mine').catch(() => ({ data: [] })),
-            supabaseWorkerRequest<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
-          ]);
-          const ticketCount = (ticketsRes.data || []).reduce((sum: number, ticket: any) => sum + (ticket.unread || 0), 0);
-          const reportCount = (reportsRes.data || []).length;
-          if (active) setStaffBadge(ticketCount + reportCount);
+
+    const refreshStaffWorkspace = async () => {
+      let role = '';
+      let engineeringRoles: string[] = [];
+      try {
+        const { user } = await d1Me();
+        if (!active || !user) return;
+        if (user.role === 'owner' || user.role === 'super_admin') {
+          role = user.role;
+        } else {
+          try {
+            const teamProfile = await d1Request<{ data: { ok?: boolean; role?: string } }>('/api/team/workspace/profile');
+            if (teamProfile.data?.ok && teamProfile.data.role) role = teamProfile.data.role;
+          } catch { /* An account without a team appointment is expected. */ }
+          if (!role && ['vice_admin', 'support_agent'].includes(user.role)) role = user.role;
         }
-      }
-      const refreshNotifications = async () => {
         try {
-          const result = await d1Request<{ data: any[] }>('/api/notifications?limit=100');
-          if (!active) return;
-          const next = (result.data || []).filter((notification: any) => !notification.is_read).length;
-          setUnreadNotifs(previous => {
-            if (next > previous) play('notification_received');
-            return next;
-          });
-        } catch { /* Retry on the next polling cycle. */ }
-      };
-      await refreshNotifications();
-      timer = window.setInterval(() => { void refreshNotifications(); }, 15000);
+          const engineering = await d1Request<{ data: { ok?: boolean; appointments?: { role: string }[] } }>('/api/engineering/profile');
+          if (engineering.data?.ok) engineeringRoles = (engineering.data.appointments || []).map(a => a.role);
+        } catch { /* No active engineering appointment. */ }
+        if (!role && engineeringRoles.length) role = 'engineering_member';
+      } catch { /* Session restoration can be retried on the next polling cycle. */ }
+
+      if (!active) return;
+      const validRoles = ['support_agent', 'staff_member', 'vice_admin', 'super_admin', 'owner', 'engineering_member'];
+      const nextRole = validRoles.includes(role) ? role : null;
+      setStaffRole(nextRole);
+      if (!nextRole || nextRole === 'staff_member' || nextRole === 'engineering_member') {
+        setStaffBadge(0);
+        return;
+      }
+
+      if (nextRole === 'support_agent') {
+        const tickets = await d1Request<{ data: any[] }>('/api/staff/tickets?scope=mine').catch(() => ({ data: [] }));
+        if (!active) return;
+        setStaffBadge((tickets.data || []).reduce((sum: number, ticket: any) => sum + (Number(ticket.unread) || 0), 0));
+        return;
+      }
+      if (nextRole === 'owner' || nextRole === 'super_admin') {
+        const [reports, tickets] = await Promise.all([
+          d1Request<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
+          d1Request<{ data: any[] }>('/api/staff/tickets?scope=all&queue_type=admin').catch(() => ({ data: [] })),
+        ]);
+        if (!active) return;
+        const unreadAdminTickets = (tickets.data || []).reduce((sum: number, ticket: any) => sum + (Number(ticket.unread) || 0), 0);
+        setStaffBadge((reports.data || []).length + unreadAdminTickets);
+        return;
+      }
+      setStaffBadge(0);
     };
+
+    const refreshNotifications = async () => {
+      try {
+        const result = await d1Request<{ data: any[] }>('/api/notifications?limit=100');
+        if (!active) return;
+        const next = (result.data || []).filter((notification: any) => !notification.is_read).length;
+        setUnreadNotifs(previous => {
+          if (next > previous) play('notification_received');
+          return next;
+        });
+      } catch { /* Retry on the next polling cycle. */ }
+    };
+
+    const init = async () => {
+      try {
+        const { user } = await d1Me();
+        if (!user || !active) return;
+        setUserId(user.id);
+        setAuthReady(true);
+        setAuthUnavailable(false);
+        await Promise.all([refreshStaffWorkspace(), refreshNotifications()]);
+        if (!active) return;
+        timer = window.setInterval(() => {
+          void refreshStaffWorkspace();
+          void refreshNotifications();
+        }, 15000);
+      } catch (error) {
+        if (!active) return;
+        if (error instanceof D1ApiError && error.status === 401) {
+          navigate('/login', { replace: true, state: { from: location.pathname } });
+          return;
+        }
+        setAuthUnavailable(true);
+      }
+    };
+
     void init();
     return () => { active = false; if (timer) window.clearInterval(timer); };
-  }, [play]);
+  }, [play, navigate, location.pathname, authRetry]);
 
   const goToPanel = () => {
     if (staffRole === 'owner' || staffRole === 'super_admin') navigate('/admin');
+    else if (staffRole === 'vice_admin') navigate('/vice-admin');
+    else if (staffRole === 'engineering_member') navigate('/engineering');
     else if (staffRole === 'support_agent' || staffRole === 'staff_member') navigate('/staff');
   };
+
+  if (!authReady) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <div className="h-8 w-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {authUnavailable ? 'Unable to verify your session. Check your connection and try again.' : 'Checking your session…'}
+        </p>
+        {authUnavailable && (
+          <button onClick={() => { setAuthUnavailable(false); setAuthReady(false); setAuthRetry(value => value + 1); }} className="px-4 py-2 rounded-xl bg-brand text-white text-sm font-semibold">
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="h-[100dvh] bg-offwhite dark:bg-darkbg flex flex-col overflow-hidden">
