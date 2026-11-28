@@ -104,7 +104,7 @@ export default function StaffTicketThread() {
         </div>
       </header>
 
-      {ticket.assigned_agent_id === workspaceUserId || ['owner','super_admin'].includes(workspaceRole) ? (
+      {ticket.assigned_to_user_id === workspaceUserId || ['owner','super_admin'].includes(workspaceRole) ? (
       <div className="flex gap-1.5 px-3 py-2 bg-white dark:bg-darkcard border-b border-gray-100 dark:border-darkline overflow-x-auto scrollbar-hide">
         {ticket.status !== 'in_progress' && (
           <button onClick={() => setStatus('in_progress')} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-blue-50 text-blue-600">
@@ -132,7 +132,7 @@ export default function StaffTicketThread() {
       </div>
       ) : (
         <div className="px-3 py-2 bg-white dark:bg-darkcard border-b border-gray-100 dark:border-darkline flex items-center gap-2">
-          {workspaceRole === 'support_agent' && !ticket.assigned_agent_id ? (
+          {workspaceRole === 'support_agent' && !ticket.assigned_to_user_id ? (
             <button onClick={() => void claimTicket()} className="text-[10px] font-bold px-3 py-1.5 rounded-full bg-accent text-white">Claim this ticket to reply</button>
           ) : (
             <p className="text-[10px] text-gray-500">This ticket is assigned to another agent. You can view it but cannot reply or change its status.</p>
@@ -168,7 +168,7 @@ export default function StaffTicketThread() {
         <div ref={bottomRef} />
       </main>
 
-      {ticket.assigned_agent_id === workspaceUserId || ['owner','super_admin'].includes(workspaceRole) ? (
+      {ticket.assigned_to_user_id === workspaceUserId || ['owner','super_admin'].includes(workspaceRole) ? (
       <form
         onSubmit={(e) => { e.preventDefault(); send(); }}
         className="fixed bottom-0 left-0 right-0 bg-white dark:bg-darkcard border-t border-gray-100 dark:border-darkline p-2 flex gap-2 z-10"
