@@ -5,12 +5,12 @@ import { ArrowLeft, Send, Check, XCircle, RotateCcw } from 'lucide-react';
 
 export type TicketThreadVariant = 'staff' | 'admin';
 const THEME = {
-  staff: { root: 'flex flex-col h-screen bg-offwhite dark:bg-darkbg -mx-3 -my-3', header: 'bg-navy dark:bg-darkcard', back: '/staff', mine: 'bg-accent', label: 'You (Staff)', placeholder: 'Reply as staff...' },
-  admin: { root: 'flex flex-col h-screen bg-offwhite dark:bg-darkbg', header: 'bg-gradient-to-r from-brand to-brand-dark', back: '/admin/inbox', mine: 'bg-navy', label: 'You (Admin)', placeholder: 'Reply as admin...' },
+  staff: { root: 'flex flex-col h-screen bg-offwhite dark:bg-darkbg -mx-3 -my-3', header: 'bg-navy dark:bg-darkcard', mine: 'bg-accent', label: 'You (Staff)', placeholder: 'Reply as staff...' },
+  admin: { root: 'flex flex-col h-screen bg-offwhite dark:bg-darkbg', header: 'bg-gradient-to-r from-brand to-brand-dark', mine: 'bg-navy', label: 'You (Admin)', placeholder: 'Reply as admin...' },
 };
 
 /** Shared ticket thread; server-side Worker authorization is not replaced by UI state. */
-export default function TicketThreadPanel({ variant }: { variant: TicketThreadVariant }) {
+export default function TicketThreadPanel({ variant, backTo }: { variant: TicketThreadVariant; backTo: string }) {
   const theme = THEME[variant];
   const { id } = useParams();
   const navigate = useNavigate();
@@ -56,14 +56,14 @@ export default function TicketThreadPanel({ variant }: { variant: TicketThreadVa
   return (
     <div className={theme.root}>
       <header className={theme.header + ' text-white px-3 py-3 flex items-center gap-2 sticky top-0 z-10'}>
-        <button onClick={() => navigate(theme.back)}><ArrowLeft size={18} /></button>
+        <button onClick={() => navigate(backTo)}><ArrowLeft size={18} /></button>
         <div className="flex-1 min-w-0"><p className="text-[12px] font-bold truncate">{ticket.subject}</p><p className="text-[9px] opacity-80 capitalize">@{ticket.user_username || ticket.user_id?.slice(0, 8)} · {ticket.status}</p></div>
       </header>
       <div className="flex gap-1.5 px-3 py-2 bg-white dark:bg-darkcard border-b border-gray-100 dark:border-darkline overflow-x-auto scrollbar-hide">
         {ticket.status !== 'in_progress' && <button onClick={() => setStatus('in_progress')} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-blue-50 text-blue-600">{variant === 'admin' ? 'Mark in progress' : 'In progress'}</button>}
         {ticket.status !== 'resolved' && <button onClick={() => setStatus('resolved')} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-green-50 text-green-600 flex items-center gap-1"><Check size={11} /> Resolved</button>}
-        {ticket.status !== 'closed' && <button onClick={() => setStatus('closed')} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 flex items-center gap-1>{variant === 'admin' && <XCircle size={11} />} Close</button>}
-        {ticket.status !== 'open' && <button onClick={() => setStatus('open')} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-yellow-50 text-yellow-700 flex items-center gap-1>{variant === 'admin' && <RotateCcw size={11} />} Reopen</button>}
+        {ticket.status !== 'closed' && <button onClick={() => setStatus('closed')} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 flex items-center gap-1">{variant === 'admin' && <XCircle size={11} />} Close</button>}
+        {ticket.status !== 'open' && <button onClick={() => setStatus('open')} className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-full bg-yellow-50 text-yellow-700 flex items-center gap-1">{variant === 'admin' && <RotateCcw size={11} />} Reopen</button>}
       </div>
       <main className="flex-1 overflow-y-auto p-3 pb-24">
         {messages.map(m => {
