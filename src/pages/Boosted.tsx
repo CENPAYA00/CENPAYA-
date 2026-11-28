@@ -261,7 +261,7 @@ export default function Boosted() {
           <Sparkles size={20} className="text-[#12935a] mt-0.5 shrink-0" />
           <div className="flex-1">
             <p className="text-[14px] font-bold text-[#0a3d2b] dark:text-white">Premium free boosts</p>
-            <p className="text-[13px] text-[#3e4f47] dark:text-gray-300 mt-0.5">{elig.free_boosts_remaining} of 2 free tier-1 boosts remaining this month</p>
+            <p className="text-[13px] text-[#3e4f47] dark:text-gray-300 mt-0.5">{Number(elig.free_boosts_remaining) > 0 ? '1 of 1 free 3-day boost available this month' : 'Your monthly free 3-day boost has been used'}</p>
           </div>
         </div>
       )}
@@ -269,7 +269,7 @@ export default function Boosted() {
       <p className="text-[12px] font-bold text-mute uppercase tracking-widest mb-3">Boost plans</p>
       <div className="grid grid-cols-2 gap-3 mb-6">
         {tiers.map(t => {
-          const isFree = t.id === 1 && canUseFree;
+          const isFree = t.duration_days === 3 && canUseFree;
           const isSel = selectedTier?.id === t.id;
           return (
             <button key={t.id} onClick={() => { setSelectedTier(t); }}
@@ -322,7 +322,7 @@ export default function Boosted() {
               </div>
               <p className="text-[18px] font-bold text-[#12935a]">{selectedTier.price.toLocaleString()} XAF</p>
             </div>
-            {selectedTier.id === 1 && canUseFree ? (
+            {selectedTier.duration_days === 3 && canUseFree ? (
               <button onClick={() => purchase(true)} disabled={busy} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-[14px] text-[15px] disabled:opacity-50 active:scale-95 transition-transform">
                 {busy ? 'Processing...' : 'Use free premium boost'}
               </button>
