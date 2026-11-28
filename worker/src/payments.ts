@@ -148,7 +148,7 @@ async function retryRpcTrue(
 
 async function enforcePaymentRateLimit(
   userId: string,
-  action: "topup" | "withdrawal" | "payment_status",
+  action: "topup" | "withdrawal" | "payment_status" | "boost",
   env: Env,
   headers: Headers,
 ): Promise<Response | null> {
@@ -685,6 +685,64 @@ export async function handleAuthenticatedPaymentApi(
         ? null : data.gateway_reference,
     };
     return jsonResponse({ success: true, data: visible }, 200, headers);
+  }
+
+  // Boost reads and wallet charges are mediated by the authenticated Worker.
+  // The browser never receives a Supabase session or calls boost RPCs directly.
+  if (method === "GET" && url.pathname === "/api/v1/boosts/tiers") {
+    try {
+      const db = await serviceClient(env, userId);
+      const { data, error } = await db.rpc("worker_list_boost_tiers", { p_user_id: userId });
+      if (error) return jsonResponse({ success: false, error: "boost_tiers_unavailable" }, 503, headers);
+      return jsonResponse({ success: true, data: Array.isArray(data) ? data : [] }, 200, headers);
+    } catch {
+      return jsonResponse({ success: false, error: "boost_tiers_unavailable" }, 503, headers);
+    }
+  }
+
+  if (method === "GET" && url.pathname === "/api/v1/boosts/eligibility") {
+    try {
+      const db = await serviceClient(env, userId);
+      const { data, error } = await db.rpc("worker_get_boost_eligibility", { p_user_id: userId });
+      if (error) return jsonResponse({ success: false, error: "boost_eligibility_unavailable" }, 503, headers);
+      return jsonResponse({ success: true, data }, 200, headers);
+    } catch {
+      return jsonResponse({ success: false, error: "boost_eligibility_unavailable" }, 503, headers);
+    }
+  }
+
+  if (method === "POST" && url.pathname === "/api/v1/boosts") {
+    const limited = await enforcePaymentRateLimit(userId, "boost", env, headers);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 4_096);
+    const listingId = text(body?.listing_id, 64);
+    const tierCode = text(body?.tier_code, 40);
+    const idempotencyKey = text(body?.idempotency_key, 64);
+    const useFree = body?.use_free === true;
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!body || Object.keys(body).some(key => !["listing_id", "tier_code", "idempotency_key", "use_free"].includes(key)) ||
+        !uuidPattern.test(listingId) || (useFree ? tierCode !== "boost_3d" : (!/^[a-z0-9_]{2,40}$/i.test(tierCode) || !uuidPattern.test(idempotencyKey)))) {
+      return jsonResponse({ success: false, error: "invalid_boost_request" }, 400, headers);
+    }
+    try {
+      const db = await serviceClient(env, userId);
+      const { data, error } = useFree
+        ? await db.rpc("worker_claim_monthly_boost", { p_user_id: userId, p_listing_id: listingId })
+        : await db.rpc("cenpaya_charge_boost", {
+            p_boost_id: idempotencyKey, p_listing_id: listingId, p_user_id: userId,
+            p_tier: tierCode, p_duration_hours: null,
+          });
+      const result = object(data);
+      if (error) return jsonResponse({ success: false, error: "boost_payment_unavailable" }, 502, headers);
+      if (result.ok !== true) {
+        const message = String(result.error || "boost_failed");
+        const status = message.toLowerCase().includes("insufficient") ? 409 : 400;
+        return jsonResponse({ success: false, error: message, data: result }, status, headers);
+      }
+      return jsonResponse({ success: true, data: result }, 200, headers);
+    } catch {
+      return jsonResponse({ success: false, error: "boost_payment_unavailable" }, 503, headers);
+    }
   }
 
   return null;
