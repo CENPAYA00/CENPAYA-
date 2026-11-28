@@ -362,14 +362,6 @@ export async function handleCommunityRoutes(request:Request,env:Env,context:Rout
     const result = await env.DB.prepare("UPDATE chat_thread_members SET left_at=" + NOW + " WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatLeave[1], user.id).run();
     return result.meta.changes ? json({ success: true }) : fail("Conversation not found", 404);
   }
-  const chatDeleteMessage = path.match(/^\/api\/chat\/threads\/([^/]+)\/messages\/([^/]+)$/);
-  if (chatDeleteMessage && method === "DELETE") {
-    if (!user) return fail("Unauthorized", 401);
-    const member = await env.DB.prepare("SELECT 1 FROM chat_thread_members WHERE thread_id=? AND user_id=? AND left_at IS NULL").bind(chatDeleteMessage[1], user.id).first();
-    if (!member) return fail("Conversation not found", 404);
-    const result = await env.DB.prepare("UPDATE chat_messages SET status='deleted' WHERE id=? AND thread_id=? AND sender_id=? AND status<>'deleted'").bind(chatDeleteMessage[2], chatDeleteMessage[1], user.id).run();
-    return result.meta.changes ? json({ success: true }) : fail("Message not found", 404);
-  }
   const forwardTargets = path.match(/^\/api\/chat\/threads\/([^/]+)\/forward-targets$/);
   if (forwardTargets && method === "GET") {
     if (!user) return fail("Unauthorized", 401);
