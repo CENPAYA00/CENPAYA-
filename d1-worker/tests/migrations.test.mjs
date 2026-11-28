@@ -17,7 +17,7 @@ test("D1 migration files use unique numeric identifiers", async () => {
     versions.set(version, file);
   }
 
-  for (const version of ["0078", "0079", "0080", "0081", "0082"]) {
+  for (const version of ["0078", "0079", "0080", "0081", "0082", "0083"]) {
     assert.ok(versions.has(version), `Expected forward migration ${version} to exist`);
   }
 });
