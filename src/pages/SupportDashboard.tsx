@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MessageCircle, HeadphonesIcon, Flag } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 import { useI18n } from '../contexts/i18n';
@@ -22,12 +22,12 @@ export default function SupportDashboard() {
       try {
         const [ticketsResult, disputesRes] = await Promise.all([
           d1Request<{ data: any[] }>('/api/support/tickets'),
-          supabase.from('order_disputes').select('id', { count: 'exact', head: true }).eq('raised_by', me.id).neq('status', 'resolved'),
+          supabaseWorkerRequest<{ data: { count: number } }>('/api/v1/me/disputes/active-count'),
         ]);
 
         const tickets = ticketsResult.data || [];
         setOpenTickets(tickets.filter((ticket: any) => ['open', 'in_progress', 'waiting'].includes(ticket.status)).length);
-        setActiveDisputes(disputesRes.count || 0);
+        setActiveDisputes(disputesRes.data?.count || 0);
         setRecentTickets(tickets.slice(0, 5));
       } catch (error) {
         console.error('Could not load support dashboard:', error);
