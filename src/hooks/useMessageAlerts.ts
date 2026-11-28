@@ -46,7 +46,7 @@ export function useMessageAlerts(me: string | null, activeChannelId: string | nu
   useEffect(() => {
     if (!me) return;
     void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 5000);
+    const timer = window.setInterval(() => { void refresh(); }, 15000);
     return () => window.clearInterval(timer);
   }, [me, refresh]);
 
