@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { ArrowLeft, Shield, Upload, Check, AlertTriangle, Wallet, Clock } from 'lucide-react';
@@ -113,12 +113,18 @@ export default function ServiceOrder() {
       const compressed = deliveryFile.type.startsWith('image/')
         ? await compressImage(deliveryFile)
         : deliveryFile;
-      const ext = compressed.name.split('.').pop();
-      const path = `service-deliveries/${order.id}/${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('listings').upload(path, compressed);
-      if (upErr) { setErrorMsg(upErr.message); setBusy(false); return; }
-      const { data } = supabase.storage.from('listings').getPublicUrl(path);
-      fileUrl = data.publicUrl;
+      try {
+        const form = new FormData();
+        form.append('file', compressed);
+        form.append('folder', compressed.type.startsWith('image/') ? 'services/images' : 'services/documents');
+        const uploaded = await d1Request<{ url: string }>('/api/market/media', { method: 'POST', body: form });
+        fileUrl = uploaded.url || null;
+        if (!fileUrl) throw new Error('Upload did not return a media URL.');
+      } catch (error) {
+        setErrorMsg(error instanceof Error ? error.message : 'File upload failed.');
+        setBusy(false);
+        return;
+      }
     }
 
     try {
