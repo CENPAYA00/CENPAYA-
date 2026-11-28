@@ -35,7 +35,7 @@ export default function StaffPanel() {
       if (teamProfile?.role === 'support_agent' || teamProfile?.role === 'owner' || teamProfile?.role === 'super_admin') {
         const staffProfile = await d1Request<{ data: any }>('/api/staff/profile');
         setProfile({ ...teamProfile, ...staffProfile.data, source: 'd1' });
-        const ticketRes = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}`);
+        const ticketRes = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}&queue_type=support`);
         setTickets(ticketRes.data || []);
         setTasks([]);
         return;
