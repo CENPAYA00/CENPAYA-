@@ -2,7 +2,7 @@ import type { Env } from "./types.js";
 import { constantTimeEqual, signD1IdentityAssertion } from "./security.js";
 import { auth, rateLimit } from "./auth.js";
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^(?:00000000-0000-0000-0000-000000000000|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const json=(data:unknown,status=200,extraHeaders:HeadersInit={})=>{const headers=new Headers(extraHeaders);headers.set("Content-Type","application/json; charset=utf-8");headers.set("Cache-Control","no-store");return new Response(JSON.stringify(data),{status,headers});};
 const fail=(message:string,status=400)=>json({success:false,error:message},status);
 const str=(v:unknown,max=500)=>typeof v==="string"?v.trim().slice(0,max):"";
