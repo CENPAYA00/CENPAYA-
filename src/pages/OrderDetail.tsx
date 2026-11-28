@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { d1Request } from '../lib/d1Api';
 import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Me } from '../lib/d1Api';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -38,16 +38,21 @@ export default function OrderDetail() {
     if (!photoFile) return setErrorMsg('Upload photo proof before marking delivered.');
     setActionLoading(true);
 
-    const filePath = `proofs/${order.id}_${Date.now()}_${photoFile.name}`;
-    const { error: upErr } = await supabase.storage.from('listings').upload(filePath, photoFile);
-    if (upErr) { setErrorMsg('Upload failed: ' + upErr.message); setActionLoading(false); return; }
-    const { data: urlData } = supabase.storage.from('listings').getPublicUrl(filePath);
-
+    let photoUrl = '';
+    let photoHash = '';
     try {
+      const form = new FormData();
+      form.append('file', photoFile);
+      form.append('folder', 'listings/images');
+      const uploaded = await d1Request<{ url: string }>('/api/market/media', { method: 'POST', body: form });
+      photoUrl = uploaded.url || '';
+      if (!photoUrl) throw new Error('Upload did not return a media URL.');
+      const digest = await crypto.subtle.digest('SHA-256', await photoFile.arrayBuffer());
+      photoHash = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
       await supabaseWorkerRequest(`/api/v1/orders/${encodeURIComponent(order.id)}/action`, {
-        method: 'POST', body: JSON.stringify({ action: 'mark_delivered', photo_url: urlData.publicUrl, photo_hash: filePath }),
+        method: 'POST', body: JSON.stringify({ action: 'mark_delivered', photo_url: photoUrl, photo_hash: photoHash }),
       });
-      setOrder({ ...order, seller_confirmed_delivered: true, photo_proof_url: urlData.publicUrl });
+      setOrder({ ...order, seller_confirmed_delivered: true, photo_proof_url: photoUrl });
       alert('Marked delivered.');
     } catch (error: unknown) { setErrorMsg(error instanceof Error ? error.message : 'Could not mark order delivered.'); }
     setActionLoading(false);
