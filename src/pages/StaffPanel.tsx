@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { MessageSquare, Check, Shield } from 'lucide-react';
 
@@ -17,14 +16,12 @@ export default function StaffPanel() {
   const load = async () => {
     setLoading(true);
     try {
-      let teamProfile: any = null;
-      try {
-        const result = await d1Request<{ data: any }>('/api/team/workspace/profile');
-        if (result.data?.ok) teamProfile = result.data;
-      } catch { /* Older appointments may still exist in the legacy team service. */ }
+      const result = await d1Request<{ data: any }>('/api/team/workspace/profile');
+      const teamProfile = result.data;
+      if (!teamProfile?.ok) throw new Error('No active staff or support appointment was found.');
 
-      if (teamProfile?.role === 'vice_admin') { navigate('/vice-admin', { replace: true }); return; }
-      if (teamProfile?.role === 'staff_member') {
+      if (teamProfile.role === 'vice_admin') { navigate('/vice-admin', { replace: true }); return; }
+      if (teamProfile.role === 'staff_member') {
         setProfile({ ...teamProfile, source: 'd1' });
         const taskRes = await d1Request<{ data: any[] }>('/api/staff/tasks');
         setTasks(taskRes.data || []);
@@ -32,7 +29,7 @@ export default function StaffPanel() {
         return;
       }
 
-      if (teamProfile?.role === 'support_agent' || teamProfile?.role === 'owner' || teamProfile?.role === 'super_admin') {
+      if (['support_agent','owner','super_admin'].includes(teamProfile.role)) {
         const staffProfile = await d1Request<{ data: any }>('/api/staff/profile');
         setProfile({ ...teamProfile, ...staffProfile.data, source: 'd1' });
         const ticketRes = await d1Request<{ data: any[] }>(`/api/staff/tickets?scope=${tab}&queue_type=support`);
@@ -40,28 +37,7 @@ export default function StaffPanel() {
         setTasks([]);
         return;
       }
-
-      // Compatibility path for appointments that have not yet been migrated to D1.
-      const legacy = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_my_profile', {
-        method: 'POST', body: JSON.stringify({ args: {} }),
-      });
-      if (!legacy.data?.ok) throw new Error('No active staff or support appointment was found.');
-      const currentProfile = legacy.data;
-      if (currentProfile.role === 'vice_admin') { navigate('/vice-admin', { replace: true }); return; }
-      setProfile(currentProfile);
-      if (currentProfile.role === 'staff_member') {
-        const taskRes = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_my_tasks', { method: 'POST', body: JSON.stringify({ args: {} }) });
-        if (!taskRes.data?.ok) throw new Error(taskRes.data?.error || 'Could not load assigned tasks.');
-        setTasks(taskRes.data.tasks || []);
-        setTickets([]);
-      } else {
-        const ticketsRes = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_list_tickets', {
-          method: 'POST', body: JSON.stringify({ args: { p_scope: tab } }),
-        });
-        if (!ticketsRes.data?.ok) throw new Error(ticketsRes.data?.error || 'Could not load support tickets.');
-        setTickets(ticketsRes.data.tickets || []);
-        setTasks([]);
-      }
+      throw new Error('This account does not have a staff workspace role.');
     } catch (error: any) {
       console.warn('Could not load staff workspace', error);
       navigate('/home');
@@ -70,16 +46,14 @@ export default function StaffPanel() {
 
   const updateTask = async (taskId: string, status: string) => {
     try {
-      if (profile?.source === 'd1') {
-        await d1Request(`/api/staff/tasks/${taskId}`, {
-          method: 'PATCH', body: JSON.stringify({ status }),
-        });
-      } else {
-        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/team_update_task', {
-          method: 'POST', body: JSON.stringify({ args: { p_task_id: taskId, p_status: status, p_body: taskNotes[taskId] || null, p_attachment_url: taskEvidence[taskId]?.trim() || null } }),
-        });
-        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not update task.');
-      }
+      await d1Request(`/api/staff/tasks/${taskId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status,
+          body: taskNotes[taskId] || '',
+          attachment_url: taskEvidence[taskId]?.trim() || '',
+        }),
+      });
       setTaskNotes(previous => ({ ...previous, [taskId]: '' }));
       setTaskEvidence(previous => ({ ...previous, [taskId]: '' }));
       await load();
@@ -90,14 +64,7 @@ export default function StaffPanel() {
 
   const claim = async (ticketId: string) => {
     try {
-      if (profile?.source === 'd1') {
-        await d1Request(`/api/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
-      } else {
-        const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/admin/rpc/staff_claim_ticket', {
-          method: 'POST', body: JSON.stringify({ args: { p_ticket_id: ticketId } }),
-        });
-        if (!result.data?.ok) throw new Error(result.data?.error || 'Could not claim ticket.');
-      }
+      await d1Request(`/api/staff/tickets/${encodeURIComponent(ticketId)}/claim`, { method: 'POST' });
       await load();
     } catch (error: any) { alert(error.message || 'Could not claim ticket'); }
   };
@@ -130,7 +97,7 @@ export default function StaffPanel() {
               </div>
               {task.description && <p className="text-[12px] text-gray-600 dark:text-gray-300 mt-2 whitespace-pre-wrap">{task.description}</p>}
               {task.due_at && <p className="text-[10px] text-gray-500 mt-2">Due {new Date(task.due_at).toLocaleString()}</p>}
-              {profile?.source !== 'd1' && <><textarea
+              <><textarea
                 value={taskNotes[task.id] || ''}
                 onChange={e => setTaskNotes(previous => ({ ...previous, [task.id]: e.target.value }))}
                 maxLength={5000}
@@ -144,7 +111,7 @@ export default function StaffPanel() {
                 maxLength={2048}
                 placeholder="Evidence or document link (optional)"
                 className="w-full mt-2 p-2.5 rounded-lg border border-gray-200 dark:border-darkline bg-gray-50 dark:bg-darkbg text-xs"
-              /></>}
+              /></>
               <div className="flex flex-wrap gap-2 mt-2">
                 {(profile?.source === 'd1' ? (['todo','in_progress','blocked','completed'] as const) : (['todo','in_progress','blocked','submitted'] as const)).filter(status => status !== task.status).map(status => (
                   <button key={status} onClick={() => void updateTask(task.id,status)} className="text-[10px] font-bold px-3 py-2 rounded-lg bg-[#e3f7ec] text-[#12935a]">
