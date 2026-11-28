@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Store, MessageCircle, User, Plus, Bell, Search, Menu, Shield, Briefcase } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { d1Me, d1Request } from '../lib/d1Api';
@@ -17,6 +17,8 @@ export default function Layout() {
   const [staffRole, setStaffRole] = useState<string | null>(null);
   const [staffBadge, setStaffBadge] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
 
   const showMainSearch = location.pathname === '/home';
   const activeChatId = location.pathname.startsWith('/chat/') ? location.pathname.split('/')[2] : null;
@@ -44,8 +46,23 @@ export default function Layout() {
     let timer: number | undefined;
     const init = async () => {
       let user;
-      try { ({ user } = await d1Me()); } catch { return; }
-      if (!user || !active) return;
+      try {
+        ({ user } = await d1Me());
+      } catch {
+        if (active) {
+          setAuthenticated(false);
+          setAuthLoading(false);
+        }
+        return;
+      }
+      if (!active) return;
+      if (!user) {
+        setAuthenticated(false);
+        setAuthLoading(false);
+        return;
+      }
+      setAuthenticated(true);
+      setAuthLoading(false);
       setUserId(user.id);
       let role = user.role || '';
       if (role === 'user') {
@@ -83,6 +100,13 @@ export default function Layout() {
     void init();
     return () => { active = false; if (timer) window.clearInterval(timer); };
   }, [play]);
+
+  if (authLoading) {
+    return <div className="min-h-screen flex items-center justify-center text-sm text-gray-500">Checking your session...</div>;
+  }
+  if (!authenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
 
   const goToPanel = () => {
     if (staffRole === 'owner' || staffRole === 'super_admin') navigate('/admin');
