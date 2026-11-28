@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { X, Sparkles } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseWorkerRequest } from '../lib/supabaseWorkerApi';
 import { d1Request } from '../lib/d1Api';
 import { getCachedUser } from '../lib/cache';
 
-type Tier = { id: number; price: number; duration_days: number; scope: string; label: string; description: string };
+type Tier = { id: number; code: string; price: number; duration_days: number; scope: string; label: string; description: string };
 
 export default function BoostModal({ 
   isOpen, onClose, targetType, targetId, targetTitle, initialPlanId
@@ -21,31 +21,43 @@ export default function BoostModal({
     if (!isOpen) return;
     setLoading(true);
     Promise.all([
-      supabase.rpc('list_boost_tiers'),
-      supabase.rpc('get_boost_eligibility')
+      supabaseWorkerRequest<{ data: Tier[] }>('/api/v1/boosts/tiers'),
+      supabaseWorkerRequest<{ data: any }>('/api/v1/boosts/eligibility')
     ]).then(([tiersRes, eligRes]) => {
       const t = tiersRes.data || [];
       setTiers(t);
       setElig(eligRes.data);
-      
-      // Auto-select the tier if one was passed from the Inline Bar
       if (initialPlanId) {
-        const match = t.find((x: any) => x.id === initialPlanId);
+        const match = t.find((x: Tier) => x.id === initialPlanId);
         if (match) setSelectedTier(match);
       }
-      setLoading(false);
-    });
+    }).catch((error: unknown) => {
+      alert(error instanceof Error ? error.message : 'Could not load boost options.');
+    }).finally(() => setLoading(false));
   }, [isOpen, initialPlanId]);
 
   const purchase = async (useFree: boolean) => {
     if (!selectedTier) return;
+    if (targetType !== 'listing') {
+      alert('Boosting social posts is not available until its dedicated financial settlement is implemented.');
+      return;
+    }
     setBusy(true);
-    const { data, error } = await supabase.rpc('purchase_boost', {
-      p_target_type: targetType, p_target_id: targetId, p_tier_id: selectedTier.id, p_use_free_premium: useFree,
-    });
-
-    if (error || (data && !data.ok)) {
-      alert(error?.message || data?.error || 'Boost failed.');
+    let data: any;
+    try {
+      const result = await supabaseWorkerRequest<{ data: any }>('/api/v1/boosts', {
+        method: 'POST',
+        body: JSON.stringify({
+          listing_id: targetId,
+          tier_code: selectedTier.code,
+          idempotency_key: crypto.randomUUID(),
+          use_free: useFree,
+        }),
+      });
+      data = result.data;
+      if (!data?.ok) throw new Error(data?.error || 'Boost failed.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Boost failed.');
       setBusy(false);
       return;
     }
@@ -55,7 +67,7 @@ export default function BoostModal({
       if (me) {
         await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
           kind: 'system', title: 'Boost activated',
-          body: `${selectedTier.label} — ${targetType} boosted until ${new Date(data.until).toLocaleDateString()}`,
+          body: `${selectedTier.label} — ${targetType} boosted until ${new Date(data.expires_at || data.until).toLocaleDateString()}`,
           link_url: `/${targetType}/${targetId}`,
         }) });
       }
