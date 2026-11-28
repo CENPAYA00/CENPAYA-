@@ -83,9 +83,13 @@ export default function Layout() {
         return;
       }
       if (nextRole === 'owner' || nextRole === 'super_admin') {
-        const reports = await d1Request<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] }));
+        const [reports, tickets] = await Promise.all([
+          d1Request<{ data: any[] }>('/api/admin/reports?status=open&limit=100').catch(() => ({ data: [] })),
+          d1Request<{ data: any[] }>('/api/staff/tickets?scope=all&queue_type=admin').catch(() => ({ data: [] })),
+        ]);
         if (!active) return;
-        setStaffBadge((reports.data || []).length);
+        const unreadAdminTickets = (tickets.data || []).reduce((sum: number, ticket: any) => sum + (Number(ticket.unread) || 0), 0);
+        setStaffBadge((reports.data || []).length + unreadAdminTickets);
         return;
       }
       setStaffBadge(0);
