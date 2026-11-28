@@ -34,7 +34,7 @@ export default function ReportsPanel({ variant }: { variant: ReportsVariant }) {
     <div className={variant === 'staff' ? 'pb-24' : ''}>
       <div className="mb-3">
         {variant === 'admin' && <h2 className="text-2xl font-bold text-navy dark:text-white">🚩 Reports</h2>}
-        <p className={variant === 'admin' ? 'text-[11px] text-gray-500' : 'text-[10px] text-gray-500'}>{reports.length} in this view</p>
+        <p className="text-[10px] text-gray-500">{reports.length} in this view</p>
       </div>
       <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-hide">
         {(['open', 'under_review', 'resolved', 'dismissed', 'all'] as const).map(f => (
