@@ -70,13 +70,13 @@ export function InlineBoostBar({
           {hasFree && (
             <div className="flex items-center gap-2 p-2.5 bg-[#eaf6ef] dark:bg-[#12935a]/10 rounded-xl text-[#0a3d2b] dark:text-white text-[11px] font-semibold border border-[#12935a]/20">
               <Sparkles size={14} className="text-[#12935a]" /> 
-              {elig.free_boosts_remaining} of 2 free tier-1 boosts remaining
+              {Number(elig.free_boosts_remaining) > 0 ? '1 of 1 free 3-day boost available this month' : 'Your monthly free 3-day boost has been used'}
             </div>
           )}
           
           <div className="grid grid-cols-2 gap-2">
             {plans.map(p => {
-              const isFree = hasFree && p.id === 1;
+              const isFree = hasFree && p.duration_days === 3;
               return (
                 <button
                   key={p.id}
