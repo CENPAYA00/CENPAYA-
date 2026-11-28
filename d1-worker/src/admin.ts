@@ -272,7 +272,7 @@ export async function handleAdminRoutes(
       ).bind(user.id).all<any>();
       const tasks=(rows.results||[]).map((task:any)=>({...task,updates:(()=>{try{return JSON.parse(task.updates_json||"[]")}catch{return[]}})()}));
       return json({ success: true, data: tasks });
-    } catch { return fail("Staff tasks are unavailable. Apply D1 migration 0064 first.", 503); }
+    } catch { return fail("Staff tasks are unavailable. Verify migrations 0064 and 0083 are applied.", 503); }
   }
 
   const staffTask = path.match(/^\/api\/staff\/tasks\/([0-9a-f-]{36})$/i);
