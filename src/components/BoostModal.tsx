@@ -16,54 +16,75 @@ export default function BoostModal({
   const [selectedTier, setSelectedTier] = useState<Tier | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
-    setLoading(true);
-    Promise.all([
-      supabase.rpc('list_boost_tiers'),
-      supabase.rpc('get_boost_eligibility')
-    ]).then(([tiersRes, eligRes]) => {
-      const t = tiersRes.data || [];
-      setTiers(t);
-      setElig(eligRes.data);
-      
-      // Auto-select the tier if one was passed from the Inline Bar
-      if (initialPlanId) {
-        const match = t.find((x: any) => x.id === initialPlanId);
-        if (match) setSelectedTier(match);
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const [tiersRes, eligRes] = await Promise.all([
+          supabase.rpc('list_boost_tiers'),
+          supabase.rpc('get_boost_eligibility')
+        ]);
+        if (tiersRes.error || eligRes.error) {
+          throw new Error(tiersRes.error?.message || eligRes.error?.message || 'Boost plans are unavailable.');
+        }
+        if (!active) return;
+        const t = tiersRes.data || [];
+        setTiers(t);
+        setElig(eligRes.data);
+        if (initialPlanId) {
+          const match = t.find((x: any) => x.id === initialPlanId);
+          if (match) setSelectedTier(match);
+        }
+      } catch (error) {
+        if (!active) return;
+        setTiers([]);
+        setElig(null);
+        setSelectedTier(null);
+        setLoadError(error instanceof Error ? error.message : 'Boost plans are temporarily unavailable.');
+      } finally {
+        if (active) setLoading(false);
       }
-      setLoading(false);
-    });
+    };
+    void load();
+    return () => { active = false; };
   }, [isOpen, initialPlanId]);
 
   const purchase = async (useFree: boolean) => {
     if (!selectedTier) return;
     setBusy(true);
-    const { data, error } = await supabase.rpc('purchase_boost', {
-      p_target_type: targetType, p_target_id: targetId, p_tier_id: selectedTier.id, p_use_free_premium: useFree,
-    });
-
-    if (error || (data && !data.ok)) {
-      alert(error?.message || data?.error || 'Boost failed.');
-      setBusy(false);
-      return;
-    }
-
     try {
-      const me = await getCachedUser();
-      if (me) {
-        await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
-          kind: 'system', title: 'Boost activated',
-          body: `${selectedTier.label} — ${targetType} boosted until ${new Date(data.until).toLocaleDateString()}`,
-          link_url: `/${targetType}/${targetId}`,
-        }) });
+      const { data, error } = await supabase.rpc('purchase_boost', {
+        p_target_type: targetType, p_target_id: targetId, p_tier_id: selectedTier.id, p_use_free_premium: useFree,
+      });
+      if (error || !data?.ok) {
+        alert(error?.message || data?.error || 'Boost could not be completed.');
+        return;
       }
-    } catch (e) { console.warn(e); }
 
-    alert(`Successfully boosted until ${new Date(data.until).toLocaleDateString()}`);
-    onClose();
-    window.location.reload();
+      try {
+        const me = await getCachedUser();
+        if (me) {
+          await d1Request('/api/notifications', { method: 'POST', body: JSON.stringify({
+            kind: 'system', title: 'Boost activated',
+            body: `${selectedTier.label} — ${targetType} boosted until ${new Date(data.until).toLocaleDateString()}`,
+            link_url: `/${targetType}/${targetId}`,
+          }) });
+        }
+      } catch (e) { console.warn(e); }
+
+      alert(`Successfully boosted until ${new Date(data.until).toLocaleDateString()}`);
+      onClose();
+      window.location.reload();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Boost request failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const canUseFree = elig?.is_member && elig?.free_boosts_remaining > 0;
@@ -81,6 +102,9 @@ export default function BoostModal({
         </div>
 
         <div className="p-4 overflow-y-auto flex-1">
+          {loading && <p className="text-center text-xs text-gray-500 py-6">Loading boost plans...</p>}
+          {loadError && <p role="alert" className="text-[11px] text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl p-3 mb-4">{loadError}</p>}
+          {!loading && !loadError && tiers.length === 0 && <p className="text-center text-xs text-gray-500 py-6">No boost plans are currently available.</p>}
           {elig?.is_member && (
             <div className="bg-[#eaf6ef] dark:bg-[#12935a]/10 border border-[#12935a]/20 rounded-[16px] p-4 mb-5 flex items-start gap-3">
               <Sparkles size={20} className="text-[#12935a] mt-0.5 shrink-0" />
@@ -113,11 +137,11 @@ export default function BoostModal({
 
         <div className="p-4 border-t border-gray-200 dark:border-darkline pb-[calc(env(safe-area-inset-bottom,0px)+16px)]">
           {selectedTier && selectedTier.id === 1 && canUseFree ? (
-            <button onClick={() => purchase(true)} disabled={busy} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-[14px] text-[15px] disabled:opacity-50">
+            <button onClick={() => purchase(true)} disabled={busy || loading || !!loadError || !selectedTier} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-[14px] text-[15px] disabled:opacity-50">
               {busy ? 'Processing...' : 'Use free premium boost'}
             </button>
           ) : (
-            <button onClick={() => purchase(false)} disabled={busy || !selectedTier} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-[14px] text-[15px] disabled:opacity-50">
+            <button onClick={() => purchase(false)} disabled={busy || loading || !!loadError || !selectedTier} className="w-full bg-[#12935a] text-white font-bold py-3.5 rounded-[14px] text-[15px] disabled:opacity-50">
               {busy ? 'Processing...' : selectedTier ? `Pay ${selectedTier.price.toLocaleString()} XAF from wallet` : 'Select a plan'}
             </button>
           )}
